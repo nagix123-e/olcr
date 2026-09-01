@@ -151,9 +151,14 @@ class Runtime:
                   "For implementation requests you must provide one or more write operations; do not return Markdown code blocks or claim files were changed without operations. "
                   f"Workspace files: {files}.\nRequest: {text}")
         if core_context: prompt += "\nDevelopment plan: " + core_context[: self.settings.context_budget // 4]
-        result = self.model.generate([{"role":"system","content":"Use only the supplied workspace tool protocol."},{"role":"user","content":prompt}], self.settings.main_model)
+        messages=[{"role":"system","content":"Use only the supplied workspace tool protocol."},{"role":"user","content":prompt}]
+        result = self.model.generate(messages, self.settings.main_model)
         task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms")}, "status":"success"})
-        try: payload=json.loads(result["text"]); operations=payload.get("operations")
+        raw=result.get("text", "") if isinstance(result,dict) else ""
+        # Qwen may wrap a single otherwise-valid JSON object in a Markdown fence.
+        if raw.strip().startswith("```") and raw.strip().endswith("```"):
+            raw=raw.strip().split("\n",1)[-1].rsplit("```",1)[0].strip()
+        try: payload=json.loads(raw); operations=payload.get("operations")
         except (TypeError, ValueError, KeyError) as exc: raise RuntimeError("implementation model did not return a valid file-operation plan") from exc
         if not isinstance(operations,list) or not operations: raise RuntimeError("implementation model returned no file operations; no workspace files were changed")
         if len(operations)>20: raise RuntimeError("implementation plan exceeds the 20-operation safety limit")
