@@ -130,7 +130,9 @@ class Runtime:
         return None
     @staticmethod
     def _implementation_intent(lower: str) -> bool:
-        return bool(re.search(r"\b(implement|create (?:the |.* )?files?|modify|fix|refactor|update|write .* (?:into|to) (?:the )?(?:project|workspace)|build)\b", lower))
+        # Treat explicit file-creation requests as implementation work even when
+        # the user lists filenames directly (e.g. ``create index.html, style.css``).
+        return bool(re.search(r"\b(implement|create (?:the |.* )?files?|create\s+[^\n]*(?:\.(?:html?|css|js|jsx|ts|py)\b)|modify|fix|refactor|update|write .* (?:into|to) (?:the )?(?:project|workspace)|build)\b", lower))
 
     def _workspace_files(self) -> list[str]:
         root = self.settings.allowed_roots[0] if self.settings.allowed_roots else None
