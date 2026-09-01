@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=58"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "olcr"
+version = "0.1.0"
+description = "Ollama Local Cognitive Runtime terminal client"
+requires-python = ">=3.9"
+dependencies = ["fastapi==0.116.1", "httpx==0.28.1", "pydantic==2.11.7", "uvicorn==0.35.0", "torch==2.8.0", "transformers==4.57.6"]
+
+[project.scripts]
+olcr = "olcr_cli.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+packages = ["olcr_api", "olcr_cli"]

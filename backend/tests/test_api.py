@@ -1,0 +1,30 @@
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+_tmp = tempfile.TemporaryDirectory()
+os.environ["OLCR_DB_PATH"] = str(Path(_tmp.name) / "api.db")
+os.environ["OLCR_ALLOWED_ROOTS"] = _tmp.name
+
+try:
+    from fastapi.testclient import TestClient
+    from olcr_api.app import app
+except ImportError:
+    TestClient = None
+
+
+@unittest.skipIf(TestClient is None, "FastAPI test dependencies not installed")
+class APITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.client = TestClient(app)
+    def test_health(self): self.assertEqual("ok", self.client.get("/api/health").json()["status"])
+    def test_direct_chat(self):
+        body = self.client.post("/api/chat", json={"message":"lowercase: HELLO"}).json()
+        self.assertEqual("DIRECT", body["task"]["route"]); self.assertEqual(0, len(body["task"]["model_calls"]))
+    def test_index_path_traversal(self):
+        response = self.client.post("/api/files/index", json={"path":"/etc/passwd"})
+        self.assertEqual(403, response.status_code)
+
+
+if __name__ == "__main__": unittest.main()

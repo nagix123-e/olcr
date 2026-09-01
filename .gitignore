@@ -1,0 +1,35 @@
+# OS/editor and Python local state
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Frontend dependencies and generated output
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Local configuration and runtime evidence
+.env
+.env.*
+!.env.example
+.live/
+*.log
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Local model/cache material (never source-control downloaded weights)
+.cache/huggingface/
+hf-cache/
+*.safetensors
+*.bin
+*.pt
+*.pth
