@@ -1,4 +1,4 @@
-# Third-party notices for OLCR v0.1.2
+# Third-party notices for OLCR v0.1.3
 
 The release build records the exact bundled package versions in `manifest/release-manifest.json`.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the local macOS arm64 OLCR v0.1.2 release archive."""
+"""Build the local macOS arm64 OLCR v0.1.3 release archive."""
 from __future__ import annotations
 import hashlib, json, os, platform, shutil, subprocess, tarfile, time
 from importlib.metadata import distributions
@@ -49,7 +49,7 @@ def collect_licenses(stage: Path, site: Path) -> list[dict]:
         target=root/"frontend"/f"{package}-LICENSE"; copy_file(source,target)
         records.append({"component":package,"version":"see package-lock.json","license":"MIT","evidence":"installed frontend package LICENSE","path":str(target.relative_to(stage)),"status":"VERIFIED"})
     (root/"license-manifest.json").write_text(json.dumps({"components":records},indent=2,sort_keys=True)+"\n")
-    notices=["# OLCR v0.1.2 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
+    notices=["# OLCR v0.1.3 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
     (root/"THIRD_PARTY_NOTICES.md").write_text("\n".join(notices)+"\n")
     return records
 def main():
@@ -70,7 +70,7 @@ def main():
     licenses=collect_licenses(stage,site)
     (stage/"README.txt").write_text(
         "Run ./install.sh, then run olcr. Ollama and its models remain external prerequisites.\n\n"
-        "OLCR v0.1.2 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
+        "OLCR v0.1.3 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
         "warns and removes it only from OLCR's installed runtime and OLCR-managed launcher; it does "
         "not change Gatekeeper system-wide or affect unrelated files. Running install.sh constitutes "
         "consent to this documented installation step.\n"
