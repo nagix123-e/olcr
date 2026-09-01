@@ -9,12 +9,13 @@ import shutil
 import subprocess
 import sys
 import time
+import socket
 from urllib import request, error
 
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.1.5"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.1.6"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -43,8 +44,13 @@ def backend(state):
     except (error.URLError,error.HTTPError,TimeoutError): pass
     root=state.workspace()
     if not root: raise RuntimeError("configure a workspace before starting the OLCR service")
-    env=os.environ|{"OLCR_DB_PATH":str(state.root/"olcr.db"),"OLCR_ALLOWED_ROOTS":str(root)}
-    OWNED_BACKEND = subprocess.Popen([sys.executable,"-m","uvicorn","olcr_api.app:app","--host","127.0.0.1","--port","8000"],cwd=str(Path(__file__).parents[1]),env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+    # Allocate an OS-selected loopback port when the preferred endpoint is
+    # occupied by another (incompatible) instance.
+    sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM); sock.bind(("127.0.0.1",0)); port=sock.getsockname()[1]; sock.close()
+    global API
+    API=f"http://127.0.0.1:{port}/api"
+    env=os.environ|{"OLCR_DB_PATH":str(state.root/"olcr.db"),"OLCR_ALLOWED_ROOTS":str(root),"OLCR_BACKEND_PORT":str(port)}
+    OWNED_BACKEND = subprocess.Popen([sys.executable,"-m","uvicorn","olcr_api.app:app","--host","127.0.0.1","--port",str(port)],cwd=str(Path(__file__).parents[1]),env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
     for _ in range(30):
         time.sleep(.2)
         try:return api("GET","/health")
