@@ -4,6 +4,30 @@ Local-first cognitive workspace for **macOS Apple Silicon (arm64)**. OLCR starts
 
 ## Quick Start
 
+### macOS Apple Silicon release
+
+OLCR v0.1.0 supports macOS Apple Silicon (arm64) only. Download the pre-publication release archive from the release artifact supplied with this project, then run:
+
+```sh
+tar -xzf olcr-v0.1.0-macos-arm64.tar.gz
+cd olcr-v0.1.0-macos-arm64
+./install.sh
+olcr
+```
+
+The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.1.0/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+
+OLCR bundles its Python runtime, Python dependencies, frontend assets, and the experimental Qwen reranker. It does **not** bundle Ollama or Ollama model blobs. Install Ollama separately, then install the active external models:
+
+```sh
+ollama pull qwen3.8:latest
+ollama pull embeddinggemma:latest
+```
+
+`qwen3.6:latest` is a dormant semantic-judge configuration and is not required for the v0.1 runtime. Run `olcr status`, `olcr search "prompt allocation policy"`, `/help`, or `/status` after installation. First launch asks for an authorized workspace and an optional explicit core-context snapshot.
+
+Re-running `install.sh` is safe and preserves workspace/core-context user data. To remove the executable/runtime, remove `~/.local/bin/olcr` and `~/Library/Application Support/OLCR/runtime/`; leave `~/Library/Application Support/OLCR/workspaces/` intact unless you explicitly want to remove your user data.
+
 Open Terminal and run:
 
 ```sh
@@ -67,3 +91,7 @@ Core context is never discovered automatically. You may enter it directly, load 
 cd backend && python3 -m unittest discover -s tests -v
 cd ../frontend && npm run typecheck && npm run build
 ```
+
+## License
+
+OLCR source is licensed under the Apache License 2.0. Bundled third-party components and the experimental reranker remain subject to their own licenses; release artifacts include their collected notices and license materials.

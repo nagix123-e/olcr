@@ -33,3 +33,6 @@ hf-cache/
 *.bin
 *.pt
 *.pth
+
+# Generated distributable artifacts and staging trees
+release/
