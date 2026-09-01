@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import socket
+import re
 from urllib import request, error
 
 from .state import State
@@ -144,7 +145,17 @@ def repl(state,input_fn=input,output=print):
     show_status(state)
     try:
         while True:
-            try: value=input_fn("olcr> ").strip()
+            try:
+                value=input_fn("olcr> ").strip()
+                # Pasted Japanese implementation briefs are commonly multiline;
+                # collect continuation lines until the paste's blank terminator.
+                if value and re.search(r"[\u3040-\u30ff\u3400-\u9fff]", value) and not value.startswith("/"):
+                    lines=[value]
+                    while True:
+                        nxt=input_fn("").rstrip("\n")
+                        if not nxt.strip(): break
+                        lines.append(nxt)
+                    value="\n".join(lines).strip()
             except (EOFError,KeyboardInterrupt): output("\nGoodbye."); return 0
             if not value: continue
             if value in {"/quit","/exit"}: output("Goodbye."); return 0
