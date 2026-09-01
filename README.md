@@ -4,18 +4,20 @@ Local-first cognitive workspace for **macOS Apple Silicon (arm64)**. OLCR starts
 
 ## Quick Start
 
-### macOS Apple Silicon release
+### Release installation: macOS Apple Silicon
 
-OLCR v0.1.0 supports macOS Apple Silicon (arm64) only. Download the pre-publication release archive from the release artifact supplied with this project, then run:
+OLCR v0.1.1 supports macOS Apple Silicon (arm64) only. Download the GitHub release archive, then run:
 
 ```sh
-tar -xzf olcr-v0.1.0-macos-arm64.tar.gz
-cd olcr-v0.1.0-macos-arm64
+tar -xzf olcr-v0.1.1-macos-arm64.tar.gz
+cd olcr-v0.1.1-macos-arm64
 ./install.sh
 olcr
 ```
 
-The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.1.0/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+The release archive is an executable distribution, not a source checkout: do not run `pip install -e .` inside it. The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.1.1/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+
+OLCR v0.1.x is currently distributed without Apple notarization. Browser and GitHub downloads may carry the macOS `com.apple.quarantine` attribute, which can prevent the bundled runtime from launching. Before running it, `install.sh` prints a warning and removes that attribute only from OLCR's installed runtime and its OLCR-managed launcher. It does not disable Gatekeeper system-wide and does not remove quarantine from Downloads, your home directory, Ollama, or other unrelated files. Running `install.sh` constitutes consent to this documented installation operation.
 
 OLCR bundles its Python runtime, Python dependencies, frontend assets, and the experimental Qwen reranker. It does **not** bundle Ollama or Ollama model blobs. Install Ollama separately, then install the active external models:
 
@@ -27,6 +29,8 @@ ollama pull embeddinggemma:latest
 `qwen3.6:latest` is a dormant semantic-judge configuration and is not required for the v0.1 runtime. Run `olcr status`, `olcr search "prompt allocation policy"`, `/help`, or `/status` after installation. First launch asks for an authorized workspace and an optional explicit core-context snapshot.
 
 Re-running `install.sh` is safe and preserves workspace/core-context user data. To remove the executable/runtime, remove `~/.local/bin/olcr` and `~/Library/Application Support/OLCR/runtime/`; leave `~/Library/Application Support/OLCR/workspaces/` intact unless you explicitly want to remove your user data.
+
+### Development/source installation
 
 Open Terminal and run:
 
@@ -51,7 +55,7 @@ OLCR stores CLI state and core-context snapshots in `~/Library/Application Suppo
 - `embeddinggemma:latest` for experimental semantic retrieval
 - `qwen3.8:latest` for local answer generation
 
-OLCR runs locally and has no cloud-inference fallback. The reranker is still experimental and is not yet bundled into a release archive. If Ollama or a model is unavailable, lexical retrieval remains usable where applicable.
+OLCR runs locally and has no cloud-inference fallback. The reranker remains experimental, but the macOS arm64 release archive bundles Qwen3-Reranker-0.6B for offline local loading. If Ollama or an external Ollama model is unavailable, lexical retrieval remains usable where applicable.
 
 ## Terminal use
 
