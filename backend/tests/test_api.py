@@ -18,7 +18,11 @@ except ImportError:
 class APITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls): cls.client = TestClient(app)
-    def test_health(self): self.assertEqual("ok", self.client.get("/api/health").json()["status"])
+    def test_health(self):
+        health=self.client.get("/api/health").json()
+        self.assertEqual("ok", health["status"])
+        self.assertEqual("ready", health["model_configuration"])
+        self.assertEqual(str(Path(_tmp.name) / "api.db"), health["db_path"])
     def test_direct_chat(self):
         body = self.client.post("/api/chat", json={"message":"lowercase: HELLO"}).json()
         self.assertEqual("DIRECT", body["task"]["route"]); self.assertEqual(0, len(body["task"]["model_calls"]))

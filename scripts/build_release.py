@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build the local macOS arm64 OLCR v0.1.1 release archive."""
+"""Build the local macOS arm64 OLCR v0.1.2 release archive."""
 from __future__ import annotations
 import hashlib, json, os, platform, shutil, subprocess, tarfile, time
 from importlib.metadata import distributions
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]; VERSION="0.1.1"; NAME=f"olcr-v{VERSION}-macos-arm64"
+ROOT=Path(__file__).resolve().parents[1]; VERSION="0.1.2"; NAME=f"olcr-v{VERSION}-macos-arm64"
 RUNTIME=Path(os.environ.get("OLCR_STANDALONE_PYTHON", "/private/tmp/olcr-release-inputs/cpython-3.10.21+20260825-aarch64-apple-darwin-install_only_stripped.tar.gz"))
 RUNTIME_SHA="78c7cb7cf464985bf8fd30fbf913aa428d152fd76b045e149f00b0f6b681a5ae"
 MODEL=Path(os.environ.get("OLCR_RERANKER_SOURCE", "/private/tmp/olcr-rerank-hf/hub/models--Qwen--Qwen3-Reranker-0.6B/snapshots/e61197ed45024b0ed8a2d74b80b4d909f1255473"))
@@ -49,7 +49,7 @@ def collect_licenses(stage: Path, site: Path) -> list[dict]:
         target=root/"frontend"/f"{package}-LICENSE"; copy_file(source,target)
         records.append({"component":package,"version":"see package-lock.json","license":"MIT","evidence":"installed frontend package LICENSE","path":str(target.relative_to(stage)),"status":"VERIFIED"})
     (root/"license-manifest.json").write_text(json.dumps({"components":records},indent=2,sort_keys=True)+"\n")
-    notices=["# OLCR v0.1.1 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
+    notices=["# OLCR v0.1.2 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
     (root/"THIRD_PARTY_NOTICES.md").write_text("\n".join(notices)+"\n")
     return records
 def main():
@@ -70,7 +70,7 @@ def main():
     licenses=collect_licenses(stage,site)
     (stage/"README.txt").write_text(
         "Run ./install.sh, then run olcr. Ollama and its models remain external prerequisites.\n\n"
-        "OLCR v0.1.1 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
+        "OLCR v0.1.2 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
         "warns and removes it only from OLCR's installed runtime and OLCR-managed launcher; it does "
         "not change Gatekeeper system-wide or affect unrelated files. Running install.sh constitutes "
         "consent to this documented installation step.\n"

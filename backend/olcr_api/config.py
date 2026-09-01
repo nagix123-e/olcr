@@ -6,11 +6,19 @@ import os
 from pathlib import Path
 from typing import Any
 
+DEFAULT_MAIN_MODEL = "qwen3.6:latest"
+MODEL_REQUEST_TIMEOUT_SECONDS = 750
+MODEL_NAME_FIELDS = frozenset({"main_model", "router_model", "embedding_model", "semantic_judge_model"})
+
+
+def default_db_path() -> str:
+    """The one default database used by the packaged CLI, backend, and setup state."""
+    return str(Path(os.environ.get("OLCR_APP_SUPPORT", Path.home() / "Library" / "Application Support" / "OLCR")) / "olcr.db")
 
 @dataclass
 class Settings:
     ollama_endpoint: str = "http://127.0.0.1:11434"
-    main_model: str = ""
+    main_model: str = DEFAULT_MAIN_MODEL
     router_model: str = ""
     embedding_model: str = ""
     semantic_judge_model: str = ""
@@ -22,14 +30,14 @@ class Settings:
     context_budget: int = 8000
     result_limit: int = 20
     confirmation_policy: str = "explicit"
-    db_path: str = str(Path.home() / ".olcr" / "olcr.db")
+    db_path: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
         roots = tuple(filter(None, os.environ.get("OLCR_ALLOWED_ROOTS", os.getcwd()).split(os.pathsep)))
         return cls(
             ollama_endpoint=os.environ.get("OLLAMA_ENDPOINT", cls.ollama_endpoint),
-            main_model=os.environ.get("OLLAMA_MODEL", ""),
+            main_model=os.environ.get("OLLAMA_MODEL") or cls.main_model,
             router_model=os.environ.get("OLLAMA_ROUTER_MODEL", ""),
             embedding_model=os.environ.get("OLLAMA_EMBEDDING_MODEL", ""),
             semantic_judge_model=os.environ.get("OLLAMA_SEMANTIC_JUDGE_MODEL", ""),
@@ -40,7 +48,7 @@ class Settings:
             vector_enabled=os.environ.get("OLCR_VECTOR_ENABLED", "false").lower() == "true",
             context_budget=int(os.environ.get("OLCR_CONTEXT_BUDGET", "8000")),
             result_limit=int(os.environ.get("OLCR_RESULT_LIMIT", "20")),
-            db_path=os.environ.get("OLCR_DB_PATH", cls.db_path),
+            db_path=os.environ.get("OLCR_DB_PATH") or default_db_path(),
         ).validated()
 
     def validated(self) -> "Settings":
@@ -63,5 +71,9 @@ class Settings:
     def with_overrides(self, values: dict[str, Any]) -> "Settings":
         allowed=set(self.__dataclass_fields__); unknown=set(values)-allowed
         if unknown: raise ValueError(f"unknown settings: {sorted(unknown)}")
-        merged=self.public_dict(); merged.update(values); merged["allowed_roots"]=tuple(merged["allowed_roots"])
+        merged=self.public_dict()
+        # A legacy empty model setting means "unset". It must never erase an
+        # explicit environment value or the packaged default.
+        merged.update({key: value for key, value in values.items() if key not in MODEL_NAME_FIELDS or bool(str(value).strip())})
+        merged["allowed_roots"]=tuple(merged["allowed_roots"])
         return Settings(**merged).validated()

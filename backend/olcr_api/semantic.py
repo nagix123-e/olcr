@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 from typing import Any
 from urllib import request, error
+from .config import MODEL_REQUEST_TIMEOUT_SECONDS
 
 from .db import Database
 from .models import SearchResult
@@ -125,7 +126,7 @@ class SemanticIntentNormalizer(ABC):
 
 
 class OllamaIntentNormalizer(SemanticIntentNormalizer):
-    def __init__(self,endpoint:str,model:str,timeout:float=30): self.endpoint,self.model,self.timeout=endpoint.rstrip("/"),model,timeout
+    def __init__(self,endpoint:str,model:str,timeout:float=MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint,self.model,self.timeout=endpoint.rstrip("/"),model,timeout
     def normalize(self,query:str)->SemanticIntent:
         if not self.model: raise IntentNormalizationFailure("model_unavailable","No local intent normalizer model configured")
         schema={"type":"object","properties":{"intent":{"type":"string"},"requested_information":{"type":"string"},"constraints":{"type":"array","items":{"type":"string"}}},"required":["intent","requested_information","constraints"],"additionalProperties":False}
@@ -149,7 +150,7 @@ class SemanticRelationEvaluator(ABC):
 
 class OllamaSemanticRelationEvaluator(SemanticRelationEvaluator):
     """Fail-closed local evaluator. It receives authorized candidate text, never vectors."""
-    def __init__(self,endpoint:str,model:str,timeout:float=30): self.endpoint,self.model,self.timeout=endpoint.rstrip("/"),model,timeout
+    def __init__(self,endpoint:str,model:str,timeout:float=MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint,self.model,self.timeout=endpoint.rstrip("/"),model,timeout
     def evaluate(self,query:str,intent:SemanticIntent,candidate:SearchResult,candidate_id:str)->SemanticRelation:
         if not self.model: raise SemanticRelationFailure("model_unavailable","No local semantic relation model configured")
         schema={"type":"object","properties":{"candidate_id":{"type":"string"},"relation":{"type":"string","enum":["answers","defines","explains","supports","related","unrelated"]},"evidence":{"type":"string"},"reason":{"type":"string"}},"required":["candidate_id","relation","evidence","reason"],"additionalProperties":False}
@@ -176,7 +177,7 @@ class OllamaSemanticRelationEvaluator(SemanticRelationEvaluator):
 
 
 class OllamaEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, endpoint: str, timeout: float=60): self.endpoint,self.timeout=endpoint.rstrip("/"),timeout
+    def __init__(self, endpoint: str, timeout: float=MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint,self.timeout=endpoint.rstrip("/"),timeout
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not model: raise EmbeddingFailure("model_unavailable","No embedding model configured")
         req=request.Request(self.endpoint+"/api/embed",data=json.dumps({"model":model,"input":texts,"truncate":True}).encode(),headers={"Content-Type":"application/json"})

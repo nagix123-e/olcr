@@ -59,7 +59,8 @@ class SettingsInput(BaseModel):
     confirmation_policy: str = "explicit"
 
 
-settings = Settings.from_env()
+environment_settings = Settings.from_env()
+settings = environment_settings
 db = Database(settings.db_path)
 db.initialize()
 persisted=db.load_settings()
@@ -70,12 +71,20 @@ retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_en
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
 cancel_events: dict[str,threading.Event]={}
-app = FastAPI(title="OLCR", version="0.1.1")
+app = FastAPI(title="OLCR", version="0.1.2")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
+def rebuild(candidate: Settings) -> None:
+    global settings,files,vectors,retrieval,runtime
+    settings=candidate; files=FileRetriever(settings.allowed_roots)
+    vectors=LocalVectorStore(db,OllamaEmbeddingProvider(settings.ollama_endpoint),settings.embedding_model,settings.allowed_roots) if settings.vector_enabled else DisabledVectorStore()
+    retrieval=RetrievalRouter(files,FTSRetriever(db),vectors,settings.vector_enabled,OllamaSemanticRelationEvaluator(settings.ollama_endpoint,settings.semantic_judge_model),OllamaIntentNormalizer(settings.ollama_endpoint,settings.semantic_judge_model),QwenReranker(settings.reranker_model,settings.reranker_enabled,settings.reranker_threshold) if settings.reranker_enabled else None,settings.reranker_threshold)
+    runtime=Runtime(settings,db,retrieval,OllamaProvider(settings.ollama_endpoint),artifacts)
+
+
 @app.get("/api/health")
-def health(): return {"status": "ok", "vector_enabled": settings.vector_enabled, "roots": settings.allowed_roots}
+def health(): return {"status": "ok", "vector_enabled": settings.vector_enabled, "roots": settings.allowed_roots, "db_path": settings.db_path, "main_model": settings.main_model, "model_configuration": "ready" if settings.main_model else "not_ready"}
 
 
 @app.post("/api/chat")
@@ -239,16 +248,19 @@ def delete_conversation(conversation_id:str):
 @app.get("/api/settings")
 def get_settings(): return settings.public_dict()
 
+@app.post("/api/settings/reload")
+def reload_settings():
+    """Refresh an existing OLCR backend from its authoritative settings DB."""
+    rebuild(environment_settings.with_overrides(db.load_settings()))
+    return settings.public_dict()
+
 @app.get("/api/semantic/status")
 def semantic_status(): return retrieval.semantic_telemetry
 
 @app.put("/api/settings")
 def put_settings(value:SettingsInput):
-    global settings,files,vectors,retrieval,runtime
     try: candidate=settings.with_overrides(value.model_dump())
     except ValueError as exc: raise HTTPException(422,str(exc)) from exc
     for key,item in value.model_dump().items(): db.save_setting(key,item,time.time())
-    settings=candidate; files=FileRetriever(settings.allowed_roots)
-    vectors=LocalVectorStore(db,OllamaEmbeddingProvider(settings.ollama_endpoint),settings.embedding_model,settings.allowed_roots) if settings.vector_enabled else DisabledVectorStore()
-    retrieval=RetrievalRouter(files,FTSRetriever(db),vectors,settings.vector_enabled,OllamaSemanticRelationEvaluator(settings.ollama_endpoint,settings.semantic_judge_model),OllamaIntentNormalizer(settings.ollama_endpoint,settings.semantic_judge_model),QwenReranker(settings.reranker_model,settings.reranker_enabled,settings.reranker_threshold) if settings.reranker_enabled else None,settings.reranker_threshold); runtime=Runtime(settings,db,retrieval,OllamaProvider(settings.ollama_endpoint),artifacts)
+    rebuild(candidate)
     return settings.public_dict()

@@ -12,8 +12,9 @@ import time
 from urllib import request, error
 
 from .state import State
+from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.1.1"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.1.2"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -29,7 +30,7 @@ def banner(enabled=True, narrow=False):
 def api(method, path, body=None):
     data=json.dumps(body).encode() if body is not None else None
     req=request.Request(API+path,data=data,method=method,headers={"Content-Type":"application/json"})
-    with request.urlopen(req,timeout=20) as response:return json.load(response)
+    with request.urlopen(req,timeout=MODEL_REQUEST_TIMEOUT_SECONDS) as response:return json.load(response)
 
 def backend(state):
     global OWNED_BACKEND
@@ -55,7 +56,14 @@ def shutdown_owned_backend():
     OWNED_BACKEND = None
 
 def configure_backend(state):
-    backend(state); settings=api("GET","/settings"); settings["allowed_roots"]=[str(state.workspace())]; api("PUT","/settings",settings)
+    backend(state)
+    # Reload persisted settings into an already-running OLCR backend so a
+    # previous CLI process cannot retain stale model configuration.
+    try: settings=api("POST","/settings/reload")
+    except (error.URLError,error.HTTPError,TimeoutError): settings=api("GET","/settings")
+    settings["allowed_roots"]=[str(state.workspace())]
+    if not settings.get("main_model"): settings["main_model"]=os.environ.get("OLLAMA_MODEL") or DEFAULT_MAIN_MODEL
+    api("PUT","/settings",settings)
 
 def runtime_status(state):
     checks={"platform":"READY" if platform.system()=="Darwin" and platform.machine()=="arm64" else "UNSUPPORTED","workspace":"READY" if state.workspace() else "MISSING","ripgrep":"READY" if shutil.which("rg") else "DEGRADED (Python fallback)","ollama":"UNAVAILABLE","semantic":"Experimental / unchecked"}
@@ -63,7 +71,7 @@ def runtime_status(state):
         tags=request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2); names={x["name"] for x in json.load(tags).get("models",[])}; checks["ollama"]="READY"; checks.update({name:("READY" if name in names else "MISSING") for name in ("embeddinggemma:latest","qwen3.8:latest","qwen3.6:latest")})
     except (error.URLError,TimeoutError): pass
     try:
-        health=api("GET","/health"); checks["backend"]="READY"; checks["semantic"]="Experimental" if health.get("vector_enabled") else "DISABLED"
+        health=api("GET","/health"); checks["backend"]="READY"; checks["model configuration"]="READY" if health.get("model_configuration")=="ready" else "NOT READY (set a main Ollama model)"; checks["semantic"]="Experimental" if health.get("vector_enabled") else "DISABLED"
     except (error.URLError,error.HTTPError,TimeoutError): checks["backend"]="NOT RUNNING"
     return checks
 

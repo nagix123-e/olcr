@@ -5,6 +5,7 @@ import json
 import time
 from typing import Any, Iterator
 from urllib import request, error
+from .config import MODEL_REQUEST_TIMEOUT_SECONDS
 
 
 class ModelFailure(RuntimeError):
@@ -17,7 +18,7 @@ class ModelProvider(ABC):
 
 
 class OllamaProvider(ModelProvider):
-    def __init__(self, endpoint: str, timeout: float = 60): self.endpoint, self.timeout = endpoint.rstrip("/"), timeout
+    def __init__(self, endpoint: str, timeout: float = MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint, self.timeout = endpoint.rstrip("/"), timeout
     def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False) -> Any:
         if not model: raise ModelFailure("configuration", "No Ollama model configured")
         payload = json.dumps({"model": model, "messages": messages, "stream": stream}).encode()
