@@ -71,6 +71,8 @@ class Runtime:
                 task.route, task.reason_category = Route.PROCEDURE, "validated_procedure_match"; task.transition(TaskState.EXECUTING)
                 task.tool_executions = self.procedures.run(LOWERCASE_PROCEDURE, {"text": text.split(":",1)[1].strip()})
                 task.transition(TaskState.COMPLETED); return self._finish(task, json.dumps(task.tool_executions[-1]["output"]), started)
+            if self._implementation_intent(lower):
+                return self._execute_implementation(task, text, core_context, started)
             retrieval_query = self._retrieval_query(text)
             evidence = []
             if retrieval_query:
@@ -126,6 +128,52 @@ class Runtime:
         m = re.fullmatch(r"sort\s+(-?[\d.]+(?:\s*,\s*-?[\d.]+)*)", value, re.I)
         if m: return "sort_ascending", {"items": [float(x) for x in m.group(1).split(",")]}
         return None
+    @staticmethod
+    def _implementation_intent(lower: str) -> bool:
+        return bool(re.search(r"\b(implement|create (?:the |.* )?files?|modify|fix|refactor|update|write .* (?:into|to) (?:the )?(?:project|workspace)|build)\b", lower))
+
+    def _workspace_files(self) -> list[str]:
+        root = self.settings.allowed_roots[0] if self.settings.allowed_roots else None
+        if not root: raise PermissionError("an authorized workspace is required for implementation work")
+        base = Path(root)
+        return sorted(str(item.relative_to(base)) for item in base.rglob("*") if item.is_file())[:200]
+
+    def _execute_implementation(self, task: Task, text: str, core_context: str, started: float) -> tuple[Task, str]:
+        """One bounded model→typed-file-tools→inspection loop for workspace mutations."""
+        task.route, task.reason_category, task.authorization_state = Route.IMPLEMENTATION, "authorized_workspace_mutation", "authorized"
+        task.transition(TaskState.EXECUTING)
+        files = self._workspace_files()
+        task.tool_executions.append({"tool":"workspace_list","version":"1.0","risk":"SAFE","input":{},"output":{"files":files},"status":"success","latency_ms":0})
+        prompt = ("You have bounded filesystem tools inside the authorized workspace only. Inspect the listed files, then return ONLY JSON: "
+                  '{"operations":[{"op":"write","path":"relative/path","content":"..."}],"verification":"..."}. '
+                  "For implementation requests you must provide one or more write operations; do not return Markdown code blocks or claim files were changed without operations. "
+                  f"Workspace files: {files}.\nRequest: {text}")
+        if core_context: prompt += "\nDevelopment plan: " + core_context[: self.settings.context_budget // 4]
+        result = self.model.generate([{"role":"system","content":"Use only the supplied workspace tool protocol."},{"role":"user","content":prompt}], self.settings.main_model)
+        task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms")}, "status":"success"})
+        try: payload=json.loads(result["text"]); operations=payload.get("operations")
+        except (TypeError, ValueError, KeyError) as exc: raise RuntimeError("implementation model did not return a valid file-operation plan") from exc
+        if not isinstance(operations,list) or not operations: raise RuntimeError("implementation model returned no file operations; no workspace files were changed")
+        if len(operations)>20: raise RuntimeError("implementation plan exceeds the 20-operation safety limit")
+        changed=[]
+        for operation in operations:
+            if not isinstance(operation,dict) or operation.get("op")!="write" or not isinstance(operation.get("path"),str) or not isinstance(operation.get("content"),str):
+                raise RuntimeError("implementation plan contains an unsupported file operation")
+            if len(operation["content"])>500_000: raise RuntimeError("implementation file content exceeds the safety limit")
+            requested=Path(operation["path"])
+            if not requested.is_absolute(): requested=Path(self.settings.allowed_roots[0]) / requested
+            target=self.retrieval.files.guard.resolve(str(requested))
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text(operation["content"])
+            changed.append(str(target))
+            task.tool_executions.append({"tool":"workspace_write","version":"1.0","risk":"SAFE","input":{"path":str(target),"content_length":len(operation["content"])},"output":{"path":str(target),"bytes":target.stat().st_size},"status":"success","latency_ms":0})
+        inspected=[]
+        for target in changed:
+            value=Path(target).read_text()
+            inspected.append({"path":target,"bytes":len(value)})
+            task.tool_executions.append({"tool":"workspace_read","version":"1.0","risk":"SAFE","input":{"path":target},"output":{"bytes":len(value)},"status":"success","latency_ms":0})
+        task.transition(TaskState.COMPLETED)
+        return self._finish(task, "Implemented workspace changes: " + ", ".join(changed) + ". Verified written files: " + ", ".join(x["path"] for x in inspected) + ".", started)
     @staticmethod
     def _retrieval_query(text: str) -> str | None:
         m = re.search(r"(?:search|find|grep)(?:\s+(?:for|files?|paths?))?\s*[:\"]?(.+?)[\"]?$", text.strip(), re.I)

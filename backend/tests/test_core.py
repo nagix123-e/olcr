@@ -45,6 +45,19 @@ class CoreTests(unittest.TestCase):
         messages,selected=ContextManager(12).build("hello",[SearchResult("a","12345"),SearchResult("b","67890")]); self.assertEqual(1,len(selected))
     def test_neural(self):
         task,response=self.runtime.execute("Write a tiny poem"); self.assertEqual("synthesized",response); self.assertEqual(1,len(self.model.calls)); self.assertEqual("NEURAL",task.route.value)
+    def test_authorized_implementation_writes_and_records_tools(self):
+        class ImplementationModel:
+            def generate(self,*_args,**_kwargs): return {"text":json.dumps({"operations":[{"op":"write","path":"index.html","content":"<h1>Game</h1>"}]}),"latency_ms":1}
+        runtime=Runtime(self.runtime.settings,self.db,self.runtime.retrieval,ImplementationModel())
+        task,response=runtime.execute("Implement the complete game. Create files in the authorized workspace.")
+        self.assertEqual("IMPLEMENTATION",task.route.value); self.assertEqual("completed",task.state.value)
+        self.assertEqual("<h1>Game</h1>",(self.root/"index.html").read_text())
+        self.assertIn("workspace_write",[x["tool"] for x in task.tool_executions]); self.assertIn("Verified written files",response)
+    def test_implementation_path_traversal_is_denied(self):
+        class ImplementationModel:
+            def generate(self,*_args,**_kwargs): return {"text":json.dumps({"operations":[{"op":"write","path":"../outside.txt","content":"no"}]}),"latency_ms":1}
+        task,response=Runtime(self.runtime.settings,self.db,self.runtime.retrieval,ImplementationModel()).execute("Implement and create files")
+        self.assertEqual("failed",task.state.value); self.assertIn("outside allowed roots",response)
     def test_confirmation_and_deny(self):
         self.assertEqual("waiting_for_confirmation",self.runtime.execute("rename this file")[0].state.value)
         self.assertEqual("denied",self.runtime.execute("sudo rm -rf /tmp/x")[0].state.value)
