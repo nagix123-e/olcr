@@ -71,7 +71,7 @@ retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_en
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
 cancel_events: dict[str,threading.Event]={}
-app = FastAPI(title="OLCR", version="0.1.2")
+app = FastAPI(title="OLCR", version="0.1.4")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -84,7 +84,8 @@ def rebuild(candidate: Settings) -> None:
 
 
 @app.get("/api/health")
-def health(): return {"status": "ok", "vector_enabled": settings.vector_enabled, "roots": settings.allowed_roots, "db_path": settings.db_path, "main_model": settings.main_model, "model_configuration": "ready" if settings.main_model else "not_ready"}
+def health():
+    return {"status": "ok", "version": "0.1.4", "runtime_root": str(Path(__file__).resolve().parents[2]), "app_support": str(Path(settings.db_path).parent), "vector_enabled": settings.vector_enabled, "roots": settings.allowed_roots, "db_path": settings.db_path, "main_model": settings.main_model, "model_configuration": "ready" if settings.main_model else "not_ready"}
 
 
 @app.post("/api/chat")
