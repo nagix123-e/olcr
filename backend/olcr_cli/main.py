@@ -38,9 +38,8 @@ def backend(state):
     try:
         health=api("GET","/health")
         expected_db=str(state.root/"olcr.db")
-        if health.get("version") != VERSION or health.get("app_support") != str(state.root) or health.get("db_path") != expected_db:
-            raise RuntimeError("an incompatible OLCR backend is already running; refusing stale backend reuse")
-        return health
+        if health.get("version") == VERSION and health.get("app_support") == str(state.root) and health.get("db_path") == expected_db:
+            return health
     except (error.URLError,error.HTTPError,TimeoutError): pass
     root=state.workspace()
     if not root: raise RuntimeError("configure a workspace before starting the OLCR service")
