@@ -26,7 +26,7 @@ except ImportError:
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.4.1"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.4.2"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -99,13 +99,25 @@ def runtime_status(state):
 def context_text(state):
     item=state.context(); return item.get("content","") if item else ""
 
+def _explicit_implementation_request(text: str) -> bool:
+    """Recognize imperative workspace mutation requests before capability checks."""
+    # Questions about whether OLCR can write are informational, even when they
+    # contain the same file-operation vocabulary.
+    if re.search(r"(?:できますか|可能ですか|できますでしょうか|can\s+(?:you|olcr)|is\s+it\s+possible)", text, re.I):
+        return False
+    return bool(re.search(
+        r"(?:実際に[^\n。！？]*?(?:作|作成|実装|書き込|更新|変更)|"
+        r"(?:作って|作成して|実装して|書き込んで|更新して|変更して|実行して)|"
+        r"(?:create|build|implement|write|modify|update)\b[^\n]*?(?:workspace|file|html|css|javascript|app))",
+        text, re.I))
+
 def request_text(state,text):
     lower=text.strip().lower()
     if lower in {"hi","hello","こんにちは","ありがとう"}:
         return "こんにちは。何をお手伝いしましょうか？"
     # Capability questions are informational and must never enter the
     # implementation executor merely because they mention file mutation.
-    capability = bool(re.search(r"(workspace|ワークスペース).*(作成|更新|編集|create|update|edit)|can\s+(?:you|olcr).*(create|update|edit).*file", text, re.I))
+    capability = (not _explicit_implementation_request(text)) and bool(re.search(r"(workspace|ワークスペース).*(作成|更新|編集|create|update|edit)|can\s+(?:you|olcr).*(create|update|edit).*file", text, re.I))
     if capability:
         if state.workspace() and state.workspace().is_dir():
             return "OLCRは現在認可されたworkspace内でのみファイルを作成・更新できます。実際の変更は実装実行と書き込み・再読込確認が成功した場合に限り報告されます。"

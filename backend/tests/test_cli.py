@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import zipfile
 
-from olcr_cli.main import banner, command, main, request_text
+from olcr_cli.main import banner, command, main, request_text, _explicit_implementation_request
 from olcr_cli.state import State
 
 
@@ -36,6 +36,15 @@ class CliTests(unittest.TestCase):
         answer=request_text(self.state,"Can you create and update files in the current workspace?")
         self.assertIn("/workspace set",answer)
         self.assertEqual([],list(self.workspace.iterdir()))
+    def test_explicit_japanese_implementation_takes_precedence_over_capability_words(self):
+        prompt = """現在ロードされているcore contextのTetris開発計画を仕様として使って、
+現在のworkspaceに実際に動作するTetrisを作ってください。
+Vanilla HTML/CSS/JavaScriptで実装してください。
+必要なファイルはすべて現在のworkspace内だけに実際に作成してください。
+workspace外にはファイルを作成・変更しないでください。
+実装が完了したら、作成して再読込確認できたファイル名だけ報告してください。"""
+        self.assertTrue(_explicit_implementation_request(prompt))
+        self.assertFalse(_explicit_implementation_request("workspace内のファイルを作成・更新できますか？"))
     def test_zip_context_load_reads_text_without_extraction(self):
         self.state.set_workspace(str(self.workspace)); archive=self.workspace/"context.zip"
         with zipfile.ZipFile(archive,"w") as z: z.writestr("README.md","BOARD=10x20")
