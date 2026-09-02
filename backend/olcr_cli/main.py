@@ -18,7 +18,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.3.4"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.3.5"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -114,7 +114,15 @@ def request_text(state,text):
     if explicit_core and not state.context():
         return "core contextが設定されていません。/context set または /context load \"/path/to/file\" を使用してください。"
     if explicit_core and re.search(r"lock\s*delay", text, re.I):
-        match=re.search(r"(?:lock\s*delay|固定まで)[^\n]{0,80}?([0-9]+\s*ms)", context_text(state), re.I)
+        snapshot=context_text(state); match=re.search(r"(?:lock\s*delay|固定まで)[^\n]{0,80}?([0-9]+\s*ms)", snapshot, re.I)
+        if not match:
+            lines=snapshot.splitlines()
+            for i,line in enumerate(lines):
+                if re.search(r"lock\s*delay|固定まで|接地.*固定", line, re.I):
+                    for nxt in lines[i+1:i+3]:
+                        match=re.search(r"([0-9]+\s*ms)", nxt, re.I)
+                        if match: break
+                    if match: break
         if match: return f"core contextによると、lock delayは{match.group(1)}です。"
     core = (context_text(state) if explicit_core else (None if len(text.strip()) < 80 else (context_text(state) or None)))
     stop=threading.Event()
