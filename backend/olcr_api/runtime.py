@@ -39,7 +39,12 @@ class ContextManager:
         if len(content)<=limit: return content
         chunks=[x.strip() for x in re.split(r"(?=--- file:|\n#{1,6} )",content) if x.strip()]
         terms=set(re.findall(r"[a-z0-9_]+|[\u3040-\u30ff\u3400-\u9fff]{2,}",request.lower()))
-        ranked=sorted(enumerate(chunks), key=lambda pair:(sum(1 for t in terms if t in pair[1].lower()), -pair[0]), reverse=True)
+        def score(pair):
+            text=pair[1].lower(); lexical=sum(1 for t in terms if t in text)
+            # Prefer concrete specification evidence over narrative mentions.
+            concrete=len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:ms|x|×|回|resets?)?\b", text))
+            return (lexical + concrete * 2, concrete, -pair[0])
+        ranked=sorted(enumerate(chunks), key=score, reverse=True)
         chosen=[]; used=0
         for _,chunk in ranked:
             if used+len(chunk)>limit: continue
