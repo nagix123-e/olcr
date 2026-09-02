@@ -20,7 +20,7 @@ from .tools import ToolValidationError, registry
 class ContextManager:
     def __init__(self, budget: int): self.budget = budget
     def build(self, request: str, evidence: list[Any], core_context: str = "") -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
-        core_context=core_context[:max(0,self.budget//4)]
+        core_context=self._select_core(request, core_context)
         remaining = max(0, self.budget - len(request) - len(core_context))
         selected, used = [], 0
         for item in evidence:
@@ -33,6 +33,18 @@ class ContextManager:
         if content: messages.append({"role": "system", "content": "Selected evidence:\n" + content})
         messages.append({"role": "user", "content": request})
         return messages, selected
+    def _select_core(self, request: str, content: str) -> str:
+        if not content: return ""
+        limit=max(0,self.budget//4)
+        if len(content)<=limit: return content
+        chunks=[x.strip() for x in re.split(r"(?=--- file:|\n#{1,6} )",content) if x.strip()]
+        terms=set(re.findall(r"[a-z0-9_]+|[\u3040-\u30ff\u3400-\u9fff]{2,}",request.lower()))
+        ranked=sorted(enumerate(chunks), key=lambda pair:(sum(1 for t in terms if t in pair[1].lower()), -pair[0]), reverse=True)
+        chosen=[]; used=0
+        for _,chunk in ranked:
+            if used+len(chunk)>limit: continue
+            chosen.append(chunk); used+=len(chunk)
+        return "\n\n".join(chosen)[:limit]
 
 
 class Runtime:

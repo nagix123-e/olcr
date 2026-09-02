@@ -65,7 +65,7 @@ class State:
                     parts=[]; total=0
                     for info in infos:
                         name=info.filename.replace("\\","/")
-                        if not name or name.endswith("/") or name.startswith("/") or posixpath.normpath(name) != name or name == ".." or name.startswith("../") or ":" in name.split("/",1)[0]: continue
+                        if not name or name.startswith("__MACOSX/") or name.startswith("._") or name.endswith("/") or name.startswith("/") or posixpath.normpath(name) != name or name == ".." or name.startswith("../") or ":" in name.split("/",1)[0]: continue
                         mode=(info.external_attr >> 16) & 0xFFFF
                         if info.create_system == 3 and (mode & 0o170000) and not stat.S_ISREG(mode): continue
                         if Path(name).suffix.lower() not in ZIP_TEXT_SUFFIXES or info.file_size > ZIP_MAX_FILE_BYTES or total + info.file_size > ZIP_MAX_TOTAL_BYTES: continue
