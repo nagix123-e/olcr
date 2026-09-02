@@ -18,7 +18,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.2.8"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.9"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -89,7 +89,7 @@ def runtime_status(state):
     return checks
 
 def context_text(state):
-    item=state.context(); return item.get("content","")[:4000] if item else ""
+    item=state.context(); return item.get("content","") if item else ""
 
 def request_text(state,text):
     lower=text.strip().lower()
