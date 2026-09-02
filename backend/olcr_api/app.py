@@ -71,7 +71,7 @@ retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_en
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
 cancel_events: dict[str,threading.Event]={}
-app = FastAPI(title="OLCR", version="0.3.3")
+app = FastAPI(title="OLCR", version="0.3.4")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
