@@ -18,7 +18,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.3.6"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.3.7"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -113,7 +113,8 @@ def request_text(state,text):
     explicit_core = bool(re.search(r"core\s*context|この(?:コア|core)コンテキスト|コアコンテキストに書|コアコンテキストによると", text, re.I))
     if explicit_core and not state.context():
         return "core contextが設定されていません。/context set または /context load \"/path/to/file\" を使用してください。"
-    if explicit_core and re.search(r"lock\s*delay", text, re.I):
+    topics = sum(bool(re.search(pattern, text, re.I)) for pattern in (r"lock\s*delay|ロックディレイ", r"盤面|board", r"drop\s*interval|落下", r"lock\s*timer|リセット回数|reset"))
+    if explicit_core and topics <= 1 and re.search(r"lock\s*delay", text, re.I):
         snapshot=context_text(state); match=re.search(r"(?:lock\s*delay|固定まで)[^\n]{0,80}?([0-9]+\s*ms)", snapshot, re.I)
         if not match:
             lines=snapshot.splitlines()
