@@ -17,7 +17,7 @@ cd olcr-v0.2.2-macos-arm64
 olcr
 ```
 
-The release archive is an executable distribution, not a source checkout: do not run `pip install -e .` inside it. The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.2.1/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+The release archive is an executable distribution, not a source checkout: do not run `pip install -e .` inside it. The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.2.2/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
 
 ### Upgrade to the latest version
 
