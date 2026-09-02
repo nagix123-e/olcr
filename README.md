@@ -6,13 +6,13 @@ Local-first cognitive workspace for **macOS Apple Silicon (arm64)**. OLCR starts
 
 ### Release installation: macOS Apple Silicon
 
-OLCR v0.2.1 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
+OLCR v0.2.2 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
 
 ```sh
 cd /path/to/downloaded/archive
-shasum -a 256 olcr-v0.2.1-macos-arm64.tar.gz
-tar -xzf olcr-v0.2.1-macos-arm64.tar.gz
-cd olcr-v0.2.1-macos-arm64
+shasum -a 256 olcr-v0.2.2-macos-arm64.tar.gz
+tar -xzf olcr-v0.2.2-macos-arm64.tar.gz
+cd olcr-v0.2.2-macos-arm64
 ./install.sh
 olcr
 ```

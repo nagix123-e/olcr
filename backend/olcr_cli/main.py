@@ -11,6 +11,7 @@ import sys
 import time
 import socket
 import re
+import threading
 from urllib import request, error
 
 from .state import State
@@ -102,7 +103,18 @@ def request_text(state,text):
         entry=Path(ws)/"index.html" if ws else None
         return "index.html をブラウザで開いてください。" if entry and entry.is_file() else "workspace内にindex.htmlが見つかりません。"
     core = None if len(text.strip()) < 80 else (context_text(state) or None)
-    result=api("POST","/chat",{"message":text,"core_context":core}); return result["response"]
+    stop=threading.Event()
+    def animate():
+        frames='|/-\\'; i=0
+        while not stop.wait(0.35):
+            if sys.stdout.isatty():
+                print(f"generating... {frames[i%len(frames)]}\r",end='',flush=True); i+=1
+    spinner=threading.Thread(target=animate,daemon=True); spinner.start()
+    try:
+        result=api("POST", "/chat", {"message":text,"core_context":core}); return result["response"]
+    finally:
+        stop.set(); spinner.join(timeout=1)
+        if sys.stdout.isatty(): print("\033[2K\r",end='',flush=True)
 
 def show_status(state):
     print(f"OLCR {VERSION} · macOS Apple Silicon target");
