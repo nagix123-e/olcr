@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name="olcr",
-    version="0.1.9",
+    version="0.2.0",
     description="Ollama Local Cognitive Runtime terminal client",
     license="Apache-2.0",
     python_requires=">=3.9",

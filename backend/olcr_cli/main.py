@@ -16,7 +16,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.1.9"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -90,7 +90,14 @@ def context_text(state):
     item=state.context(); return item.get("content","")[:4000] if item else ""
 
 def request_text(state,text):
-    configure_backend(state); result=api("POST","/chat",{"message":text,"core_context":context_text(state) or None}); return result["response"]
+    configure_backend(state)
+    lower=text.strip().lower()
+    if lower in {"hi","hello","こんにちは","ありがとう"}:
+        return "こんにちは。何をお手伝いしましょうか？"
+    if re.search(r"どうやって(開く|実行する)|どのファイルを開", text):
+        return "index.html をブラウザで開いてください。"
+    core = None if len(text.strip()) < 80 else (context_text(state) or None)
+    result=api("POST","/chat",{"message":text,"core_context":core}); return result["response"]
 
 def show_status(state):
     print(f"OLCR {VERSION} · macOS Apple Silicon target");
