@@ -18,7 +18,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.2.5"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.6"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -110,7 +110,10 @@ def request_text(state,text):
     if re.search(r"(どうやって|どう|何を|どのファイル|どこ).*(開く|実行|見る)|ブラウザで(見る|開く)", text):
         entry=Path(ws)/"index.html" if ws else None
         return "index.html をブラウザで開いてください。" if entry and entry.is_file() else "workspace内にindex.htmlが見つかりません。"
-    core = None if len(text.strip()) < 80 else (context_text(state) or None)
+    explicit_core = bool(re.search(r"core\s*context|この(?:コア|core)コンテキスト|コアコンテキストに書|コアコンテキストによると", text, re.I))
+    if explicit_core and not state.context():
+        return "core contextが設定されていません。/context set または /context load \"/path/to/file\" を使用してください。"
+    core = (context_text(state) if explicit_core else (None if len(text.strip()) < 80 else (context_text(state) or None)))
     stop=threading.Event()
     def animate():
         frames='|/-\\'; i=0
@@ -169,7 +172,10 @@ def command(state,parts,input_fn=input,output=print):
         action=tail[0] if tail else "show"
         if action=="show": output(json.dumps(state.context() or {"status":"not configured"},indent=2)); return 0
         if action=="set": state.set_context(multiline(input_fn,output),"direct"); output("Core context snapshot saved."); return 0
-        if action=="load": state.load_context_file(" ".join(tail[1:])); output("Core context file snapshot saved."); return 0
+        if action=="load":
+            try: state.load_context_file(" ".join(tail[1:]))
+            except (ValueError, PermissionError, OSError) as exc: output(f"Error: {exc}"); return 0
+            output("Core context file snapshot saved."); return 0
         if action=="reload": state.reload_context(); output("Core context snapshot reloaded."); return 0
         if action=="clear": state.clear_context(); output("Core context cleared."); return 0
     output("Unknown command. Type /help."); return 2
