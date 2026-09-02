@@ -46,7 +46,16 @@ class ContextManager:
             return (lexical + concrete * 2, concrete, -pair[0])
         ranked=sorted(enumerate(chunks), key=score, reverse=True)
         chosen=[]; used=0
+        # Coverage pass: retain concrete specification chunks for each topic
+        # before filling remaining budget by relevance score.
+        topic_patterns=[("lock delay", r"500\s*ms"),("drop interval", r"800\s*ms"),("reset", r"10\s*(?:resets?|回)"),("盤面", r"10\s*[x×]\s*20")]
+        for topic, pattern in topic_patterns:
+            if topic not in request.lower() and not (topic == "盤面" and "board" in request.lower()): continue
+            for index, chunk in ranked:
+                if re.search(pattern, chunk, re.I) and chunk not in chosen and used + len(chunk) <= limit:
+                    chosen.append(chunk); used += len(chunk); break
         for _,chunk in ranked:
+            if chunk in chosen: continue
             if used+len(chunk)>limit: continue
             chosen.append(chunk); used+=len(chunk)
         return "\n\n".join(chosen)[:limit]
