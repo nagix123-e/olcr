@@ -94,8 +94,13 @@ def request_text(state,text):
     lower=text.strip().lower()
     if lower in {"hi","hello","こんにちは","ありがとう"}:
         return "こんにちは。何をお手伝いしましょうか？"
+    ws=state.workspace()
+    if ws and re.search(r"(どこ|どのファイル).*(index\.html|開)|index\.html.*(どこ|場所)", text, re.I):
+        matches=sorted(str(p) for p in Path(ws).rglob("index.html"))
+        return ("見つかりませんでした。" if not matches else "index.html: " + ", ".join(matches[:10]))
     if re.search(r"(どうやって|どう|何を|どのファイル|どこ).*(開く|実行|見る)|ブラウザで(見る|開く)", text):
-        return "index.html をブラウザで開いてください。"
+        entry=Path(ws)/"index.html" if ws else None
+        return "index.html をブラウザで開いてください。" if entry and entry.is_file() else "workspace内にindex.htmlが見つかりません。"
     core = None if len(text.strip()) < 80 else (context_text(state) or None)
     result=api("POST","/chat",{"message":text,"core_context":core}); return result["response"]
 
