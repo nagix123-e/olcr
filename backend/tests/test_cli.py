@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from olcr_cli.main import banner, command, main
+from olcr_cli.main import banner, command, main, request_text
 from olcr_cli.state import State
 
 
@@ -25,5 +25,15 @@ class CliTests(unittest.TestCase):
     def test_parser_version(self):
         with self.assertRaises(SystemExit) as caught: main(["--version"])
         self.assertEqual(0,caught.exception.code)
+    def test_capability_query_is_grounded_and_non_mutating(self):
+        self.state.set_workspace(str(self.workspace))
+        answer=request_text(self.state,"workspace内のファイルを自力で作成・更新できますか？")
+        self.assertIn("認可されたworkspace内",answer)
+        self.assertNotIn("できません",answer)
+        self.assertEqual([],list(self.workspace.iterdir()))
+    def test_capability_query_without_workspace_guides_authorization(self):
+        answer=request_text(self.state,"Can you create and update files in the current workspace?")
+        self.assertIn("/workspace set",answer)
+        self.assertEqual([],list(self.workspace.iterdir()))
 
 if __name__=="__main__": unittest.main()

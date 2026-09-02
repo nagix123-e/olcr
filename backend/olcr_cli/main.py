@@ -18,7 +18,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.2.4"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.5"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -92,10 +92,17 @@ def context_text(state):
     item=state.context(); return item.get("content","")[:4000] if item else ""
 
 def request_text(state,text):
-    configure_backend(state)
     lower=text.strip().lower()
     if lower in {"hi","hello","こんにちは","ありがとう"}:
         return "こんにちは。何をお手伝いしましょうか？"
+    # Capability questions are informational and must never enter the
+    # implementation executor merely because they mention file mutation.
+    capability = bool(re.search(r"(workspace|ワークスペース).*(作成|更新|編集|create|update|edit)|can\s+(?:you|olcr).*(create|update|edit).*file", text, re.I))
+    if capability:
+        if state.workspace() and state.workspace().is_dir():
+            return "OLCRは現在認可されたworkspace内でのみファイルを作成・更新できます。実際の変更は実装実行と書き込み・再読込確認が成功した場合に限り報告されます。"
+        return "ファイルの作成・更新には、まず認可されたworkspaceを設定してください: /workspace set \"/path/to/workspace\""
+    configure_backend(state)
     ws=state.workspace()
     if ws and re.search(r"(どこ|どのファイル).*(index\.html|開)|index\.html.*(どこ|場所)", text, re.I):
         matches=sorted(str(p) for p in Path(ws).rglob("index.html"))
