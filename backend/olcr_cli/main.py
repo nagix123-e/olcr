@@ -187,6 +187,8 @@ def repl(state,input_fn=input,output=print):
             if not value: continue
             if value in {"/quit","/exit"}: output("Goodbye."); return 0
             if value.startswith("/"): command(state,value[1:].split(),input_fn,output); continue
+            if re.match(r'^cd\s+["\']?', value, re.I):
+                output("REPL内のcdはサポートされていません。/workspace set \"/path/to/workspace\" を使用してください。"); continue
             try: output(request_text(state,value))
             except Exception as exc: output(f"! {exc}")
     finally: shutdown_owned_backend()

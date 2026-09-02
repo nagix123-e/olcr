@@ -132,7 +132,7 @@ class Runtime:
     def _implementation_intent(lower: str) -> bool:
         # Treat explicit file-creation requests as implementation work even when
         # the user lists filenames directly (e.g. ``create index.html, style.css``).
-        if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(作成|作って|実装|書き込|更新|変更|完成|ファイル).*(workspace|ワークスペース|ファイル|index\.html|style\.css|game\.js|tetris|テトリス)", lower):
+        if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(作成|作って|実装|書き込|更新|変更|完成|格納|ファイル).*(workspace|ワークスペース|ファイル|コード|index\.html|style\.css|game\.js|tetris|テトリス)", lower):
             return True
         return bool(re.search(r"\b(implement|create (?:the |.* )?files?|create\s+[^\n]*(?:\.(?:html?|css|js|jsx|ts|py)\b)|modify|fix|refactor|update|write .* (?:into|to) (?:the )?(?:project|workspace)|build)\b", lower))
 

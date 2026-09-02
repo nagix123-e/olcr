@@ -48,6 +48,17 @@ ollama pull embeddinggemma:latest
 
 `qwen3.6:latest` is the packaged default main model. `qwen3.8:latest` remains a supported user-selectable alternative; semantic/vector features remain opt-in. Run `olcr status`, `olcr search "prompt allocation policy"`, `/help`, or `/status` after installation. First launch asks for an authorized workspace and an optional explicit core-context snapshot.
 
+Workspace authorization and startup flow:
+
+```sh
+mkdir -p "$HOME/Downloads/file to make tetris in"
+olcr
+# enter the workspace path when prompted, choose core context or skip it,
+# verify workspace READY, then enter your implementation request
+```
+
+From an existing REPL use `/workspace set "/Users/you/Downloads/file to make tetris in"`. Shell-escaped paths may show spaces as `/Users/you/Downloads/file\ to\ make\ tetris\ in`; the backslashes are escaping, not directory-name characters.
+
 For ordinary chat and generation, OLCR defaults to `qwen3.6:latest`. A non-empty saved model setting takes precedence over `OLLAMA_MODEL`; a non-empty `OLLAMA_MODEL` takes precedence over the packaged default. Empty saved model values are treated as unset. OLCR uses one settings database at `~/Library/Application Support/OLCR/olcr.db` (or the explicit `OLCR_DB_PATH`) and permits local model requests to run for up to 750 seconds.
 
 Re-running `install.sh` is safe and preserves workspace/core-context user data. To remove the executable/runtime, remove `~/.local/bin/olcr` and `~/Library/Application Support/OLCR/runtime/`; leave `~/Library/Application Support/OLCR/workspaces/` intact unless you explicitly want to remove your user data.
