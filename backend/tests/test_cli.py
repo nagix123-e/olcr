@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 
 from olcr_cli.main import banner, command, main, request_text
 from olcr_cli.state import State
@@ -35,5 +36,13 @@ class CliTests(unittest.TestCase):
         answer=request_text(self.state,"Can you create and update files in the current workspace?")
         self.assertIn("/workspace set",answer)
         self.assertEqual([],list(self.workspace.iterdir()))
+    def test_zip_context_load_reads_text_without_extraction(self):
+        self.state.set_workspace(str(self.workspace)); archive=self.workspace/"context.zip"
+        with zipfile.ZipFile(archive,"w") as z: z.writestr("README.md","BOARD=10x20")
+        self.state.load_context_file(str(archive)); self.assertIn("BOARD=10x20",self.state.context()["content"]); self.assertFalse((self.workspace/"README.md").exists())
+    def test_zip_unsafe_and_binary_members_are_skipped(self):
+        self.state.set_workspace(str(self.workspace)); archive=self.workspace/"mixed.zip"
+        with zipfile.ZipFile(archive,"w") as z: z.writestr("../outside.txt","bad"); z.writestr("image.bin",b"\x00\x01"); z.writestr("ok.txt","safe")
+        self.state.load_context_file(str(archive)); self.assertIn("safe",self.state.context()["content"]); self.assertNotIn("bad",self.state.context()["content"])
 
 if __name__=="__main__": unittest.main()
