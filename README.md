@@ -6,13 +6,13 @@ Local-first cognitive workspace for **macOS Apple Silicon (arm64)**. OLCR starts
 
 ### Release installation: macOS Apple Silicon
 
-OLCR v0.2.3 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
+OLCR v0.2.4 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
 
 ```sh
 cd /path/to/downloaded/archive
-shasum -a 256 olcr-v0.2.3-macos-arm64.tar.gz
-tar -xzf olcr-v0.2.3-macos-arm64.tar.gz
-cd olcr-v0.2.3-macos-arm64
+shasum -a 256 olcr-v0.2.4-macos-arm64.tar.gz
+tar -xzf olcr-v0.2.4-macos-arm64.tar.gz
+cd olcr-v0.2.4-macos-arm64
 ./install.sh
 olcr
 ```
@@ -21,7 +21,7 @@ The release archive is an executable distribution, not a source checkout: do not
 
 ### Upgrade to the latest version
 
-Exit any running OLCR REPL, download `olcr-v0.2.3-macos-arm64.tar.gz`, verify its SHA-256 when available, then install it:
+Exit any running OLCR REPL, download `olcr-v0.2.4-macos-arm64.tar.gz`, verify its SHA-256 when available, then install it:
 
 ```sh
 cd /path/to/downloaded/archive
@@ -31,7 +31,7 @@ cd olcr-v0.2.3-macos-arm64
 ./install.sh
 hash -r 2>/dev/null || true
 olcr --version
-# expected: 0.2.3
+# expected: 0.2.4
 olcr status
 ```
 
@@ -57,7 +57,7 @@ olcr
 # verify workspace READY, then enter your implementation request
 ```
 
-From an existing REPL use `/workspace set "/Users/you/Downloads/file to make tetris in"`. Shell-escaped paths may show spaces as `/Users/you/Downloads/file\ to\ make\ tetris\ in`; the backslashes are escaping, not directory-name characters.
+From an existing REPL use `/workspace set "/Users/you/Downloads/file to make tetris in"`. For paths containing spaces, the quoted form is recommended: `/workspace set "/Users/name/Downloads/project folder"`. Shell-escaped paths may show spaces as `/Users/you/Downloads/file\ to\ make\ tetris\ in`; the backslashes are escaping, not directory-name characters.
 
 For ordinary chat and generation, OLCR defaults to `qwen3.6:latest`. A non-empty saved model setting takes precedence over `OLLAMA_MODEL`; a non-empty `OLLAMA_MODEL` takes precedence over the packaged default. Empty saved model values are treated as unset. OLCR uses one settings database at `~/Library/Application Support/OLCR/olcr.db` (or the explicit `OLCR_DB_PATH`) and permits local model requests to run for up to 750 seconds.
 

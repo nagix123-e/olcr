@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 ARCHIVE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_HOME="${OLCR_APP_SUPPORT:-$HOME/Library/Application Support/OLCR}"
 RUNTIME_ROOT="$APP_HOME/runtime"

@@ -12,12 +12,13 @@ import time
 import socket
 import re
 import threading
+import shlex
 from urllib import request, error
 
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.2.3"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.4"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -152,7 +153,10 @@ def command(state,parts,input_fn=input,output=print):
             if k in {"ollama","embeddinggemma:latest","qwen3.8:latest","qwen3.6:latest","semantic"}: output(f"{k}: {v}")
         return 0
     if head=="workspace":
-        if tail and tail[0]=="set": output(str(state.set_workspace(" ".join(tail[1:])))); return 0
+        if tail and tail[0]=="set":
+            try: output(str(state.set_workspace(" ".join(tail[1:]))))
+            except ValueError as exc: output(f"Error: {exc}")
+            return 0
         output(str(state.workspace() or "not configured")); return 0
     if head=="context":
         action=tail[0] if tail else "show"
@@ -186,7 +190,10 @@ def repl(state,input_fn=input,output=print):
             except (EOFError,KeyboardInterrupt): output("\nGoodbye."); return 0
             if not value: continue
             if value in {"/quit","/exit"}: output("Goodbye."); return 0
-            if value.startswith("/"): command(state,value[1:].split(),input_fn,output); continue
+            if value.startswith("/"):
+                try: parts=shlex.split(value[1:])
+                except ValueError as exc: output(f"Error: invalid command syntax ({exc})"); continue
+                command(state,parts,input_fn,output); continue
             if re.match(r'^cd\s+["\']?', value, re.I):
                 output("REPL内のcdはサポートされていません。/workspace set \"/path/to/workspace\" を使用してください。"); continue
             try: output(request_text(state,value))
