@@ -16,7 +16,7 @@ from urllib import request, error
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.2.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.2.1"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -150,10 +150,11 @@ def repl(state,input_fn=input,output=print):
     ansi=sys.stdout.isatty() and os.environ.get("NO_COLOR") is None; output(banner(ansi,shutil.get_terminal_size((80,24)).columns<48));
     if not state.data.get("setup_complete") or not state.workspace(): wizard(state,input_fn,output)
     show_status(state)
+    pending=None
     try:
         while True:
             try:
-                value=input_fn("olcr> ").strip()
+                value=(pending if pending is not None else input_fn("olcr> ").strip()); pending=None
                 # Pasted Japanese implementation briefs are commonly multiline;
                 # collect continuation lines until the paste's blank terminator.
                 if value and re.search(r"[\u3040-\u30ff\u3400-\u9fff]", value) and not value.startswith("/"):
@@ -161,6 +162,8 @@ def repl(state,input_fn=input,output=print):
                     while True:
                         nxt=input_fn("").rstrip("\n")
                         if not nxt.strip(): break
+                        if nxt.lstrip().startswith("/"):
+                            pending=nxt.strip(); break
                         lines.append(nxt)
                     value="\n".join(lines).strip()
             except (EOFError,KeyboardInterrupt): output("\nGoodbye."); return 0
