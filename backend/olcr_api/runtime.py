@@ -37,7 +37,11 @@ class ContextManager:
         if not content: return ""
         limit=max(0,self.budget//4)
         if len(content)<=limit: return content
-        chunks=[x.strip() for x in re.split(r"(?=--- file:|\n#{1,6} )",content) if x.strip()]
+        raw_chunks=[x.strip() for x in re.split(r"(?=--- file:|\n#{1,6} )",content) if x.strip()]
+        chunks=[]
+        for chunk in raw_chunks:
+            if len(chunk)<=1200: chunks.append(chunk)
+            else: chunks.extend(chunk[i:i+1200] for i in range(0,len(chunk),1200))
         terms=set(re.findall(r"[a-z0-9_]+|[\u3040-\u30ff\u3400-\u9fff]{2,}",request.lower()))
         def score(pair):
             text=pair[1].lower(); lexical=sum(1 for t in terms if t in text)
