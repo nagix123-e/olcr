@@ -18,11 +18,15 @@ try:
 except ImportError:
     readline = None
 from urllib import request, error
+try:
+    from prompt_toolkit import PromptSession
+except ImportError:
+    PromptSession = None
 
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.4.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.4.1"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -208,7 +212,12 @@ def repl(state,input_fn=input,output=print):
     try:
         while True:
             try:
-                value=(pending if pending is not None else input_fn("olcr> ").strip()); pending=None
+                if pending is not None: value=pending; pending=None
+                elif input_fn is input and PromptSession is not None:
+                    if not hasattr(repl,"_session"): repl._session=PromptSession(enable_history_search=True)
+                    value=repl._session.prompt("olcr> ")
+                else: value=input_fn("olcr> ")
+                value=value.strip()
                 # input() owns exactly one submitted buffer; never infer
                 # submission from content, length, wrapping, or language.
             except (EOFError,KeyboardInterrupt): output("\nGoodbye."); return 0
