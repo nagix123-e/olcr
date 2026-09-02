@@ -6,16 +6,36 @@ Local-first cognitive workspace for **macOS Apple Silicon (arm64)**. OLCR starts
 
 ### Release installation: macOS Apple Silicon
 
-OLCR v0.1.3 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
+OLCR v0.1.9 supports macOS Apple Silicon (arm64) only. Download the release archive, then run:
 
 ```sh
-tar -xzf olcr-v0.1.3-macos-arm64.tar.gz
-cd olcr-v0.1.3-macos-arm64
+cd /path/to/downloaded/archive
+shasum -a 256 olcr-v0.1.9-macos-arm64.tar.gz
+tar -xzf olcr-v0.1.9-macos-arm64.tar.gz
+cd olcr-v0.1.9-macos-arm64
 ./install.sh
 olcr
 ```
 
-The release archive is an executable distribution, not a source checkout: do not run `pip install -e .` inside it. The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.1.3/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+The release archive is an executable distribution, not a source checkout: do not run `pip install -e .` inside it. The installer is user-space only. It installs the immutable runtime under `~/Library/Application Support/OLCR/runtime/0.1.9/` and a stable launcher at `~/.local/bin/olcr`; it never edits your shell profile. If the launcher directory is not on `PATH`, the installer prints the exact `export PATH=...` command to use.
+
+### Upgrade to the latest version
+
+Exit any running OLCR REPL, download `olcr-v0.1.9-macos-arm64.tar.gz`, verify its SHA-256 when available, then install it:
+
+```sh
+cd /path/to/downloaded/archive
+shasum -a 256 olcr-v0.1.9-macos-arm64.tar.gz
+tar -xzf olcr-v0.1.9-macos-arm64.tar.gz
+cd olcr-v0.1.9-macos-arm64
+./install.sh
+hash -r 2>/dev/null || true
+olcr --version
+# expected: 0.1.9
+olcr status
+```
+
+Re-running the installer preserves existing workspace, settings, and model selections.
 
 OLCR v0.1.x is currently distributed without Apple notarization. Browser and GitHub downloads may carry the macOS `com.apple.quarantine` attribute, which can prevent the bundled runtime from launching. Before running it, `install.sh` prints a warning and removes that attribute only from OLCR's installed runtime and its OLCR-managed launcher. It does not disable Gatekeeper system-wide and does not remove quarantine from Downloads, your home directory, Ollama, or other unrelated files. Running `install.sh` constitutes consent to this documented installation operation.
 
