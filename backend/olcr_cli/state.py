@@ -35,6 +35,18 @@ class State:
         self.data["workspace"]={"id":self.workspace_id(path),"root":str(path),"updated_at":time.time()}; self.data["setup_complete"]=True; self.save(); return path
     def workspace(self) -> Path | None:
         value=self.data.get("workspace") or {}; return Path(value["root"]) if value.get("root") else None
+    def current_file(self) -> Path | None:
+        value=self.data.get("current_file"); return Path(value) if value else None
+    def set_current_file(self, value: str) -> Path:
+        workspace=self.workspace()
+        if not workspace: raise ValueError("configure a workspace first")
+        path=Path(value).expanduser()
+        if not path.is_absolute(): path=workspace/path
+        path=path.resolve()
+        if workspace != path and workspace not in path.parents: raise PermissionError("file must be inside the authorized workspace")
+        if not path.is_file(): raise ValueError("file does not exist")
+        self.data["current_file"]=str(path); self.save(); return path
+    def clear_current_file(self): self.data.pop("current_file",None); self.save()
     def context_path(self) -> Path:
         workspace=self.data.get("workspace") or {}; ident=workspace.get("id")
         if not ident: raise ValueError("configure a workspace first")

@@ -26,7 +26,7 @@ except ImportError:
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 
-VERSION="0.4.2"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.4.3"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
@@ -192,11 +192,20 @@ def multiline(input_fn,output):
 
 def command(state,parts,input_fn=input,output=print):
     head=parts[0] if parts else "help"; tail=parts[1:]
-    if head=="help": output("/status · /workspace show|set <path> · /context show|set|load <path>|reload|clear · /models · /quit"); return 0
+    if head=="help": output("/status · /workspace show|set <path> · /file set|show|clear · /context show|set|load <path>|reload|clear · /models · /quit"); return 0
     if head=="status": show_status(state); return 0
     if head=="models":
         for k,v in runtime_status(state).items():
             if k in {"ollama","embeddinggemma:latest","qwen3.8:latest","qwen3.6:latest","semantic"}: output(f"{k}: {v}")
+        return 0
+    if head=="file":
+        action=tail[0] if tail else "show"
+        if action=="set":
+            try: output(f"Current file: {state.set_current_file(' '.join(tail[1:]))}")
+            except (ValueError, PermissionError) as exc: output(f"Error: {exc}")
+        elif action=="show": output(str(state.current_file() or "not configured"))
+        elif action=="clear": state.clear_current_file(); output("Current file cleared.")
+        else: output("Error: usage /file set \"path\" | /file show | /file clear")
         return 0
     if head=="workspace":
         if tail and tail[0]=="set":
