@@ -9,7 +9,7 @@ os.environ["OLCR_ALLOWED_ROOTS"] = _tmp.name
 
 try:
     from fastapi.testclient import TestClient
-    from olcr_api.app import app
+    from olcr_api.app import app, conversation_memory_constraint
     from olcr_cli.main import VERSION as CLI_VERSION
 except ImportError:
     TestClient = None
@@ -32,6 +32,12 @@ class APITests(unittest.TestCase):
     def test_index_path_traversal(self):
         response = self.client.post("/api/files/index", json={"path":"/etc/passwd"})
         self.assertEqual(403, response.status_code)
+
+    def test_memory_off_runtime_constraint_guards_unavailable_history(self):
+        constraint = conversation_memory_constraint(False)
+        self.assertIn("Do not invent replacement facts", constraint)
+        self.assertIn("Current user message", constraint)
+        self.assertEqual("", conversation_memory_constraint(True))
 
 
 if __name__ == "__main__": unittest.main()

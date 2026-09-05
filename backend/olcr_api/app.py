@@ -63,6 +63,7 @@ class SettingsInput(BaseModel):
     reranker_threshold: float = 0.01
     allowed_roots: list[str]
     vector_enabled: bool = False
+    conversation_memory_enabled: bool = True
     context_budget: int = Field(ge=256, le=200000)
     result_limit: int = Field(default=20, ge=1, le=200)
     confirmation_policy: str = "explicit"
@@ -85,6 +86,19 @@ conversation_memory = ConversationMemory(db, OllamaEmbeddingProvider(settings.ol
 cancel_events: dict[str,threading.Event]={}
 app = FastAPI(title="OLCR", version="0.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
+
+MEMORY_OFF_CONSTRAINT = (
+    "[MEMORY_DISABLED]\n"
+    "Conversation memory is disabled for this request. Do not claim to remember "
+    "or retrieve facts from previous conversations unless they are independently "
+    "present in currently available context. If prior-conversation details are "
+    "unavailable, say they cannot be verified because conversation memory is "
+    "disabled or unavailable. Do not invent replacement facts. Current user "
+    "message, core context, and explicitly supplied context remain usable."
+)
+
+def conversation_memory_constraint(enabled: bool) -> str:
+    return "" if enabled else MEMORY_OFF_CONSTRAINT
 
 
 def rebuild(candidate: Settings) -> None:
@@ -116,12 +130,13 @@ def chat(value: ChatInput):
         if safe: external_context="[EXTERNAL_CONTEXT]\n"+"\n\n".join(safe)
     memory_context = ""
     try:
-        memories = conversation_memory.search(value.message, conversation_id)
+        memories = conversation_memory.search(value.message, conversation_id) if settings.conversation_memory_enabled else []
         if memories:
             memory_context = "\n[CONVERSATION_MEMORY]\n" + "\n\n".join(x["text"][:3000] for x in memories)
     except Exception:
         memory_context = ""
-    combined=(value.core_context or "")+("\n"+external_context if external_context else "")+memory_context
+    constraint=conversation_memory_constraint(settings.conversation_memory_enabled)
+    combined=(value.core_context or "")+("\n"+external_context if external_context else "")+memory_context+("\n"+constraint if constraint else "")
     task, response = (runtime.execute_image(value.message, value.image, combined)
                       if value.image else runtime.execute(value.message, value.approved, combined))
     db.save_task(task,conversation_id)

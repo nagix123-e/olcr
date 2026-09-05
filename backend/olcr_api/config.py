@@ -30,6 +30,7 @@ class Settings:
     reranker_threshold: float = 0.01
     allowed_roots: tuple[str, ...] = ()
     vector_enabled: bool = False
+    conversation_memory_enabled: bool = True
     context_budget: int = 8000
     result_limit: int = 20
     confirmation_policy: str = "explicit"

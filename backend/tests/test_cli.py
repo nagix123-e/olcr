@@ -35,6 +35,24 @@ class CliTests(unittest.TestCase):
         with contextlib.redirect_stderr(err): cli.diagnostic("BACKEND_PORT=54321")
         self.assertNotIn("BACKEND_PORT=",err.getvalue())
 
+    def test_memory_controls_show_on_and_off(self):
+        responses=[]; output=[]
+        def fake_api(method, path, body=None):
+            if method == "GET": return {"conversation_memory_enabled": responses[-1] if responses else True}
+            responses.append(body["conversation_memory_enabled"]); return body
+        with patch.object(cli, "api", side_effect=fake_api):
+            self.assertEqual(0, command(self.state, ["memory", "show"], output=output.append))
+            self.assertEqual(0, command(self.state, ["memory", "off"], output=output.append))
+            self.assertEqual(0, command(self.state, ["memory", "on"], output=output.append))
+        self.assertIn("Conversation memory: ON", output)
+        self.assertIn("Conversation memory: OFF", output)
+        self.assertEqual([False, True], responses)
+
+    def test_memory_invalid_subcommand_is_actionable(self):
+        output=[]
+        self.assertEqual(2, command(self.state, ["memory", "clear"], output=output.append))
+        self.assertIn("/memory show|on|off", output[0])
+
     def test_verbose_startup_keeps_lifecycle_diagnostics(self):
         cli.VERBOSE=True; err=io.StringIO()
         with contextlib.redirect_stderr(err): cli.diagnostic("BACKEND_ENSURE_START")

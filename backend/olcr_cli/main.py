@@ -257,12 +257,26 @@ def multiline(input_fn,output):
 
 def command(state,parts,input_fn=input,output=print):
     head=parts[0] if parts else "help"; tail=parts[1:]
-    if head=="help": output("/status · /option show|set|reset <brain|router|vision> · /workspace show|set <path> · /file set|show|clear · /image load|show|clear · /web open|show|clear|status · /external set|show|clear · /import external [to <path>] · /context show|set|load <path>|reload|clear · /models · /quit"); return 0
+    if head=="help": output("/status · /option show|set|reset <brain|router|vision> · /memory show|on|off · /workspace show|set <path> · /file set|show|clear · /image load|show|clear · /web open|show|clear|status · /external set|show|clear · /import external [to <path>] · /context show|set|load <path>|reload|clear · /models · /quit"); return 0
     if head=="status": show_status(state); return 0
     if head=="models":
         for k,v in runtime_status(state).items():
             if k in {"ollama","embeddinggemma:latest","semantic"} or k.startswith(("qwen3:","qwen2.5vl:")): output(f"{k}: {v}")
         return 0
+    if head=="memory":
+        action=tail[0] if tail else "show"
+        if action not in {"show", "on", "off"}:
+            output("Error: usage /memory show|on|off"); return 2
+        try:
+            current=api("GET", "/settings")
+            if action != "show":
+                current["conversation_memory_enabled"] = action == "on"
+                api("PUT", "/settings", current)
+            enabled=current.get("conversation_memory_enabled", True) if action == "show" else action == "on"
+            output(f"Conversation memory: {'ON' if enabled else 'OFF'}")
+            return 0
+        except Exception as exc:
+            output(f"Error: {exc}"); return 2
     if head=="option":
         roles={"brain":"main_model","router":"router_model","vision":"vision_model"}
         try:
@@ -400,7 +414,7 @@ def repl(state,input_fn=input,output=print):
             if value.startswith("/"):
                 try: parts=shlex.split(value[1:])
                 except ValueError as exc: output(f"Error: invalid command syntax ({exc})"); continue
-                known={"help","status","models","file","image","workspace","context"}
+                known={"help","status","models","memory","file","image","workspace","context"}
                 if parts and parts[0].lower() in known:
                     command(state,parts,input_fn,output); continue
                 auto_image=_auto_image_path(value)
