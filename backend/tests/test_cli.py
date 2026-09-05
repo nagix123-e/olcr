@@ -2,7 +2,11 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+import contextlib
+import io
+from unittest.mock import patch
 
+import olcr_cli.main as cli
 from olcr_cli.main import banner, command, main, request_text, _explicit_implementation_request
 from olcr_cli.state import State
 
@@ -26,6 +30,32 @@ class CliTests(unittest.TestCase):
     def test_parser_version(self):
         with self.assertRaises(SystemExit) as caught: main(["--version"])
         self.assertEqual(0,caught.exception.code)
+    def test_default_startup_hides_internal_diagnostics(self):
+        cli.VERBOSE=False; err=io.StringIO()
+        with contextlib.redirect_stderr(err): cli.diagnostic("BACKEND_PORT=54321")
+        self.assertNotIn("BACKEND_PORT=",err.getvalue())
+
+    def test_verbose_startup_keeps_lifecycle_diagnostics(self):
+        cli.VERBOSE=True; err=io.StringIO()
+        with contextlib.redirect_stderr(err): cli.diagnostic("BACKEND_ENSURE_START")
+        self.assertIn("BACKEND_ENSURE_START",err.getvalue())
+        cli.VERBOSE=False
+
+    def test_cli_repl_uses_same_backend_path_in_default_and_verbose_modes(self):
+        self.state.set_workspace(str(self.workspace)); self.state.data["setup_complete"]=True
+        calls=[]
+        def run(verbose):
+            cli.VERBOSE=verbose
+            with patch.object(cli,"configure_backend",side_effect=lambda state:calls.append(verbose)), patch.object(cli,"show_status"), patch.object(cli,"shutdown_owned_backend"):
+                return cli.repl(self.state,input_fn=lambda prompt:"/quit",output=lambda value:calls.append(("output",value)))
+        self.assertEqual(0,run(False)); self.assertEqual(0,run(True)); self.assertEqual([False,True],[x for x in calls if isinstance(x,bool)])
+        cli.VERBOSE=False
+
+    def test_backend_startup_failure_is_actionable_without_ready(self):
+        self.state.set_workspace(str(self.workspace)); self.state.data["setup_complete"]=True; output=[]
+        with patch.object(cli,"configure_backend",side_effect=RuntimeError("backend unavailable")), patch.object(cli,"shutdown_owned_backend"):
+            self.assertEqual(1,cli.repl(self.state,input_fn=lambda prompt:"/quit",output=output.append))
+        text=" ".join(output); self.assertIn("backend startup failed",text); self.assertNotIn("READY",text)
     def test_capability_query_is_grounded_and_non_mutating(self):
         self.state.set_workspace(str(self.workspace))
         answer=request_text(self.state,"workspace内のファイルを自力で作成・更新できますか？")

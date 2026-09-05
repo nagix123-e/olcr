@@ -29,6 +29,11 @@ from olcr_api.web import setup_guidance
 
 VERSION="0.4.7"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
+VERBOSE = False
+
+def diagnostic(message):
+    if VERBOSE:
+        print(message, file=sys.stderr, flush=True)
 
 def color(text, enabled): return f"{ACCENT}{text}{RESET}" if enabled else text
 def banner(enabled=True, narrow=False):
@@ -47,7 +52,7 @@ def api(method, path, body=None):
 
 def backend(state):
     global OWNED_BACKEND
-    print("BACKEND_ENSURE_START", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_ENSURE_START")
     try:
         health=api("GET","/health")
         expected_db=str(state.root/"olcr.db")
@@ -57,7 +62,7 @@ def backend(state):
         owned = OWNED_BACKEND is not None and OWNED_BACKEND.poll() is None
         compatible = health.get("app_support") == str(state.root) and health.get("db_path") == expected_db
         if compatible and (owned or health.get("version") == VERSION):
-            print("BACKEND_REUSE=YES", file=sys.stderr, flush=True)
+            diagnostic("BACKEND_REUSE=YES")
             return health
     except (error.URLError,error.HTTPError,TimeoutError): pass
     root=state.workspace()
@@ -67,19 +72,19 @@ def backend(state):
     sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM); sock.bind(("127.0.0.1",0)); port=sock.getsockname()[1]; sock.close()
     global API
     API=f"http://127.0.0.1:{port}/api"
-    print("BACKEND_REUSE=NO", file=sys.stderr, flush=True)
-    print(f"BACKEND_PORT={port}", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_REUSE=NO")
+    diagnostic(f"BACKEND_PORT={port}")
     env=os.environ|{"OLCR_DB_PATH":str(state.root/"olcr.db"),"OLCR_ALLOWED_ROOTS":str(root),"OLCR_BACKEND_PORT":str(port)}
-    # Keep backend diagnostics visible in the invoking Terminal while retaining
-    # the existing process ownership and loopback-only execution model.
-    OWNED_BACKEND = subprocess.Popen([sys.executable,"-m","uvicorn","olcr_api.app:app","--host","127.0.0.1","--port",str(port)],cwd=str(Path(__file__).parents[1]),env=env,start_new_session=True)
-    print("BACKEND_PROCESS_START=YES", file=sys.stderr, flush=True)
-    print("BACKEND_HEALTH_WAIT_START", file=sys.stderr, flush=True)
+    uvicorn_args=[sys.executable,"-m","uvicorn","olcr_api.app:app","--host","127.0.0.1","--port",str(port)]
+    if not VERBOSE: uvicorn_args += ["--log-level","critical","--no-access-log"]
+    OWNED_BACKEND = subprocess.Popen(uvicorn_args,cwd=str(Path(__file__).parents[1]),env=env,start_new_session=True, stdout=None if VERBOSE else subprocess.DEVNULL, stderr=None if VERBOSE else subprocess.DEVNULL)
+    diagnostic("BACKEND_PROCESS_START=YES")
+    diagnostic("BACKEND_HEALTH_WAIT_START")
     for _ in range(30):
         time.sleep(.2)
         try:
             health=api("GET","/health")
-            print("BACKEND_HEALTH_READY=YES", file=sys.stderr, flush=True)
+            diagnostic("BACKEND_HEALTH_READY=YES")
             return health
         except (error.URLError,error.HTTPError,TimeoutError): pass
     # Health never became ready: clean up only the child spawned above.
@@ -89,20 +94,20 @@ def backend(state):
 def shutdown_owned_backend():
     """Stop only the service process started by this CLI invocation."""
     global OWNED_BACKEND
-    print("BACKEND_SHUTDOWN_START", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_SHUTDOWN_START")
     proc=OWNED_BACKEND
-    print(f"BACKEND_SHUTDOWN_OWNED={'YES' if proc is not None else 'NO'}", file=sys.stderr, flush=True)
+    diagnostic(f"BACKEND_SHUTDOWN_OWNED={'YES' if proc is not None else 'NO'}")
     if proc and proc.poll() is None:
-        proc.terminate(); print("BACKEND_TERMINATE_SENT=YES", file=sys.stderr, flush=True)
-        try: proc.wait(timeout=5); print("BACKEND_KILL_FALLBACK=NO", file=sys.stderr, flush=True)
+        proc.terminate(); diagnostic("BACKEND_TERMINATE_SENT=YES")
+        try: proc.wait(timeout=5); diagnostic("BACKEND_KILL_FALLBACK=NO")
         except subprocess.TimeoutExpired:
-            proc.kill(); print("BACKEND_KILL_FALLBACK=YES", file=sys.stderr, flush=True); proc.wait(timeout=5)
-    print(f"BACKEND_EXIT_CONFIRMED={'YES' if proc is None or proc.poll() is not None else 'NO'}", file=sys.stderr, flush=True)
+            proc.kill(); diagnostic("BACKEND_KILL_FALLBACK=YES"); proc.wait(timeout=5)
+    diagnostic(f"BACKEND_EXIT_CONFIRMED={'YES' if proc is None or proc.poll() is not None else 'NO'}")
     OWNED_BACKEND = None
-    print("BACKEND_SHUTDOWN_END", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_SHUTDOWN_END")
 
 def configure_backend(state):
-    print("BACKEND_SETTINGS_SYNC_START", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_SETTINGS_SYNC_START")
     backend(state)
     # Reload persisted settings into an already-running OLCR backend so a
     # previous CLI process cannot retain stale model configuration.
@@ -119,7 +124,7 @@ def configure_backend(state):
     if "OLLAMA_SEMANTIC_JUDGE_MODEL" in os.environ:
         settings["semantic_judge_model"] = os.environ["OLLAMA_SEMANTIC_JUDGE_MODEL"]
     api("PUT","/settings",settings)
-    print("BACKEND_SETTINGS_SYNC_END", file=sys.stderr, flush=True)
+    diagnostic("BACKEND_SETTINGS_SYNC_END")
 
 def runtime_status(state):
     checks={"platform":"READY" if platform.system()=="Darwin" and platform.machine()=="arm64" else "UNSUPPORTED","workspace":"READY" if state.workspace() else "MISSING","ripgrep":"READY" if shutil.which("rg") else "DEGRADED (Python fallback)","ollama":"UNAVAILABLE","semantic":"Experimental / unchecked"}
@@ -371,9 +376,9 @@ def repl(state,input_fn=input,output=print):
     if not state.data.get("setup_complete") or not state.workspace(): wizard(state,input_fn,output)
     try:
         configure_backend(state)
-        print("BACKEND_STARTUP_COMPLETE=YES", file=sys.stderr, flush=True)
+        diagnostic("BACKEND_STARTUP_COMPLETE=YES")
     except Exception as exc:
-        print(f"BACKEND_STARTUP_COMPLETE=NO: {exc}", file=sys.stderr, flush=True)
+        diagnostic(f"BACKEND_STARTUP_COMPLETE=NO: {exc}")
         output(f"Error: backend startup failed: {exc}")
         return 1
     show_status(state)
@@ -412,8 +417,9 @@ def repl(state,input_fn=input,output=print):
     finally: shutdown_owned_backend()
 
 def main(argv=None):
+    global VERBOSE
     parser=argparse.ArgumentParser(prog="olcr",description="OLCR terminal-first local workspace")
-    parser.add_argument("--version",action="version",version=VERSION); parser.add_argument("command",nargs="*"); args=parser.parse_args(argv); state=State()
+    parser.add_argument("--version",action="version",version=VERSION); parser.add_argument("--verbose",action="store_true",help="show lifecycle and backend diagnostics"); parser.add_argument("command",nargs="*"); args=parser.parse_args(argv); VERBOSE=args.verbose; state=State()
     if not args.command:return repl(state)
     if args.command[0]=="search":
         try: print(request_text(state,"search "+" ".join(args.command[1:]))); return 0
