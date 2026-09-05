@@ -22,6 +22,7 @@ from .web import fetch, search
 from .retrieval import DisabledVectorStore, FileRetriever, FTSRetriever, PathGuard, RetrievalRouter
 from .semantic import EmbeddingFailure, LocalVectorStore, OllamaEmbeddingProvider, OllamaIntentNormalizer, OllamaSemanticRelationEvaluator, QwenReranker
 from .runtime import ContextManager, Runtime
+from .conversation_memory import ConversationMemory
 from .models import Route, Task, TaskState
 from .ollama import ModelFailure
 
@@ -80,8 +81,9 @@ vectors = LocalVectorStore(db,OllamaEmbeddingProvider(settings.ollama_endpoint),
 retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_enabled, OllamaSemanticRelationEvaluator(settings.ollama_endpoint,settings.semantic_judge_model), OllamaIntentNormalizer(settings.ollama_endpoint,settings.semantic_judge_model), QwenReranker(settings.reranker_model,settings.reranker_enabled,settings.reranker_threshold) if settings.reranker_enabled else None, settings.reranker_threshold)
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
+conversation_memory = ConversationMemory(db, OllamaEmbeddingProvider(settings.ollama_endpoint), settings.embedding_model)
 cancel_events: dict[str,threading.Event]={}
-app = FastAPI(title="OLCR", version="0.4.9")
+app = FastAPI(title="OLCR", version="0.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -91,6 +93,8 @@ def rebuild(candidate: Settings) -> None:
     vectors=LocalVectorStore(db,OllamaEmbeddingProvider(settings.ollama_endpoint),settings.embedding_model,settings.allowed_roots) if settings.vector_enabled else DisabledVectorStore()
     retrieval=RetrievalRouter(files,FTSRetriever(db),vectors,settings.vector_enabled,OllamaSemanticRelationEvaluator(settings.ollama_endpoint,settings.semantic_judge_model),OllamaIntentNormalizer(settings.ollama_endpoint,settings.semantic_judge_model),QwenReranker(settings.reranker_model,settings.reranker_enabled,settings.reranker_threshold) if settings.reranker_enabled else None,settings.reranker_threshold)
     runtime=Runtime(settings,db,retrieval,OllamaProvider(settings.ollama_endpoint),artifacts)
+    global conversation_memory
+    conversation_memory=ConversationMemory(db, OllamaEmbeddingProvider(settings.ollama_endpoint), settings.embedding_model)
 
 
 @app.get("/api/health")
@@ -110,11 +114,22 @@ def chat(value: ChatInput):
         candidates=[root] if root.is_file() else [(root/n).resolve() for n in names] if root.is_dir() else []
         safe=[f"source: {p.relative_to(root) if p != root else p.name}\ncontent:\n{p.read_text(encoding='utf-8')[:50000]}" for p in candidates if p.is_file() and not p.is_symlink() and (p==root or root in p.parents)]
         if safe: external_context="[EXTERNAL_CONTEXT]\n"+"\n\n".join(safe)
-    combined=(value.core_context or "")+("\n"+external_context if external_context else "")
+    memory_context = ""
+    try:
+        memories = conversation_memory.search(value.message, conversation_id)
+        if memories:
+            memory_context = "\n[CONVERSATION_MEMORY]\n" + "\n\n".join(x["text"][:3000] for x in memories)
+    except Exception:
+        memory_context = ""
+    combined=(value.core_context or "")+("\n"+external_context if external_context else "")+memory_context
     task, response = (runtime.execute_image(value.message, value.image, combined)
                       if value.image else runtime.execute(value.message, value.approved, combined))
     db.save_task(task,conversation_id)
     db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id)
+    try:
+        conversation_memory.index_completed_turn(conversation_id)
+        conversation_memory.backfill(8)
+    except Exception: pass
     return {"conversation_id":conversation_id,"task": task.__dict__ | {"route": task.route.value if task.route else None, "state": task.state.value}, "response": response}
 
 
@@ -262,7 +277,15 @@ def conversation(conversation_id:str):
 def delete_conversation(conversation_id:str):
     with db.connect() as conn: deleted=conn.execute("DELETE FROM conversations WHERE id=?",(conversation_id,)).rowcount
     if not deleted: raise HTTPException(404,"conversation not found")
+    db.delete_memory_for_conversation(conversation_id)
     return {"deleted":conversation_id}
+
+@app.post("/api/conversation-memory/maintain")
+def maintain_conversation_memory(limit: int = Query(default=8, ge=1, le=8)):
+    try:
+        return {"indexed": conversation_memory.backfill(limit), "limit": limit, "index_version": conversation_memory.INDEX_VERSION}
+    except Exception as exc:
+        return {"indexed": 0, "limit": limit, "status": "degraded", "error": type(exc).__name__}
 
 
 @app.get("/api/settings")

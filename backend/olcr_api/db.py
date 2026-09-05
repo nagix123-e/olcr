@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at REAL NOT NULL);
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS memory_facts(id INTEGER PRIMARY KEY, text TEXT NOT NU
 CREATE TABLE IF NOT EXISTS application_settings(key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS pending_actions(task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE, action_id TEXT UNIQUE NOT NULL, tool_name TEXT NOT NULL, tool_input_json TEXT NOT NULL, expires_at REAL NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, path TEXT UNIQUE NOT NULL, result_count INTEGER NOT NULL, size_bytes INTEGER NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS conversation_memory_embeddings(id INTEGER PRIMARY KEY, conversation_id TEXT NOT NULL, user_message TEXT NOT NULL, assistant_message TEXT NOT NULL, turn_ordinal INTEGER NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, index_version TEXT NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(conversation_id,turn_ordinal,model,index_version));
 CREATE TABLE IF NOT EXISTS vector_embeddings(id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, chunk_ordinal INTEGER NOT NULL, line_start INTEGER NOT NULL, text TEXT NOT NULL, content_hash TEXT NOT NULL, document_hash TEXT NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, index_version TEXT NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(document_id,chunk_ordinal,model,index_version));
 """
 
@@ -52,6 +53,14 @@ class Database:
             if rows and rows[0][0] == 2:
                 db.execute("CREATE TABLE vector_embeddings(id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, chunk_ordinal INTEGER NOT NULL, line_start INTEGER NOT NULL, text TEXT NOT NULL, content_hash TEXT NOT NULL, document_hash TEXT NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, index_version TEXT NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(document_id,chunk_ordinal,model,index_version))")
                 db.execute("UPDATE schema_version SET version=3")
+            if rows and rows[0][0] == 3:
+                db.execute("CREATE TABLE IF NOT EXISTS conversation_memory_embeddings(id INTEGER PRIMARY KEY, conversation_id TEXT NOT NULL, user_message TEXT NOT NULL, assistant_message TEXT NOT NULL, turn_ordinal INTEGER NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(conversation_id,turn_ordinal,model))")
+                db.execute("UPDATE schema_version SET version=4")
+                rows=[(4,)]
+            if rows and rows[0][0] == 4:
+                db.execute("ALTER TABLE conversation_memory_embeddings ADD COLUMN index_version TEXT NOT NULL DEFAULT 'conversation-turn-v1'")
+                db.execute("UPDATE schema_version SET version=5")
+                rows=[(5,)]
             elif rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.commit()
         finally: db.close()
@@ -110,6 +119,21 @@ class Database:
             row = db.execute("SELECT * FROM conversations WHERE id=?", (conversation_id,)).fetchone()
             if not row: return None
             return {**dict(row), "messages": [dict(x) for x in db.execute("SELECT * FROM messages WHERE conversation_id=? ORDER BY ordinal", (conversation_id,))]}
+    def completed_turns(self, exclude_conversation: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            sql = """SELECT u.conversation_id,u.ordinal,u.content user_message,a.content assistant_message
+                     FROM messages u JOIN messages a ON a.conversation_id=u.conversation_id AND a.ordinal=u.ordinal+1
+                     WHERE u.role='user' AND a.role='assistant'"""
+            args=[]
+            if exclude_conversation: sql += " AND u.conversation_id != ?"; args.append(exclude_conversation)
+            sql += " ORDER BY u.created_at"
+            return [dict(x) for x in db.execute(sql,args)]
+    def save_memory_embedding(self, turn: dict[str, Any], model: str, vector: list[float], now: float, index_version: str) -> None:
+        with self.connect() as db: db.execute("INSERT OR REPLACE INTO conversation_memory_embeddings(conversation_id,user_message,assistant_message,turn_ordinal,model,dimension,index_version,vector_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)", (turn['conversation_id'],turn['user_message'],turn['assistant_message'],turn['ordinal'],model,len(vector),index_version,json.dumps(vector),now))
+    def memory_embeddings(self, model: str, dimension: int, index_version: str) -> list[dict[str, Any]]:
+        with self.connect() as db: return [dict(x) for x in db.execute("SELECT * FROM conversation_memory_embeddings WHERE model=? AND dimension=? AND index_version=?",(model,dimension,index_version))]
+    def delete_memory_for_conversation(self, conversation_id: str) -> None:
+        with self.connect() as db: db.execute("DELETE FROM conversation_memory_embeddings WHERE conversation_id=?", (conversation_id,))
     def save_setting(self, key: str, value: Any, now: float) -> None:
         with self.connect() as db: db.execute("INSERT OR REPLACE INTO application_settings VALUES(?,?,?)", (key,json.dumps(value),now))
     def load_settings(self) -> dict[str, Any]:
