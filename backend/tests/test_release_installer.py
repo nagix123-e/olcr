@@ -16,7 +16,7 @@ INSTALLER = REPO / "packaging" / "install.sh"
 
 class ReleaseInstallerTests(unittest.TestCase):
     def make_release(self, temporary: Path) -> Path:
-        release = temporary / "olcr-v0.1.3-macos-arm64"
+        release = temporary / "olcr-v0.4.7-macos-arm64"
         release.mkdir()
         shutil.copy2(INSTALLER, release / "install.sh")
         for name in ("app", "frontend", "models", "runtime", "manifest", "licenses"):
@@ -68,7 +68,7 @@ class ReleaseInstallerTests(unittest.TestCase):
             result, log, app_home, preserved = self.run_installer(release, temporary)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("unsigned, not-notarized", result.stderr)
-            runtime = app_home / "runtime" / "0.1.3" / "runtime"
+            runtime = app_home / "runtime" / "0.4.7" / "runtime"
             self.assertIn(f"-dr com.apple.quarantine {runtime}", log.read_text())
             self.assertNotIn(str(Path.home()), log.read_text())
             self.assertEqual(preserved.read_text(), "preserve me")
