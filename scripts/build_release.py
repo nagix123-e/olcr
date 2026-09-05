@@ -5,7 +5,7 @@ import hashlib, json, os, platform, shutil, subprocess, tarfile, time
 from importlib.metadata import distributions
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]; VERSION="0.4.7"; NAME=f"olcr-v{VERSION}-macos-arm64"
+ROOT=Path(__file__).resolve().parents[1]; VERSION="0.4.8"; NAME=f"olcr-v{VERSION}-macos-arm64"
 RUNTIME=Path(os.environ.get("OLCR_STANDALONE_PYTHON", "/private/tmp/olcr-release-inputs/cpython-3.10.21+20260825-aarch64-apple-darwin-install_only_stripped.tar.gz"))
 RUNTIME_SHA="78c7cb7cf464985bf8fd30fbf913aa428d152fd76b045e149f00b0f6b681a5ae"
 MODEL=Path(os.environ.get("OLCR_RERANKER_SOURCE", "/private/tmp/olcr-rerank-hf/hub/models--Qwen--Qwen3-Reranker-0.6B/snapshots/e61197ed45024b0ed8a2d74b80b4d909f1255473"))
@@ -20,6 +20,12 @@ def sha(path: Path):
 def files(root: Path): return [{"path":str(p.relative_to(root)),"sha256":sha(p),"bytes":p.stat().st_size} for p in sorted(root.rglob("*")) if p.is_file()]
 def copy_file(source: Path, destination: Path):
     destination.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(source,destination)
+def clean_runtime_cache(stage: Path):
+    """Remove disposable bytecode/cache artifacts from release staging."""
+    for cached in stage.rglob("__pycache__"):
+        shutil.rmtree(cached)
+    for compiled in list(stage.rglob("*.pyc")) + list(stage.rglob("*.pyo")):
+        compiled.unlink()
 def collect_licenses(stage: Path, site: Path) -> list[dict]:
     """Copy authoritative bundled evidence and fail if it is unavailable."""
     root=stage/"licenses"; root.mkdir(); records=[]
@@ -50,7 +56,7 @@ def collect_licenses(stage: Path, site: Path) -> list[dict]:
         target=root/"frontend"/f"{package}-LICENSE"; copy_file(source,target)
         records.append({"component":package,"version":"see package-lock.json","license":"MIT","evidence":"installed frontend package LICENSE","path":str(target.relative_to(stage)),"status":"VERIFIED"})
     (root/"license-manifest.json").write_text(json.dumps({"components":records},indent=2,sort_keys=True)+"\n")
-    notices=["# OLCR v0.1.3 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
+    notices=["# OLCR v0.4.8 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
     (root/"THIRD_PARTY_NOTICES.md").write_text("\n".join(notices)+"\n")
     return records
 def main():
@@ -60,6 +66,7 @@ def main():
     run("npm","run","typecheck",cwd=ROOT/"frontend"); run("npm","run","build",cwd=ROOT/"frontend")
     out=ROOT/"release"; stage=out/NAME; shutil.rmtree(stage,ignore_errors=True); stage.mkdir(parents=True)
     with tarfile.open(RUNTIME,"r:gz") as archive: archive.extractall(stage)
+    clean_runtime_cache(stage)
     (stage/"runtime").mkdir(); shutil.move(str(stage/"python"),str(stage/"runtime"/"python"))
     site=stage/"runtime"/"python"/"lib"/"python3.10"/"site-packages"; site.mkdir(parents=True,exist_ok=True)
     py=stage/"runtime"/"python"/"bin"/"python3"
@@ -76,7 +83,7 @@ def main():
     licenses=collect_licenses(stage,site)
     (stage/"README.txt").write_text(
         "Run ./install.sh, then run olcr. Ollama and its models remain external prerequisites.\n\n"
-        "OLCR v0.1.3 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
+        "OLCR v0.4.8 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
         "warns and removes it only from OLCR's installed runtime and OLCR-managed launcher; it does "
         "not change Gatekeeper system-wide or affect unrelated files. Running install.sh constitutes "
         "consent to this documented installation step.\n"
