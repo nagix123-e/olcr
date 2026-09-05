@@ -90,7 +90,7 @@ class RetrievalRouter:
         self.semantic_telemetry: dict = getattr(vectors,"last_telemetry",{"state":"disabled","available":False})
     def retrieve(self, query: str, limit: int, filename_hint: bool = False) -> tuple[list[SearchResult], str]:
         self.last_failures = []
-        self.semantic_telemetry={"available":self.vector_enabled and getattr(self.vectors,"state","") not in ("disabled","model_unavailable"),"attempted":False,"state":getattr(self.vectors,"state","disabled"),"model":getattr(self.vectors,"model","")}
+        self.semantic_telemetry={"available":self.vector_enabled and getattr(self.vectors,"state","") not in ("disabled","model_unavailable"),"attempted":False,"state":getattr(self.vectors,"state","disabled"),"model":getattr(self.vectors,"model",""),"router_enter":True,"vector_enabled_effective":self.vector_enabled}
         if filename_hint:
             try: rows = self.files.filename(query, limit)
             except Exception as exc:
@@ -99,7 +99,8 @@ class RetrievalRouter:
         try: rows = self.files.search(query, limit)
         except Exception as exc:
             self.last_failures.append({"layer":"lexical","category":type(exc).__name__}); rows=[]
-        if rows: return rows, rows[0].method
+        self.semantic_telemetry["lexical_results_count"]=len(rows)
+        if rows: self.semantic_telemetry["lexical_short_circuit"]=True; return rows, rows[0].method
         try: rows = self.fts.search(query, limit)
         except Exception as exc:
             self.last_failures.append({"layer":"fts5","category":type(exc).__name__}); rows=[]
@@ -128,15 +129,27 @@ class RetrievalRouter:
                 self.semantic_telemetry={"available":True,"attempted":True,"selected":False,"state":"error","model":getattr(self.vectors,"model","") ,"error_category":getattr(exc,"category",type(exc).__name__)}
                 return [], "none"
         if self.vector_enabled:
+            self.semantic_telemetry["vector_branch_enter"]=True
             try:
                 if self.semantic_normalizer is None:
+                    self.semantic_telemetry.update({"vector_search_skip_reason":"normalizer_unavailable","vector_precall_status":"SKIPPED"})
                     self.semantic_telemetry.update({"normalization":{"attempted":False,"succeeded":False,"error":"normalizer_unavailable"},"relation_attempted":False,"abstained":True});return [],"none"
                 try:
                     intent=self.semantic_normalizer.normalize(query)
+                    self.semantic_telemetry["normalizer_diagnostics"]=getattr(self.semantic_normalizer,"last_diagnostics",{})
                     normalization={"attempted":True,"model":intent.model,"succeeded":True,"latency_ms":intent.latency_ms,"intent":intent.intent,"requested_information":intent.requested_information,"constraints":list(intent.constraints)}
                 except Exception as exc:
+                    self.semantic_telemetry["normalizer_diagnostics"]=getattr(self.semantic_normalizer,"last_diagnostics",{})
+                    self.semantic_telemetry.update({"vector_search_skip_reason":"normalizer_error","vector_precall_status":"SKIPPED","vector_precall_error_class":getattr(exc,"category",type(exc).__name__)})
                     self.semantic_telemetry.update({"normalization":{"attempted":True,"model":getattr(self.semantic_normalizer,"model",""),"succeeded":False,"error":getattr(exc,"category",type(exc).__name__)},"relation_attempted":False,"abstained":True});return [],"none"
-                candidates=self.vectors.search(query,limit);base=dict(getattr(self.vectors,"last_telemetry",{}));decisions=[];evaluator_latency=0.0
+                self.semantic_telemetry.update({"vector_store_present":self.vectors is not None,"vector_store_type":type(self.vectors).__name__,"vector_search_method_present":hasattr(self.vectors,"search"),"vector_search_precall":True,"vector_search_call_start":True})
+                try:
+                    candidates=self.vectors.search(query,limit)
+                    self.semantic_telemetry.update({"vector_search_call_end":True,"vector_search_invoke_status":"OK","vector_search_return_received":True,"vector_search_return_count":len(candidates)})
+                except Exception as exc:
+                    self.semantic_telemetry.update({"vector_search_call_end":False,"vector_search_invoke_status":"ERROR","vector_search_error_class":getattr(exc,"category",type(exc).__name__)})
+                    raise
+                base=dict(self.semantic_telemetry);base.update(getattr(self.vectors,"last_telemetry",{}));decisions=[];evaluator_latency=0.0
                 base.update({"normalization":normalization,"relation_attempted":bool(candidates),"candidates_evaluated":0,"relation_model":getattr(self.semantic_evaluator,"model",""),"abstained":True,"selected":False})
                 if candidates and self.semantic_evaluator is None:
                     base["relation_error"]="evaluator_unavailable";self.semantic_telemetry=base;return [],"none"

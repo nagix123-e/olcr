@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import json
+import base64
+import os
 import time
 from typing import Any, Iterator
 from urllib import request, error
@@ -14,25 +16,44 @@ class ModelFailure(RuntimeError):
 
 class ModelProvider(ABC):
     @abstractmethod
-    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False) -> Any: ...
+    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None) -> Any: ...
+    def vision(self, image_bytes: bytes, mime_type: str, prompt: str, model: str = "qwen2.5vl:7b") -> Any:
+        raise ModelFailure("unsupported", "vision model is unavailable")
 
 
 class OllamaProvider(ModelProvider):
     def __init__(self, endpoint: str, timeout: float = MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint, self.timeout = endpoint.rstrip("/"), timeout
-    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False) -> Any:
+    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None) -> Any:
         if not model: raise ModelFailure("configuration", "No Ollama model configured")
-        payload = json.dumps({"model": model, "messages": messages, "stream": stream}).encode()
+        body={"model": model, "messages": messages, "stream": stream}
+        if think is not None: body["think"] = think
+        payload = json.dumps(body).encode()
         req = request.Request(self.endpoint + "/api/chat", data=payload, headers={"Content-Type": "application/json"})
         started = time.perf_counter()
         try:
             response = request.urlopen(req, timeout=self.timeout)
             if stream: return self._stream(response, started)
             data = json.load(response)
-            return {"text": data.get("message", {}).get("content", ""), "prompt_tokens": data.get("prompt_eval_count"),
+            thinking=data.get("message", {}).get("thinking")
+            return {"text": data.get("message", {}).get("content", ""), "thinking_present": isinstance(thinking,str) and bool(thinking), "thinking_chars": len(thinking) if isinstance(thinking,str) else 0, "prompt_tokens": data.get("prompt_eval_count"),
                     "completion_tokens": data.get("eval_count"), "latency_ms": (time.perf_counter()-started)*1000}
+
         except error.URLError as exc: raise ModelFailure("unavailable", str(exc.reason)) from exc
         except TimeoutError as exc: raise ModelFailure("timeout", "Ollama request timed out") from exc
         except (ValueError, KeyError) as exc: raise ModelFailure("invalid_response", str(exc)) from exc
+    def vision(self, image_bytes: bytes, mime_type: str, prompt: str, model: str = "qwen2.5vl:7b") -> Any:
+        """Perception-only Ollama call using its native message images field."""
+        message = {"role": "user", "content": prompt, "images": [base64.b64encode(image_bytes).decode("ascii")]}
+        payload = json.dumps({"model": model, "messages": [message], "stream": False,
+                              "keep_alive": os.environ.get("OLCR_VISION_KEEP_ALIVE", "10m"),
+                              "options": {"num_ctx": int(os.environ.get("OLCR_VISION_NUM_CTX", "4096"))}}).encode()
+        req=request.Request(self.endpoint + "/api/chat", data=payload, headers={"Content-Type":"application/json"})
+        started=time.perf_counter()
+        try:
+            with request.urlopen(req, timeout=self.timeout) as response: data=json.load(response)
+            return {"text":data.get("message",{}).get("content",""),"latency_ms":(time.perf_counter()-started)*1000}
+        except error.URLError as exc: raise ModelFailure("unavailable", str(exc.reason)) from exc
+        except TimeoutError as exc: raise ModelFailure("timeout", "Ollama vision request timed out") from exc
     def _stream(self, response: Any, started: float) -> Iterator[dict[str, Any]]:
         try:
             for raw in response:

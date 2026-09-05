@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MAIN_MODEL = "qwen3.6:latest"
+DEFAULT_MAIN_MODEL = "qwen3:14b"
 MODEL_REQUEST_TIMEOUT_SECONDS = 750
 MODEL_NAME_FIELDS = frozenset({"main_model", "router_model", "embedding_model", "semantic_judge_model"})
 
@@ -19,6 +19,9 @@ def default_db_path() -> str:
 class Settings:
     ollama_endpoint: str = "http://127.0.0.1:11434"
     main_model: str = DEFAULT_MAIN_MODEL
+    vision_model: str = "qwen2.5vl:3b"
+    vision_num_ctx: int = 4096
+    vision_keep_alive: str = "10m"
     router_model: str = ""
     embedding_model: str = ""
     semantic_judge_model: str = ""
@@ -30,6 +33,8 @@ class Settings:
     context_budget: int = 8000
     result_limit: int = 20
     confirmation_policy: str = "explicit"
+    web_mode: str = "off"
+    web_provider: str = "none"
     db_path: str = ""
 
     @classmethod
@@ -38,6 +43,9 @@ class Settings:
         return cls(
             ollama_endpoint=os.environ.get("OLLAMA_ENDPOINT", cls.ollama_endpoint),
             main_model=os.environ.get("OLLAMA_MODEL") or cls.main_model,
+            vision_model=os.environ.get("OLCR_VISION_MODEL", "qwen2.5vl:3b"),
+            vision_num_ctx=int(os.environ.get("OLCR_VISION_NUM_CTX", "4096")),
+            vision_keep_alive=os.environ.get("OLCR_VISION_KEEP_ALIVE", "10m"),
             router_model=os.environ.get("OLLAMA_ROUTER_MODEL", ""),
             embedding_model=os.environ.get("OLLAMA_EMBEDDING_MODEL", ""),
             semantic_judge_model=os.environ.get("OLLAMA_SEMANTIC_JUDGE_MODEL", ""),
@@ -60,6 +68,8 @@ class Settings:
             raise ValueError("result_limit out of range")
         if self.reranker_threshold < 0:
             raise ValueError("reranker_threshold must be non-negative")
+        if self.web_mode not in {"off", "manual", "auto"}: raise ValueError("web_mode must be off, manual, or auto")
+        if self.web_provider not in {"none", "brave", "tavily", "duckduckgo"}: raise ValueError("unsupported web provider")
         self.allowed_roots = tuple(str(Path(p).expanduser().resolve()) for p in self.allowed_roots)
         return self
 

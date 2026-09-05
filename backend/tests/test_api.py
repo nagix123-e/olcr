@@ -10,6 +10,7 @@ os.environ["OLCR_ALLOWED_ROOTS"] = _tmp.name
 try:
     from fastapi.testclient import TestClient
     from olcr_api.app import app
+    from olcr_cli.main import VERSION as CLI_VERSION
 except ImportError:
     TestClient = None
 
@@ -21,6 +22,8 @@ class APITests(unittest.TestCase):
     def test_health(self):
         health=self.client.get("/api/health").json()
         self.assertEqual("ok", health["status"])
+        self.assertEqual("0.4.7", CLI_VERSION)
+        self.assertEqual(CLI_VERSION, health["version"])
         self.assertEqual("ready", health["model_configuration"])
         self.assertEqual(str(Path(_tmp.name) / "api.db"), health["db_path"])
     def test_direct_chat(self):

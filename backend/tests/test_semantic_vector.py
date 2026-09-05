@@ -131,6 +131,27 @@ class SemanticVectorTests(unittest.TestCase):
         self.assertEqual("completed",task.state.value);self.assertFalse(any("source" in x for x in task.selected_context))
         semantic=[x["semantic"] for x in task.selected_context if "semantic" in x][0]
         self.assertEqual("error",semantic["state"]);self.assertEqual("provider_error",semantic["error_category"])
+
+    def test_multiline_retrieval_predicate_preserves_existing_trigger(self):
+        query = ("search 右側パネルに書かれている確認コードを探して教えてください。\n"
+                 "semantic context が見つかった場合は、その内容に基づいて回答してください。")
+        result = Runtime._retrieval_query(query)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.strip())
+        self.assertIn("semantic context", result)
+        self.assertIsNone(Runtime._retrieval_query("右側パネルに書かれている確認コードを教えてください。"))
+
+    def test_multiline_retrieval_dispatch_is_selected(self):
+        query = ("search 右側パネルに書かれている確認コードを探して教えてください。\n"
+                 "semantic context が見つかった場合は、その内容に基づいて回答してください。")
+        settings = Settings(allowed_roots=(str(self.root),), db_path=self.db.path, main_model="mock").validated()
+        runtime = Runtime(settings, self.db, self.router, FakeModel())
+        with patch.object(self.router, "retrieve", return_value=([], "none")) as retrieve:
+            task, _ = runtime.execute(query)
+        retrieve.assert_called_once()
+        self.assertEqual(Runtime._retrieval_query(query), retrieve.call_args.args[0])
+        self.assertEqual("explicit_search_intent", task.reason_category)
+
     def test_schema_is_version_three_and_vectors_not_telemetry(self):
         self.add("schema.txt","The codename is Cedar Lantern.")
         with self.db.connect() as db:
@@ -221,7 +242,7 @@ class SemanticVectorTests(unittest.TestCase):
         self.assertEqual("qwen3.8:latest",settings.main_model);self.assertEqual("embeddinggemma:latest",store.model);self.assertEqual("qwen3.6:latest",evaluator.model)
 
     def test_admissibility_bound_is_256_and_normalization_bound_is_unchanged(self):
-        self.assertEqual(256,ADMISSIBILITY_MAX_TOKENS);self.assertEqual(96,NORMALIZATION_MAX_TOKENS)
+        self.assertEqual(256,ADMISSIBILITY_MAX_TOKENS);self.assertEqual(192,NORMALIZATION_MAX_TOKENS)
 
     def test_structured_relation_contract_parses_selectable_and_non_selectable_relations(self):
         calls=[];responses=iter([

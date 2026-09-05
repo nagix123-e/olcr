@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import time
 import uuid
+import re
 from typing import Optional
 import threading
 
@@ -17,6 +18,7 @@ from .config import Settings
 from .artifacts import ArtifactStore
 from .db import Database
 from .ollama import OllamaProvider
+from .web import fetch, search
 from .retrieval import DisabledVectorStore, FileRetriever, FTSRetriever, PathGuard, RetrievalRouter
 from .semantic import EmbeddingFailure, LocalVectorStore, OllamaEmbeddingProvider, OllamaIntentNormalizer, OllamaSemanticRelationEvaluator, QwenReranker
 from .runtime import ContextManager, Runtime
@@ -29,6 +31,8 @@ class ChatInput(BaseModel):
     conversation_id: Optional[str] = None
     approved: bool = False
     core_context: Optional[str] = Field(default=None, max_length=50_000)
+    image: Optional[dict] = None
+    external: Optional[dict] = None
 
 
 class SearchInput(BaseModel):
@@ -39,6 +43,9 @@ class SearchInput(BaseModel):
 class IndexInput(BaseModel):
     path: str
 
+class WebInput(BaseModel):
+    url: str
+
 class ConfirmationInput(BaseModel):
     action_id: str
     approve: bool
@@ -46,6 +53,7 @@ class ConfirmationInput(BaseModel):
 class SettingsInput(BaseModel):
     ollama_endpoint: str
     main_model: str = ""
+    vision_model: str = "qwen2.5vl:3b"
     router_model: str = ""
     embedding_model: str = ""
     semantic_judge_model: str = ""
@@ -57,6 +65,8 @@ class SettingsInput(BaseModel):
     context_budget: int = Field(ge=256, le=200000)
     result_limit: int = Field(default=20, ge=1, le=200)
     confirmation_policy: str = "explicit"
+    web_mode: str = "off"
+    web_provider: str = "none"
 
 
 environment_settings = Settings.from_env()
@@ -71,7 +81,7 @@ retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_en
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
 cancel_events: dict[str,threading.Event]={}
-app = FastAPI(title="OLCR", version="0.4.3")
+app = FastAPI(title="OLCR", version="0.4.7")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -85,7 +95,7 @@ def rebuild(candidate: Settings) -> None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.1.4", "runtime_root": str(Path(__file__).resolve().parents[2]), "app_support": str(Path(settings.db_path).parent), "vector_enabled": settings.vector_enabled, "roots": settings.allowed_roots, "db_path": settings.db_path, "main_model": settings.main_model, "model_configuration": "ready" if settings.main_model else "not_ready"}
+    return {"status": "ok", "version": app.version, "runtime_root": str(Path(__file__).resolve().parents[2]), "app_support": str(Path(settings.db_path).parent), "vector_enabled": settings.vector_enabled, "semantic_judge_model": settings.semantic_judge_model, "roots": settings.allowed_roots, "db_path": settings.db_path, "main_model": settings.main_model, "model_configuration": "ready" if settings.main_model else "not_ready"}
 
 
 @app.post("/api/chat")
@@ -93,7 +103,16 @@ def chat(value: ChatInput):
     conversation_id=value.conversation_id or db.create_conversation(value.message,time.time(),str(uuid.uuid4()))
     if not db.conversation(conversation_id): raise HTTPException(404,"conversation not found")
     db.add_message(conversation_id,"user",value.message,time.time(),str(uuid.uuid4()))
-    task, response = runtime.execute(value.message, value.approved, value.core_context or "")
+    external_context=""
+    if value.external and value.external.get("read_only") is True:
+        root=Path(value.external.get("canonical_path", "")).resolve()
+        names=re.findall(r"(?<![/\w])([\w.-]+(?:/[\w.-]+)*)", value.message)
+        candidates=[root] if root.is_file() else [(root/n).resolve() for n in names] if root.is_dir() else []
+        safe=[f"source: {p.relative_to(root) if p != root else p.name}\ncontent:\n{p.read_text(encoding='utf-8')[:50000]}" for p in candidates if p.is_file() and not p.is_symlink() and (p==root or root in p.parents)]
+        if safe: external_context="[EXTERNAL_CONTEXT]\n"+"\n\n".join(safe)
+    combined=(value.core_context or "")+("\n"+external_context if external_context else "")
+    task, response = (runtime.execute_image(value.message, value.image, combined)
+                      if value.image else runtime.execute(value.message, value.approved, combined))
     db.save_task(task,conversation_id)
     db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id)
     return {"conversation_id":conversation_id,"task": task.__dict__ | {"route": task.route.value if task.route else None, "state": task.state.value}, "response": response}
@@ -257,6 +276,16 @@ def reload_settings():
 
 @app.get("/api/semantic/status")
 def semantic_status(): return retrieval.semantic_telemetry
+
+@app.post("/api/web/fetch")
+def web_fetch(value: WebInput):
+    try: return fetch(value.url)
+    except Exception as exc: raise HTTPException(400,str(exc)) from exc
+
+@app.post("/api/web/search")
+def web_search(value: SearchInput):
+    try: return {"results": search(value.query, min(value.limit, 5))}
+    except Exception as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.put("/api/settings")
 def put_settings(value:SettingsInput):

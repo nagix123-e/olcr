@@ -5,10 +5,11 @@ import hashlib, json, os, platform, shutil, subprocess, tarfile, time
 from importlib.metadata import distributions
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]; VERSION="0.4.3"; NAME=f"olcr-v{VERSION}-macos-arm64"
+ROOT=Path(__file__).resolve().parents[1]; VERSION="0.4.7"; NAME=f"olcr-v{VERSION}-macos-arm64"
 RUNTIME=Path(os.environ.get("OLCR_STANDALONE_PYTHON", "/private/tmp/olcr-release-inputs/cpython-3.10.21+20260825-aarch64-apple-darwin-install_only_stripped.tar.gz"))
 RUNTIME_SHA="78c7cb7cf464985bf8fd30fbf913aa428d152fd76b045e149f00b0f6b681a5ae"
 MODEL=Path(os.environ.get("OLCR_RERANKER_SOURCE", "/private/tmp/olcr-rerank-hf/hub/models--Qwen--Qwen3-Reranker-0.6B/snapshots/e61197ed45024b0ed8a2d74b80b4d909f1255473"))
+WHEELHOUSE=Path(os.environ["OLCR_WHEELHOUSE"]) if os.environ.get("OLCR_WHEELHOUSE") else None
 
 def run(*args: str, cwd: Path|None=None): subprocess.run(args, cwd=cwd, check=True)
 def sha(path: Path):
@@ -62,7 +63,12 @@ def main():
     (stage/"runtime").mkdir(); shutil.move(str(stage/"python"),str(stage/"runtime"/"python"))
     site=stage/"runtime"/"python"/"lib"/"python3.10"/"site-packages"; site.mkdir(parents=True,exist_ok=True)
     py=stage/"runtime"/"python"/"bin"/"python3"
-    run(str(py),"-m","pip","install","--no-cache-dir","--target",str(site),"-r",str(ROOT/"backend"/"requirements.txt"))
+    pip_args=[str(py),"-m","pip","install","--no-cache-dir","--target",str(site)]
+    if WHEELHOUSE:
+        if not WHEELHOUSE.is_dir(): raise SystemExit(f"offline wheelhouse missing: {WHEELHOUSE}")
+        pip_args += ["--no-index", "--find-links", str(WHEELHOUSE)]
+    pip_args += ["-r",str(ROOT/"backend"/"requirements.txt")]
+    run(*pip_args)
     shutil.copytree(ROOT/"backend",stage/"app"/"backend",ignore=shutil.ignore_patterns("__pycache__",".venv","*.pyc"))
     shutil.copytree(ROOT/"frontend"/"dist",stage/"frontend")
     shutil.copytree(MODEL,stage/"models"/"qwen3-reranker-0.6b",symlinks=False)

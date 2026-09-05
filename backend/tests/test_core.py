@@ -52,7 +52,7 @@ class CoreTests(unittest.TestCase):
         task,response=runtime.execute("Implement the complete game. Create files in the authorized workspace.")
         self.assertEqual("IMPLEMENTATION",task.route.value); self.assertEqual("completed",task.state.value)
         self.assertEqual("<h1>Game</h1>",(self.root/"index.html").read_text())
-        self.assertIn("workspace_write",[x["tool"] for x in task.tool_executions]); self.assertIn("Verified written files",response)
+        self.assertIn("workspace_write",[x["tool"] for x in task.tool_executions]); self.assertIn("Write: PASS; read-back: PASS; structural validation: PASS",response)
     def test_implementation_path_traversal_is_denied(self):
         class ImplementationModel:
             def generate(self,*_args,**_kwargs): return {"text":json.dumps({"operations":[{"op":"write","path":"../outside.txt","content":"no"}]}),"latency_ms":1}
