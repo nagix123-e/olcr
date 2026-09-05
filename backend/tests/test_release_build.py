@@ -12,9 +12,9 @@ SPEC.loader.exec_module(BUILD)
 
 class ReleaseBuildTests(unittest.TestCase):
     def test_release_identity_is_current(self):
-        self.assertEqual("0.4.8", BUILD.VERSION)
+        self.assertEqual("0.4.9", BUILD.VERSION)
         source = (ROOT / "scripts" / "build_release.py").read_text()
-        self.assertIn("OLCR v0.4.8", source)
+        self.assertIn("OLCR v0.4.9", source)
         self.assertNotIn("OLCR v0.1.3", source)
 
     def test_runtime_cache_is_removed_from_staging(self):
