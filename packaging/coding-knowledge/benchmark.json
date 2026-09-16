@@ -1,0 +1,21 @@
+{
+  "benchmark_version": 1,
+  "queries": [
+    {"query_id":"architecture-small-change","query":"preserve an existing repository contract while making a small change","expected_domain":"architecture","expected_stack":"general","required_concepts":["compatible","contract"],"forbidden_stacks":["react","postgresql"],"version_context":{}},
+    {"query_id":"security-authorization","query":"enforce authorization at the server boundary","expected_domain":"security","expected_stack":"general","required_concepts":["authorization","server-side"],"forbidden_stacks":["react","sqlite"],"version_context":{}},
+    {"query_id":"testing-verification","query":"write a focused regression test and do not call unexecuted verification PASS","expected_domain":"testing","expected_stack":"general","required_concepts":["regression","verification"],"forbidden_stacks":["react","postgresql"],"version_context":{}},
+    {"query_id":"uiux-state","query":"design loading empty success and error UI states","expected_domain":"uiux","expected_stack":"html_css","required_concepts":["error","state"],"forbidden_stacks":["postgresql"],"version_context":{}},
+    {"query_id":"html-css-table","query":"responsive HTML CSS table overflow without page-wide scrolling","expected_domain":"uiux","expected_stack":"html_css","required_concepts":["responsive","table"],"forbidden_stacks":["postgresql"],"version_context":{}},
+    {"query_id":"javascript-async","query":"JavaScript asynchronous error propagation","expected_domain":"architecture","expected_stack":"javascript","required_concepts":["asynchronous","error"],"forbidden_stacks":["postgresql"],"version_context":{}},
+    {"query_id":"typescript-boundary","query":"TypeScript runtime validation at a JSON boundary","expected_domain":"security","expected_stack":"typescript","required_concepts":["runtime","validation"],"forbidden_stacks":["postgresql"],"version_context":{}},
+    {"query_id":"react-controlled-form","query":"React controlled form state ownership","expected_domain":"uiux","expected_stack":"react","required_concepts":["controlled","form"],"forbidden_stacks":["postgresql"],"version_context":{"react":"18.3.0"}},
+    {"query_id":"node-errors","query":"Node.js operational process error handling","expected_domain":"security","expected_stack":"nodejs","required_concepts":["operational","error"],"forbidden_stacks":["react"],"version_context":{}},
+    {"query_id":"python-exceptions","query":"Python exception and resource handling","expected_domain":"architecture","expected_stack":"python","required_concepts":["exception","handle"],"forbidden_stacks":["react"],"version_context":{"python":"3.11.0"}},
+    {"query_id":"fastapi-validation","query":"FastAPI request validation and dependency boundary","expected_domain":"security","expected_stack":"fastapi","required_concepts":["request","validation"],"forbidden_stacks":["react"],"version_context":{"fastapi":"0.116.1"}},
+    {"query_id":"sql-parameters","query":"portable SQL parameterized queries and transaction boundaries","expected_domain":"architecture","expected_stack":"sql","required_concepts":["parameter","transaction"],"forbidden_stacks":["react","postgresql"],"version_context":{}},
+    {"query_id":"sqlite-locking","query":"SQLite transaction locking and rollback","expected_domain":"architecture","expected_stack":"sqlite","required_concepts":["SQLite","transaction"],"forbidden_stacks":["postgresql"],"version_context":{}},
+    {"query_id":"postgres-index","query":"PostgreSQL index design from query plans","expected_domain":"architecture","expected_stack":"postgresql","required_concepts":["PostgreSQL","index"],"forbidden_stacks":["sqlite"],"version_context":{}},
+    {"query_id":"rust-result","query":"Rust Result error propagation without panic","expected_domain":"architecture","expected_stack":"rust","required_concepts":["Result","error"],"forbidden_stacks":["react"],"version_context":{"rust":"1.80.0"}},
+    {"query_id":"tauri-boundary","query":"Tauri frontend Rust command privilege boundary","expected_domain":"security","expected_stack":"tauri","required_concepts":["command","boundary"],"forbidden_stacks":["react"],"version_context":{"tauri":"2.0.0"}}
+  ]
+}

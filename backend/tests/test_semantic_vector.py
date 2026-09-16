@@ -8,7 +8,7 @@ from unittest.mock import patch
 from urllib import error
 
 from olcr_api.config import Settings
-from olcr_api.db import Database
+from olcr_api.db import Database, SCHEMA_VERSION
 from olcr_api.models import SearchResult
 from olcr_api.retrieval import DisabledVectorStore, FileRetriever, FTSRetriever, RetrievalRouter
 from olcr_api.runtime import ContextManager, Runtime
@@ -155,7 +155,7 @@ class SemanticVectorTests(unittest.TestCase):
     def test_schema_is_version_four_and_vectors_not_telemetry(self):
         self.add("schema.txt","The codename is Cedar Lantern.")
         with self.db.connect() as db:
-            self.assertEqual(5,db.execute("SELECT version FROM schema_version").fetchone()[0])
+            self.assertEqual(SCHEMA_VERSION,db.execute("SELECT version FROM schema_version").fetchone()[0])
             payload=json.dumps([dict(x) for x in db.execute("SELECT * FROM vector_embeddings")])
         self.assertIn("vector_json",payload)
         self.assertNotIn("vector_json",json.dumps(self.store.last_telemetry))

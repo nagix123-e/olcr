@@ -16,17 +16,18 @@ class ModelFailure(RuntimeError):
 
 class ModelProvider(ABC):
     @abstractmethod
-    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None) -> Any: ...
+    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None, format: Any | None = None) -> Any: ...
     def vision(self, image_bytes: bytes, mime_type: str, prompt: str, model: str = "qwen2.5vl:7b") -> Any:
         raise ModelFailure("unsupported", "vision model is unavailable")
 
 
 class OllamaProvider(ModelProvider):
     def __init__(self, endpoint: str, timeout: float = MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint, self.timeout = endpoint.rstrip("/"), timeout
-    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None) -> Any:
+    def generate(self, messages: list[dict[str, str]], model: str, stream: bool = False, think: bool | None = None, format: Any | None = None) -> Any:
         if not model: raise ModelFailure("configuration", "No Ollama model configured")
         body={"model": model, "messages": messages, "stream": stream}
         if think is not None: body["think"] = think
+        if format is not None: body["format"] = format
         payload = json.dumps(body).encode()
         req = request.Request(self.endpoint + "/api/chat", data=payload, headers={"Content-Type": "application/json"})
         started = time.perf_counter()
@@ -46,12 +47,16 @@ class OllamaProvider(ModelProvider):
         message = {"role": "user", "content": prompt, "images": [base64.b64encode(image_bytes).decode("ascii")]}
         payload = json.dumps({"model": model, "messages": [message], "stream": False,
                               "keep_alive": os.environ.get("OLCR_VISION_KEEP_ALIVE", "10m"),
-                              "options": {"num_ctx": int(os.environ.get("OLCR_VISION_NUM_CTX", "4096"))}}).encode()
+                              "options": {"num_ctx": int(os.environ.get("OLCR_VISION_NUM_CTX", "8192"))}}).encode()
         req=request.Request(self.endpoint + "/api/chat", data=payload, headers={"Content-Type":"application/json"})
         started=time.perf_counter()
         try:
             with request.urlopen(req, timeout=self.timeout) as response: data=json.load(response)
             return {"text":data.get("message",{}).get("content",""),"latency_ms":(time.perf_counter()-started)*1000}
+        except error.HTTPError as exc:
+            try: detail=exc.read().decode("utf-8", "replace")[:500]
+            except Exception: detail=""
+            raise ModelFailure("vision_rejected", f"VISION_MODEL_REJECTED model={model}: {detail or exc.reason}") from exc
         except error.URLError as exc: raise ModelFailure("unavailable", str(exc.reason)) from exc
         except TimeoutError as exc: raise ModelFailure("timeout", "Ollama vision request timed out") from exc
     def _stream(self, response: Any, started: float) -> Iterator[dict[str, Any]]:

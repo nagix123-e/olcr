@@ -1,0 +1,11 @@
+body { background: #f7f9f5; }
+.fixture-page { min-height: 100vh; width: min(980px, 100%); margin: 0 auto; padding: clamp(18px, 4vw, 48px); }
+.fixture-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 18px; }
+.fixture-header h1 { margin: 5px 0; white-space: normal; overflow-wrap: anywhere; }
+.fixture-header small { color: var(--olcr-text-secondary); letter-spacing: 1px; font-size: 10px; }
+.fixture-header p { margin: 4px 0; color: var(--olcr-text-secondary); font-size: 13px; }
+.fixture-header label { display: grid; gap: 5px; color: var(--olcr-text-secondary); font-size: 12px; font-weight: 650; }
+.fixture-header select { min-width: 150px; border: 1px solid var(--olcr-border-strong); border-radius: 8px; background: #fff; padding: 8px; }
+.fixture-notice { margin: 0 auto 10px; max-width: 760px; color: #3b6d35; font-size: 12px; }
+.fixture-page .coding-task-progress { width: 100%; margin-top: 0; }
+@media (max-width: 600px) { .fixture-page { padding: 18px 12px 32px; } .fixture-header { align-items: stretch; flex-direction: column; gap: 12px; } .fixture-header select { width: 100%; } }

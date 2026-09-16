@@ -29,11 +29,11 @@ class ConversationMemory:
             vector = self.provider.embed([text], self.model)[0]
             self.db.save_memory_embedding(turn, self.model, vector, time.time(), self.INDEX_VERSION)
 
-    def backfill(self, limit: int = 8) -> int:
+    def backfill(self, limit: int = 8, project_id: str | None = None) -> int:
         """Index a bounded batch of historical turns not yet represented."""
         if not self.model or self.provider is None:
             return 0
-        turns = self.db.completed_turns()
+        turns = self.db.completed_turns(project_id=project_id)
         with self.db.connect() as conn:
             known = {
                 (row["conversation_id"], row["turn_ordinal"]):
@@ -61,11 +61,15 @@ class ConversationMemory:
                 break
         return added
 
-    def search(self, query: str, exclude_conversation: str | None = None) -> list[dict[str, Any]]:
+    def search(self, query: str, exclude_conversation: str | None = None, project_id: str | None = None) -> list[dict[str, Any]]:
         if not self.model or self.provider is None:
             return []
         query_vector = self.provider.embed([query], self.model)[0]
-        rows = self.db.memory_embeddings(self.model, len(query_vector), self.INDEX_VERSION)
+        # Scope eligibility through the canonical conversation relationship
+        # before vectors are ranked. Embeddings deliberately have no project_id.
+        eligible = {row["conversation_id"] for row in self.db.completed_turns(project_id=project_id)} if project_id else None
+        rows = [row for row in self.db.memory_embeddings(self.model, len(query_vector), self.INDEX_VERSION)
+                if eligible is None or row["conversation_id"] in eligible]
         ranked = sorted(((self._cosine(query_vector, __import__("json").loads(row["vector_json"])), row) for row in rows), key=lambda x: x[0], reverse=True)
         result = []
         for score, row in ranked:

@@ -1,0 +1,10 @@
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/icu_normalizer-f0c59a48379f2f20.d: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/properties.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/provider.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/uts46.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libicu_normalizer-f0c59a48379f2f20.rlib: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/properties.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/provider.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/uts46.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libicu_normalizer-f0c59a48379f2f20.rmeta: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/properties.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/provider.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/uts46.rs
+
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/lib.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/properties.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/provider.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.3.0/src/uts46.rs:

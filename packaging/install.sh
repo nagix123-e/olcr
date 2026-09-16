@@ -64,7 +64,10 @@ case "$ARCHIVE_ROOT" in *"/olcr-v${VERSION}-macos-arm64") ;; *) echo "OLCR insta
 mkdir -p "$RUNTIME_ROOT" "$BIN_DIR"
 if [ ! -d "$TARGET" ]; then
   mkdir -p "$TARGET"
-  cp -R "$ARCHIVE_ROOT/app" "$ARCHIVE_ROOT/frontend" "$ARCHIVE_ROOT/models" "$ARCHIVE_ROOT/runtime" "$ARCHIVE_ROOT/manifest" "$ARCHIVE_ROOT/licenses" "$TARGET/"
+  set -- "$ARCHIVE_ROOT/app" "$ARCHIVE_ROOT/frontend" "$ARCHIVE_ROOT/models" "$ARCHIVE_ROOT/runtime" "$ARCHIVE_ROOT/manifest" "$ARCHIVE_ROOT/licenses"
+  if [ -d "$ARCHIVE_ROOT/mcp-runtime" ]; then set -- "$@" "$ARCHIVE_ROOT/mcp-runtime"; fi
+  if [ -d "$ARCHIVE_ROOT/knowledge" ]; then set -- "$@" "$ARCHIVE_ROOT/knowledge"; fi
+  cp -R "$@" "$TARGET/"
   cp "$ARCHIVE_ROOT/README.txt" "$TARGET/"
 fi
 remove_runtime_quarantine

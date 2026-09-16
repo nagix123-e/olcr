@@ -1,0 +1,28 @@
+{
+  "node": {
+    "version": "20.20.2",
+    "release": "v20.20.2",
+    "artifact": "node-v20.20.2-darwin-arm64.tar.gz",
+    "source": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-arm64.tar.gz",
+    "sha256": "466e05f3477c20dfb723054dfebffe55bc74660ee77f612166fca121dacb65b6",
+    "platform": "darwin-arm64",
+    "license": "MIT"
+  },
+  "packages": {
+    "lockfile": "packaging/node-mcp/package-lock.json",
+    "lockfile_version": 3,
+    "package_count": 315,
+    "playwright_mcp": {"version": "0.0.80", "entrypoint": "node_modules/@playwright/mcp/cli.js"},
+    "shadcn": {"version": "4.16.2", "entrypoint": "node_modules/shadcn/dist/index.js"}
+  },
+  "playwright_browser": {
+    "engine": "Chrome Headless Shell",
+    "version": "153.0.8010.12",
+    "revision": "1243",
+    "artifact": "chrome-headless-shell-mac-arm64.zip",
+    "source": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+    "path": "browser/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+    "tree_sha256": "25143aee1bab08d03e1da21eed7773a8116bfc319f8e8fdc3a2d879905d4baa6",
+    "license": "browser/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/LICENSE.headless_shell"
+  }
+}

@@ -1,0 +1,1148 @@
+AI_IMPL_PROMPT
+
+Goal
+
+Create a production-quality public OLCR product website that demonstrates OLCR itself and also serves as a real benchmark for:
+
+1. Anime.js MCP integration
+2. Anime.js v4 implementation quality
+3. shadcn MCP usage
+4. Playwright MCP browser verification
+5. OLCR Coding Orchestrator frontend implementation quality
+6. later OLCR FIX-mode repair quality
+
+The site should feel like a premium modern developer product website with cinematic scroll-driven storytelling.
+
+Use the interaction philosophy of high-end Apple product pages as inspiration:
+
+- large typography
+- strong visual hierarchy
+- generous whitespace
+- sticky/pinned visual sequences
+- content that changes progressively while scrolling
+- restrained but polished motion
+- sections that feel like a continuous narrative
+- product concepts visually explained rather than only listed
+
+Do NOT reproduce Apple's actual:
+
+- layout
+- graphics
+- copy
+- assets
+- product page structure
+- branding
+
+Create an original OLCR design.
+
+
+Product
+
+Name:
+
+OLCR
+
+Type:
+
+Local-first AI development / orchestration tool
+
+Primary audience:
+
+- developers
+- local AI users
+- AI-assisted software builders
+- users interested in private/local coding workflows
+
+Primary site goal:
+
+Explain what OLCR is, why it exists, how it works, what integrations it contains, and direct users to GitHub.
+
+Secondary goal:
+
+Create a frontend implementation complex enough to meaningfully exercise Anime.js and later FIX mode.
+
+
+Repository / Target Check
+
+Before implementation, inspect the currently selected target repository/workspace.
+
+Determine:
+
+TARGET_REPO=
+EXISTING_WEBSITE=
+EXISTING_FRAMEWORK=
+PACKAGE_MANAGER=
+EXISTING_DESIGN_SYSTEM=
+EXISTING_ANIMEJS_VERSION=
+EXISTING_TAILWIND=
+EXISTING_SHADCN=
+BUILD_COMMAND=
+DEV_COMMAND=
+TEST_COMMAND=
+
+If an existing website project already exists:
+
+extend it while preserving its conventions where reasonable.
+
+If this is a greenfield website workspace:
+
+use the stack defined below.
+
+Do not modify the OLCR application repository itself unless it is explicitly the selected target for the website.
+
+Do not invent repository paths.
+
+
+Required Technology Stack
+
+For greenfield implementation use:
+
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Anime.js v4
+
+Browser verification:
+
+- Playwright MCP
+
+Reference/tooling:
+
+- Anime.js MCP
+- shadcn MCP
+
+Do NOT introduce:
+
+- Next.js
+- GSAP
+- Framer Motion / Motion
+- Three.js
+- backend server
+- database
+- authentication
+- CMS
+- analytics
+- Docker
+
+unless the existing target repository already requires them.
+
+Anime.js should be the primary JavaScript animation system for this benchmark.
+
+
+Required MCPs
+
+Persist equivalent:
+
+required_mcps:
+- animejs
+- shadcn
+- playwright
+
+Real MCP evidence is required.
+
+Do not consider the task fully verified based only on model prose.
+
+Required evidence:
+
+ANIMEJS_MCP_USED=YES
+SHADCN_MCP_USED=YES
+PLAYWRIGHT_MCP_USED=YES
+
+Anime.js MCP usage must include at least one real Anime.js v4 reference/pattern lookup.
+
+shadcn MCP usage must include a real registry/component lookup.
+
+Playwright MCP usage must include real browser interaction/inspection.
+
+If a required MCP cannot execute:
+
+do not falsely claim VERIFIED completion.
+
+
+Anime.js Version Rules
+
+Use Anime.js v4.
+
+Before implementation:
+
+inspect target project's installed/declared Anime.js version.
+
+If:
+
+v4
+→ continue
+
+v3
+→ stop normal v4 implementation and report CONFLICT_V3_V4 unless explicit migration is authorized
+
+none
+→ add Anime.js v4 as a project-local dependency according to existing dependency policy
+
+unknown
+→ do not guess compatibility
+
+Do not mix Anime.js v3 and v4 APIs.
+
+
+Brand Direction
+
+This website is specifically for OLCR.
+
+Use:
+
+Background:
+#000000 / near-black
+
+Primary text:
+#FFFFFF
+
+OLCR accent:
+#95E329
+
+Supporting neutrals:
+dark charcoal / gray / off-white
+
+The OLCR green accent belongs to this OLCR site only.
+
+Do not treat it as a reusable global frontend default for unrelated projects.
+
+
+Visual Direction
+
+Design character:
+
+- premium
+- technical
+- minimal
+- cinematic
+- local-AI / developer-tool feel
+- high contrast
+- restrained green accent
+- spacious
+- intentionally composed
+- not generic SaaS template
+
+Avoid:
+
+- every section being a rectangular card grid
+- excessive glowing borders
+- excessive gradients
+- random glassmorphism
+- giant amounts of decorative pills
+- duplicated CTA blocks
+- same GitHub button repeated in every section
+- over-animation
+- generic AI-generated landing-page appearance
+
+Use fewer, stronger visual ideas.
+
+
+Page Structure
+
+The page must follow this narrative order:
+
+SECTION-01
+Hero / OLCR title
+
+↓
+
+SECTION-02
+OLCR philosophy
+
+↓
+
+SECTION-03
+How OLCR works
+Detailed architecture / workflow explanation
+
+↓
+
+SECTION-04
+APIs integrated into OLCR
+
+↓
+
+SECTION-05
+MCPs integrated into OLCR
+
+↓
+
+SECTION-06
+GitHub + future download CTA
+
+↓
+
+Footer
+
+
+SCREEN-01 / ROUTE
+
+Route:
+
+/
+
+Single long-form scrolling homepage.
+
+No multi-page routing required for MVP.
+
+
+SECTION-01 — Hero
+
+Purpose:
+
+Immediately establish OLCR as the product.
+
+Required content:
+
+Very large:
+
+OLCR
+
+The title should dominate the initial viewport.
+
+Include a concise supporting statement explaining the product without excessive copy.
+
+Possible semantic direction:
+
+"Local AI. Structured execution."
+
+Exact final marketing copy may be refined, but do not make unsupported product claims.
+
+
+Visual behavior:
+
+Initial state should feel intentionally minimal.
+
+As the user scrolls:
+
+- OLCR typography changes position/scale subtly
+- supporting content enters progressively
+- visual depth develops
+- transition naturally into the philosophy section
+
+Use Anime.js.
+
+Avoid a simple one-time fade-in as the entire hero animation.
+
+
+SECTION-02 — OLCR Philosophy
+
+Purpose:
+
+Explain the principles behind OLCR.
+
+The section should communicate ideas equivalent to:
+
+- local-first execution
+- user control
+- structured AI work
+- evidence over unsupported success claims
+- planning before broad implementation
+- tools used only when relevant
+- bounded and observable execution
+
+Do not invent guarantees not supported by the repository/product.
+
+Presentation:
+
+Do not use six identical cards.
+
+Prefer a scroll narrative.
+
+Example interaction pattern:
+
+one large statement remains sticky
+while supporting concepts progressively enter/change around it.
+
+The scrolling experience should feel like concepts are being revealed, not like reading a static feature grid.
+
+
+SECTION-03 — How OLCR Works
+
+Purpose:
+
+Provide a substantially more detailed explanation than a normal marketing site.
+
+This is one of the main sections.
+
+Explain the actual OLCR workflow based on repository evidence.
+
+Inspect the OLCR project before writing factual architecture copy.
+
+Possible conceptual stages may include, only when confirmed:
+
+User request
+→ conversation/project context
+→ classification
+→ planning
+→ Coding Orchestrator
+→ task execution
+→ MCP/tool use
+→ verification
+→ final evidence/report
+
+Do not hardcode this exact flow if repository evidence differs.
+
+Visual treatment:
+
+Create a large interactive/animated system visualization.
+
+Recommended structure:
+
+sticky left/right visual system
++
+scrolling explanatory steps
+
+or:
+
+central pipeline
++
+progressively activated nodes
+
+As the user scrolls:
+
+- current stage becomes prominent
+- previous stage recedes
+- relationships/lines animate
+- descriptive copy changes
+- system state visually advances
+
+Use Anime.js for meaningful timeline/state transitions.
+
+This section must not degrade into only static text cards.
+
+
+SECTION-04 — OLCR APIs
+
+Purpose:
+
+Show APIs/integrations actually present in OLCR.
+
+IMPORTANT:
+
+Inspect the repository and derive the API list from authoritative implementation/configuration.
+
+Do not fabricate integrations.
+
+Previously known OLCR integrations may include things such as:
+
+- EONET
+- Federal Register
+- PubChem
+- OSRM
+- SymPy-related local computation
+
+but the current repository is authoritative.
+
+Only publish integrations actually supported by current source.
+
+Distinguish:
+
+external APIs
+from
+local computation/providers
+
+if appropriate.
+
+Presentation:
+
+Use visually varied integration rows/tiles.
+
+Do not use the exact same card design as every previous section.
+
+Animation:
+
+As entries enter viewport:
+
+- subtle stagger
+- metadata reveals
+- connecting line / indicator motion where useful
+
+Animation must remain secondary to readability.
+
+
+SECTION-05 — MCP Ecosystem
+
+Purpose:
+
+Explain MCP capabilities integrated into OLCR.
+
+Inspect repository MCP manifests/configuration.
+
+Only show currently known integrations and truthful status.
+
+Possible integrations may include:
+
+- Serena
+- shadcn
+- Playwright
+- Anime.js
+- DevDocs
+
+but current repository state is authoritative.
+
+Important:
+
+If DevDocs is still disabled/security-blocked:
+
+do NOT present it as an active production capability.
+
+Represent status truthfully or omit it.
+
+For each relevant MCP explain briefly:
+
+name
+role
+when OLCR uses it
+
+Examples of semantic roles:
+
+Serena
+→ complex repository/symbol analysis
+
+shadcn
+→ UI/component reference
+
+Anime.js
+→ animation/reference guidance
+
+Playwright
+→ browser verification
+
+Do not claim actual behavior unless confirmed by repository evidence.
+
+
+Animation treatment:
+
+This section may use an orbital/network/toolchain visual metaphor, but keep it technically readable.
+
+As user scrolls:
+
+- one MCP becomes active
+- its relationship to Coding Orchestrator is highlighted
+- supporting description changes
+
+Use Anime.js for transitions.
+
+
+SECTION-06 — GitHub / Download
+
+Purpose:
+
+One decisive final CTA area.
+
+Required:
+
+GitHub button linking to:
+
+https://github.com/nagix123-e/olcr
+
+Future download button.
+
+The download button is FRONTEND ONLY.
+
+It must not:
+
+- download a fake binary
+- call a backend
+- create an API
+- install anything
+
+Use a disabled or clearly unavailable state with wording equivalent to:
+
+"Download — Coming Soon"
+
+or a similarly polished label.
+
+Do not mislead users into thinking a release file is currently available.
+
+
+CTA hierarchy:
+
+Primary:
+GitHub
+
+Secondary:
+future Download
+
+Do not repeatedly show the same GitHub + Download pair throughout adjacent sections.
+
+
+Footer
+
+Minimal.
+
+Include:
+
+OLCR
+GitHub
+appropriate lightweight copyright/project text
+
+Do not create an oversized second CTA.
+
+
+Animation Architecture
+
+The goal is a scroll-driven experience, not random entrance animations.
+
+Create an intentional motion system.
+
+Use at least these categories where appropriate:
+
+1. Hero transformation
+
+2. Sticky scroll storytelling
+
+3. Section progress transitions
+
+4. Staggered text/data reveal
+
+5. Architecture diagram state transitions
+
+6. MCP/API reveal
+
+7. Final CTA transition
+
+
+Anime.js MCP
+
+Before writing animation code:
+
+query the Anime.js MCP for current v4 guidance relevant to:
+
+- scroll-linked or scroll-triggered interaction
+- timelines
+- stagger
+- React lifecycle/scoping
+- reduced motion
+
+Use real returned evidence.
+
+Do not invent v4 API signatures.
+
+
+React / Anime.js Lifecycle
+
+Animations must respect React lifecycle.
+
+Avoid:
+
+- duplicate animations after rerenders
+- orphaned listeners
+- animation instances surviving unmount incorrectly
+- uncontrolled global DOM selectors
+
+Prefer component-local refs/scoping.
+
+Exact implementation must follow current Anime.js v4 guidance from the MCP.
+
+
+Scroll Implementation
+
+Prefer native browser primitives plus Anime.js.
+
+Possible supporting primitives:
+
+- IntersectionObserver
+- ResizeObserver
+- requestAnimationFrame where justified
+- CSS position: sticky
+- CSS transforms
+
+Do not add a second large animation framework.
+
+
+Accessibility
+
+Required:
+
+prefers-reduced-motion support
+
+If:
+
+prefers-reduced-motion: reduce
+
+then:
+
+- disable or heavily simplify nonessential movement
+- all content remains visible/readable
+- navigation remains usable
+- information must not depend on animation
+- sticky sequences must not trap interaction
+
+Semantic HTML required.
+
+Visible keyboard focus required.
+
+Buttons/links must have accessible names.
+
+Decorative visual elements should not pollute the accessibility tree.
+
+
+Responsive Design
+
+Desktop is the richest cinematic experience.
+
+Required widths to verify approximately:
+
+1440px
+1280px
+768px
+390px
+
+Mobile must not simply shrink the desktop sticky animation.
+
+For narrow displays:
+
+- simplify animation
+- remove unnecessary pinned sequences
+- preserve narrative ordering
+- maintain readable typography
+- prevent horizontal overflow
+
+The giant OLCR hero title must remain intentional on mobile without clipping important content.
+
+
+Performance
+
+Favor:
+
+transform
+opacity
+
+for high-frequency animation.
+
+Avoid unnecessary layout thrashing.
+
+Do not animate large numbers of elements continuously without reason.
+
+Avoid an always-running animation loop when the section is offscreen.
+
+Respect reduced motion.
+
+Do not add huge decorative assets just to imitate premium visuals.
+
+
+shadcn Usage
+
+Actually consult shadcn MCP.
+
+Use shadcn only where it improves implementation.
+
+Possible components:
+
+Button
+Badge
+Separator
+Tooltip
+
+Do not convert the entire visual site into default shadcn cards.
+
+The site must still have a distinct OLCR identity.
+
+
+Content Accuracy
+
+Before writing architecture/API/MCP copy:
+
+inspect OLCR repository evidence.
+
+Distinguish:
+
+CONFIRMED
+from
+ASSUMED
+
+Do not publish assumptions as facts.
+
+Do not expose:
+
+secrets
+local absolute paths
+internal credentials
+private system details
+
+Do not expose unnecessary implementation internals on the public page.
+
+
+UI Copy
+
+Keep primary UI copy concise.
+
+Avoid excessive buzzwords.
+
+Prefer concrete statements about what OLCR actually does.
+
+Do not claim:
+
+"best"
+"perfect"
+"fully autonomous"
+"guaranteed"
+"enterprise-grade"
+
+unless independently supported, which is not expected here.
+
+
+Implementation Blueprint
+
+Because this is a substantial frontend benchmark, create a short internal implementation blueprint before mutation.
+
+Include:
+
+- section/component structure
+- animation ownership
+- responsive strategy
+- Anime.js lifecycle strategy
+- MCP use
+- browser verification strategy
+
+Do not turn repo inspection into a user-visible implementation phase.
+
+
+Suggested Component Shape
+
+Exact paths/names must follow the actual repository, but conceptually separate:
+
+App / Page shell
+
+Hero
+Philosophy
+HowItWorks
+APIIntegrations
+MCPIntegrations
+FinalCTA
+Footer
+
+plus reusable animation primitives/helpers only when they reduce duplication.
+
+Do not create abstraction layers speculatively.
+
+
+State
+
+This site should need minimal application state.
+
+Do not add global state management.
+
+Prefer local component state and browser observation state.
+
+No Redux/Zustand unless an existing target project already requires it.
+
+
+Data
+
+API and MCP display information should preferably come from local typed constants/data objects.
+
+Example conceptual shape:
+
+IntegrationItem {
+    id
+    name
+    category
+    description
+    status?
+}
+
+Do not add a database or runtime API for static marketing content.
+
+
+MVP Exclusions
+
+Do NOT implement:
+
+backend
+authentication
+user accounts
+database
+CMS
+real download service
+release installer
+analytics
+newsletter
+contact form backend
+pricing
+blog
+documentation site
+search
+multi-language support
+deployment
+GitHub API runtime fetch
+
+unless separately requested later.
+
+
+Implementation Order
+
+Phase 1:
+
+Inspect target project and OLCR repository evidence.
+
+Resolve:
+
+- target frontend stack
+- current API list
+- current MCP list/status
+- Anime.js compatibility
+
+Perform required MCP preflight/query.
+
+Then implement the complete homepage.
+
+
+Phase 2:
+
+Run browser verification and correct implementation defects discovered by verification.
+
+Do not perform unrelated visual redesign during verification.
+
+
+Keep total phase count small.
+
+Do not create separate phases for:
+
+Repo inspection
+planning
+final report
+
+
+Playwright Verification
+
+Use real Playwright MCP.
+
+Verify at minimum:
+
+PAGE_LOAD=PASS
+
+NO_HORIZONTAL_OVERFLOW_DESKTOP=PASS
+
+NO_HORIZONTAL_OVERFLOW_MOBILE=PASS
+
+GITHUB_LINK_PRESENT=PASS
+
+GITHUB_LINK_TARGET_CORRECT=PASS
+
+DOWNLOAD_BUTTON_PRESENT=PASS
+
+DOWNLOAD_BUTTON_FRONTEND_ONLY=PASS
+
+HERO_VISIBLE=PASS
+
+PHILOSOPHY_SECTION_VISIBLE=PASS
+
+HOW_IT_WORKS_SECTION_VISIBLE=PASS
+
+API_SECTION_VISIBLE=PASS
+
+MCP_SECTION_VISIBLE=PASS
+
+FINAL_CTA_VISIBLE=PASS
+
+ANIMEJS_EFFECT_OBSERVED=PASS
+
+SCROLL_STATE_TRANSITION=PASS
+
+MOBILE_LAYOUT=PASS
+
+PREFERS_REDUCED_MOTION=PASS
+
+CONSOLE_ERRORS=NONE_FROM_IMPLEMENTATION
+
+
+Visual Review
+
+Before declaring completion, inspect the rendered page.
+
+Check:
+
+- duplicated GitHub/download CTAs
+- repeated identical card grids
+- generic template appearance
+- accidental huge blank regions
+- weak content hierarchy
+- unreadable small text
+- hero clipping
+- sticky-section overlap
+- section transition discontinuity
+- animation that obscures content
+- animation too fast to understand
+- excessive motion
+- broken mobile composition
+- inconsistent content widths
+
+
+Do not use a subjective numeric design score.
+
+Use concrete observed issues.
+
+
+FIX Benchmark Preparation
+
+This initial task is IMPLEMENTATION, not FIX.
+
+Do not deliberately introduce bugs.
+
+However, structure code so later observed defects can be repaired independently and verified.
+
+After initial implementation:
+
+report concrete remaining visual/runtime defects separately.
+
+Do NOT perform speculative broad refactoring merely to make future FIX tests easier.
+
+Later user requests such as:
+
+"スクロールすると仕組みのセクションが一瞬消えるので直して"
+
+or:
+
+"スマホでOLCRのタイトルが右にはみ出すので修正して"
+
+must be suitable for separate FIX-mode tasks.
+
+
+Security / Safety
+
+No secrets.
+
+No destructive operations.
+
+No modification outside selected website project except read-only inspection of OLCR source required to determine accurate product facts.
+
+No commit.
+
+No push.
+
+No publish.
+
+No deploy.
+
+
+Done
+
+The homepage is complete when:
+
+- all six required narrative sections exist
+- content is based on current OLCR evidence
+- Anime.js v4 is genuinely used
+- Anime.js MCP real tool evidence exists
+- shadcn MCP real tool evidence exists
+- Playwright MCP real verification exists
+- scrolling produces meaningful progressive motion
+- reduced-motion mode works
+- desktop and mobile are usable
+- GitHub CTA is correct
+- future Download control is frontend-only and non-deceptive
+- build succeeds
+- implementation-origin console errors are absent
+- no unsupported OLCR feature claims are present
+
+
+FailureHandling
+
+If Anime.js MCP is unavailable:
+
+because it is explicitly required for this benchmark,
+do not claim verified completion.
+
+Report:
+
+ANIMEJS_MCP=BLOCKED
+
+
+If Anime.js project version is incompatible:
+
+do not silently upgrade or mix API versions.
+
+Report exact conflict.
+
+
+If shadcn MCP fails:
+
+because it is explicitly required for this benchmark,
+do not falsely mark the benchmark fully verified.
+
+
+If Playwright MCP cannot run:
+
+implementation may exist,
+but browser verification must remain:
+
+NOT_RUN
+or
+BLOCKED
+
+Never report PASS without execution.
+
+
+If OLCR API/MCP facts cannot be confirmed:
+
+omit uncertain claims or mark them unresolved.
+
+Do not invent them.
+
+
+Report
+
+TARGET_REPO=
+STACK=
+
+ANIMEJS_PROJECT_VERSION=
+ANIMEJS_VERSION_COMPATIBILITY=
+
+ANIMEJS_MCP_REQUIRED=YES
+ANIMEJS_MCP_USED=
+
+SHADCN_MCP_REQUIRED=YES
+SHADCN_MCP_USED=
+
+PLAYWRIGHT_MCP_REQUIRED=YES
+PLAYWRIGHT_MCP_USED=
+
+OLCR_API_SOURCE=
+OLCR_API_COUNT=
+
+OLCR_MCP_SOURCE=
+OLCR_MCP_COUNT=
+
+IMPLEMENTED_SECTIONS=
+
+ANIMATION_ARCHITECTURE=
+
+REDUCED_MOTION=
+
+DESKTOP_VERIFY=
+MOBILE_VERIFY=
+
+PLAYWRIGHT_VERIFY=
+
+BUILD=
+TESTS=
+CONSOLE_ERRORS=
+
+CHANGED_FILES=
+
+UNVERIFIED=
+UNRESOLVED=
+
+OBSERVED_FIX_CANDIDATES=
+
+NEXT=
+
+COMMIT_CREATED=NO
+PUSH=NO
+PUBLISH=NOT_RUN
+DEPLOY=NOT_RUN
+
+
+Final Status
+
+Use exactly one:
+
+OLCR_ANIMATED_WEBSITE_VERIFIED
+
+OLCR_ANIMATED_WEBSITE_PARTIAL
+
+OLCR_ANIMATED_WEBSITE_BLOCKED

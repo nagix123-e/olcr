@@ -126,8 +126,13 @@ class CompletionTests(unittest.TestCase):
         hidden=self.root/".authorized-hidden"; hidden.mkdir(exist_ok=True); target=hidden/"fact.txt"; target.write_text("hidden-authorized-literal")
         rows=api.files.search("hidden-authorized-literal",10); self.assertTrue(any(x.source==str(target) for x in rows))
         with tempfile.TemporaryDirectory() as outside:
-            external=Path(outside)/".hidden"; external.mkdir(); (external/"fact.txt").write_text("outside-hidden-literal")
-            self.assertEqual([],api.files.search("outside-hidden-literal",10))
+            # Build the forbidden probe at runtime so the repository-wide
+            # ripgrep used by FileRetriever cannot match this test's own
+            # source text.  The positive control above still proves that an
+            # authorized hidden directory is searchable.
+            forbidden_probe="outside-" + "hidden-" + "literal"
+            external=Path(outside)/".hidden"; external.mkdir(); (external/"fact.txt").write_text(forbidden_probe)
+            self.assertEqual([],api.files.search(forbidden_probe,10))
     def test_retrieval_failure_persists_failed_task_and_assistant_error(self):
         old_file,old_fts=api.retrieval.files.search,api.retrieval.fts.search
         api.retrieval.files.search=lambda q,l: (_ for _ in ()).throw(RuntimeError("private detail"))

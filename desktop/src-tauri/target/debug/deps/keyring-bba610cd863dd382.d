@@ -1,0 +1,9 @@
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/keyring-bba610cd863dd382.d: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/mock.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/macos.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/credential.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/error.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libkeyring-bba610cd863dd382.rmeta: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/mock.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/macos.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/credential.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/error.rs
+
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/lib.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/mock.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/macos.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/credential.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/keyring-3.6.3/src/error.rs:

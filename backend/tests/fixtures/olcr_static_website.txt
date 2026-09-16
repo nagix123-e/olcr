@@ -1,0 +1,155 @@
+このリポジトリに、OLCRの公式Webサイトとして使えるシンプルな静的Webサイトを実装してください。
+
+目的:
+OLCRが何をするプロダクトなのかを簡潔に説明し、
+GitHubとReleaseページへアクセスできる公式案内サイトを作る。
+
+実行形式:
+- 静的HTMLサイトにする
+- index.html をブラウザで直接開いて閲覧できること
+- Backend、Node.jsサーバー、ビルド処理は不要
+- 外部UIフレームワークは使わない
+- HTML + CSS を基本構成とする
+- JavaScriptは必要な場合だけ最小限にする
+
+ページ構成:
+1. Home
+2. Links
+
+Home:
+- OLCR の名前
+- 短いキャッチコピー
+- OLCRが何をするツールなのかの説明
+- 主な特徴
+- Linksページへの導線
+
+説明内容は、このリポジトリ内のREADMEや既存ドキュメントを確認し、
+実際のOLCRの仕様に沿って作成してください。
+存在しない機能や未確認の機能を追加しないでください。
+
+Links:
+- OLCR GitHub
+- OLCR Releases
+
+GitHub URLは、このリポジトリのremote、README、既存設定などから
+canonical URLを確認して使用してください。
+
+Releaseリンクも、確認できたGitHub repositoryの正式なReleasesページを使用してください。
+
+URLを確認できない場合は推測しないでください。
+
+Navigation:
+HomeとLinksの両ページから
+- Home
+- Links
+へ移動できるようにしてください。
+
+現在ページが分かるようにしてください。
+
+デザイン:
+OLCRの基本カラーを使用してください。
+
+Accent:
+#95E329
+
+Base:
+#000000
+#FFFFFF
+
+方向性:
+- シンプル
+- モダン
+- 技術プロダクトらしい
+- 読みやすい
+- 装飾過多にしない
+
+#95E329 はCTA、アクセント、hover、focus、強調に使用してください。
+黒と白で十分なコントラストを確保してください。
+
+Home:
+Header
+Hero
+About
+Features
+Footer
+
+Links:
+Header
+ページタイトルと説明
+GitHubカード
+Releasesカード
+Footer
+
+Responsive:
+- 1280px程度
+- 390px程度
+
+の両方で崩れないようにしてください。
+
+Accessibility:
+- semantic HTML
+- nav / main / footer
+- keyboardでリンク操作可能
+- focus状態を視認可能
+- 色だけで状態を表現しない
+- 適切なtitle
+- 外部リンクが分かる表示
+
+必要なら:
+index.html
+links.html
+styles.css
+
+程度の最小構成にしてください。
+
+既存のWebサイト構成がある場合は、まず確認して既存設計を優先してください。
+
+実装しないもの:
+- React
+- FastAPI
+- Database
+- 認証
+- Docker
+- 外部API
+- Analytics
+- CMS
+- npm依存
+- Web framework
+- デプロイ
+- git commit
+- git push
+
+実装後に確認:
+1. index.html を直接開ける
+2. Homeが正しく表示される
+3. Home → Linksへ移動できる
+4. Links → Homeへ戻れる
+5. GitHubリンクが正しい
+6. Releasesリンクが正しい
+7. 1280px幅で崩れない
+8. 390px幅で崩れない
+9. keyboard focusが確認できる
+10. Console errorがない
+
+実ブラウザで確認してください。
+
+このタスクは小規模な静的Web実装です。
+不要に細かいPhaseへ分割せず、可能なら1回の通常実行で実装から確認まで完了してください。
+
+確認専用Phaseを大量に作らないでください。
+実装に必要な最小限の確認だけ行ってください。
+
+途中確認は不要です。
+安全な同一依頼範囲では、Repo確認 → 実装 → ブラウザ確認 → 最終報告まで連続して進めてください。
+
+githubリンク:https://github.com/nagix123-e/olcr
+リリースリンク;https://github.com/nagix123-e/olcr/releases/
+
+概要##
+OLCRは、ローカルLLMでソフトウェア開発を計画・実装・検証まで支援する開発オーケストレーションツールです。
+
+特徴欄向け
+Local-first — ローカルLLMを中心に開発処理を実行
+Coding Orchestrator — 計画、実装、検証、再開まで一貫して管理
+Development Tools — Serena、Playwright、shadcn などの開発支援ツールと連携
+Observable Verification — AIの自己申告ではなく、実際の実行結果やコード変更をもとに状態を判定

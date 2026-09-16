@@ -9,7 +9,12 @@ from urllib.parse import urlparse, urlencode
 from urllib.request import Request, urlopen, HTTPRedirectHandler, build_opener
 
 MAX_BYTES=2_000_000; MAX_CHARS=50_000
-MAX_SEARCH_RESULTS=5
+MAX_SEARCH_RESULTS=10
+RUNTIME_PROVIDER_KEYS: dict[str, str] = {}
+def provider_key(provider: str) -> str:
+    if provider == "brave": return RUNTIME_PROVIDER_KEYS.get("brave", "").strip() or os.environ.get("OLCR_WEB_BRAVE_API_KEY", "").strip() or os.environ.get("OLCR_WEB_SEARCH_API_KEY", "").strip()
+    if provider == "tavily": return RUNTIME_PROVIDER_KEYS.get("tavily", "").strip() or os.environ.get("OLCR_WEB_TAVILY_API_KEY", "").strip()
+    return ""
 
 def setup_guidance(provider: str | None = None) -> str:
     intro="Web検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\n"
@@ -69,7 +74,7 @@ def search(query: str, limit: int = MAX_SEARCH_RESULTS) -> list[dict]:
     return results
 
 def brave_search(query: str, limit: int = MAX_SEARCH_RESULTS) -> list[dict]:
-    key=os.environ.get("OLCR_WEB_BRAVE_API_KEY", "").strip() or os.environ.get("OLCR_WEB_SEARCH_API_KEY", "").strip()
+    key=provider_key("brave")
     print(f"WEB_SEARCH_PROVIDER=brave WEB_SEARCH_KEY_CONFIGURED={'YES' if key else 'NO'}", file=sys.stderr, flush=True)
     if not key: raise RuntimeError("WEB_SEARCH_PROVIDER_NOT_READY")
     query=" ".join(query.split())[:500]
@@ -87,8 +92,29 @@ def brave_search(query: str, limit: int = MAX_SEARCH_RESULTS) -> list[dict]:
     print(f"WEB_SEARCH_HTTP_STATUS={status} WEB_SEARCH_RESULT_COUNT={len(rows)} WEB_SEARCH_PROVIDER_STATUS={'OK' if rows else 'NO_RESULTS'}", file=sys.stderr, flush=True)
     return rows
 
+def brave_news_search(query: str, limit: int = MAX_SEARCH_RESULTS, freshness: str | None = None) -> list[dict]:
+    """Brave's dedicated News Search adapter, normalized to web candidates."""
+    key=provider_key("brave")
+    print(f"BRAVE_SEARCH_RESOURCE=NEWS WEB_SEARCH_PROVIDER=brave WEB_SEARCH_KEY_CONFIGURED={'YES' if key else 'NO'}", file=sys.stderr, flush=True)
+    if not key: raise RuntimeError("WEB_SEARCH_PROVIDER_NOT_READY")
+    params={"q":" ".join(query.split())[:500],"count":min(limit,MAX_SEARCH_RESULTS)}
+    if freshness: params["freshness"]=freshness
+    req=Request("https://api.search.brave.com/res/v1/news/search?" + urlencode(params), headers={"Accept":"application/json","X-Subscription-Token":key,"User-Agent":"OLCR/0.4.7"})
+    print("WEB_SEARCH_REQUEST_STARTED=YES", file=sys.stderr, flush=True)
+    try:
+        with build_opener().open(req, timeout=10) as response:
+            payload=json.loads(response.read(MAX_BYTES+1)); status=response.status
+    except Exception:
+        print("WEB_SEARCH_PROVIDER_STATUS=HTTP_ERROR", file=sys.stderr, flush=True); raise
+    rows=[]
+    for rank,item in enumerate((payload.get("results",[]) if isinstance(payload,dict) else [])[:MAX_SEARCH_RESULTS],1):
+        if isinstance(item,dict) and isinstance(item.get("url"),str) and isinstance(item.get("title"),str):
+            rows.append({"title":item["title"][:300],"url":item["url"],"snippet":str(item.get("description", ""))[:1000],"published":item.get("age") or item.get("page_age"),"rank":rank,"provider":"brave"})
+    print(f"WEB_SEARCH_HTTP_STATUS={status} WEB_SEARCH_RESULT_COUNT={len(rows)} WEB_SEARCH_PROVIDER_STATUS={'OK' if rows else 'NO_RESULTS'}", file=sys.stderr, flush=True)
+    return rows
+
 def tavily_search(query: str, limit: int = MAX_SEARCH_RESULTS) -> list[dict]:
-    key=os.environ.get("OLCR_WEB_TAVILY_API_KEY", "").strip()
+    key=provider_key("tavily")
     print(f"WEB_SEARCH_PROVIDER=tavily WEB_SEARCH_KEY_CONFIGURED={'YES' if key else 'NO'}", file=sys.stderr, flush=True)
     if not key: raise RuntimeError("WEB_SEARCH_PROVIDER_NOT_READY")
     payload=json.dumps({"api_key":key,"query":" ".join(query.split())[:500],"max_results":min(limit,MAX_SEARCH_RESULTS)}).encode()

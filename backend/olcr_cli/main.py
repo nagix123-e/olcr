@@ -26,8 +26,9 @@ except ImportError:
 from .state import State
 from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 from olcr_api.web import setup_guidance
+from olcr_api.commands import catalog
 
-VERSION="0.5.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
+VERSION="0.6.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
 VERBOSE = False
 
@@ -257,7 +258,7 @@ def multiline(input_fn,output):
 
 def command(state,parts,input_fn=input,output=print):
     head=parts[0] if parts else "help"; tail=parts[1:]
-    if head=="help": output("/status · /option show|set|reset <brain|router|vision> · /memory show|on|off · /workspace show|set <path> · /file set|show|clear · /image load|show|clear · /web open|show|clear|status · /external set|show|clear · /import external [to <path>] · /context show|set|load <path>|reload|clear · /models · /quit"); return 0
+    if head=="help": output(" · ".join(x["command"] + (" <"+x["arguments"]+">" if x["arguments"] else "") for x in catalog())); return 0
     if head=="status": show_status(state); return 0
     if head=="models":
         for k,v in runtime_status(state).items():

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from olcr_api.conversation_memory import ConversationMemory
-from olcr_api.db import Database
+from olcr_api.db import Database, SCHEMA_VERSION
 from olcr_api.models import SearchResult
 from olcr_api.runtime import ContextManager
 
@@ -76,10 +76,10 @@ class ConversationMemoryTests(unittest.TestCase):
         conn.executescript("CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(4); CREATE TABLE conversation_memory_embeddings(id INTEGER PRIMARY KEY, conversation_id TEXT NOT NULL, user_message TEXT NOT NULL, assistant_message TEXT NOT NULL, turn_ordinal INTEGER NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL); CREATE TABLE conversations(id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at REAL NOT NULL); CREATE TABLE messages(id TEXT PRIMARY KEY,conversation_id TEXT,task_id TEXT,role TEXT,content TEXT,ordinal INTEGER,created_at REAL);")
         conn.execute("INSERT INTO conversations VALUES('c','title',0)"); conn.execute("INSERT INTO messages VALUES('u','c',NULL,'user','q',0,0)"); conn.execute("INSERT INTO messages VALUES('a','c',NULL,'assistant','a',1,0)"); conn.commit(); conn.close()
         migrated = Database(str(legacy)); migrated.initialize()
-        self.assertEqual(5, migrated.connect().execute("SELECT version FROM schema_version").fetchone()[0])
+        self.assertEqual(SCHEMA_VERSION, migrated.connect().execute("SELECT version FROM schema_version").fetchone()[0])
         self.assertEqual(2, migrated.connect().execute("SELECT COUNT(*) FROM messages").fetchone()[0])
         migrated.initialize()
-        self.assertEqual(5, migrated.connect().execute("SELECT version FROM schema_version").fetchone()[0])
+        self.assertEqual(SCHEMA_VERSION, migrated.connect().execute("SELECT version FROM schema_version").fetchone()[0])
         self.assertEqual(2, migrated.connect().execute("SELECT COUNT(*) FROM messages").fetchone()[0])
 
     def test_vector_compatibility_filters_model_dimension_and_version(self):
@@ -115,6 +115,22 @@ class ConversationMemoryTests(unittest.TestCase):
         result = self.memory.search("question", exclude_conversation="conversation-6")
         self.assertTrue(result)
         self.assertTrue(all(x["conversation_id"] != "conversation-6" for x in result))
+
+    def test_project_scope_filters_before_semantic_ranking(self):
+        now=time.time()
+        self.db.create_project("Alpha",None,now,"alpha")
+        self.db.create_project("Beta",None,now,"beta")
+        self.db.create_conversation("Alpha",now,"alpha-chat","alpha")
+        self.db.create_conversation("Beta",now,"beta-chat","beta")
+        for cid,secret in (("alpha-chat","ALPHA_SECRET_731"),("beta-chat","BETA_SECRET_842")):
+            self.db.add_message(cid,"user",f"shared semantic wording {secret}",now,cid+"u")
+            self.db.add_message(cid,"assistant",secret,now,cid+"a")
+            self.memory.index_completed_turn(cid)
+        alpha=self.memory.search("shared semantic wording",project_id="alpha")
+        beta=self.memory.search("shared semantic wording",project_id="beta")
+        self.assertTrue(alpha and beta)
+        self.assertTrue(all("ALPHA_SECRET_731" in x["text"] for x in alpha))
+        self.assertTrue(all("BETA_SECRET_842" in x["text"] for x in beta))
 
     def test_context_memory_is_bounded_and_keeps_request(self):
         evidence = [SearchResult("conversation_turn", "x" * 1000, method="memory") for _ in range(20)]

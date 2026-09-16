@@ -1,0 +1,1 @@
+{"identifier":"default","description":"OLCR desktop minimum capability","windows":["main"],"permissions":["core:default","dialog:allow-open","opener:allow-open-url"]}

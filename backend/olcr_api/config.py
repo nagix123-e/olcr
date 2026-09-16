@@ -22,7 +22,7 @@ class Settings:
     vision_model: str = "qwen2.5vl:3b"
     vision_num_ctx: int = 4096
     vision_keep_alive: str = "10m"
-    router_model: str = ""
+    router_model: str = "gemma3:1b"
     embedding_model: str = ""
     semantic_judge_model: str = ""
     reranker_enabled: bool = False
@@ -36,6 +36,11 @@ class Settings:
     confirmation_policy: str = "explicit"
     web_mode: str = "off"
     web_provider: str = "none"
+    external_access_enabled: bool = False
+    # Coding Task Manager is an opt-in experimental path.  An absent
+    # preference therefore resolves to OFF while an explicitly persisted
+    # value is applied by the startup override below.
+    task_manager_enabled: bool = False
     db_path: str = ""
 
     @classmethod
@@ -47,7 +52,7 @@ class Settings:
             vision_model=os.environ.get("OLCR_VISION_MODEL", "qwen2.5vl:3b"),
             vision_num_ctx=int(os.environ.get("OLCR_VISION_NUM_CTX", "4096")),
             vision_keep_alive=os.environ.get("OLCR_VISION_KEEP_ALIVE", "10m"),
-            router_model=os.environ.get("OLLAMA_ROUTER_MODEL", ""),
+            router_model=os.environ.get("OLLAMA_ROUTER_MODEL", "gemma3:1b"),
             embedding_model=os.environ.get("OLLAMA_EMBEDDING_MODEL", ""),
             semantic_judge_model=os.environ.get("OLLAMA_SEMANTIC_JUDGE_MODEL", ""),
             reranker_enabled=os.environ.get("OLCR_RERANKER_ENABLED", "false").lower() == "true",
@@ -58,6 +63,7 @@ class Settings:
             context_budget=int(os.environ.get("OLCR_CONTEXT_BUDGET", "8000")),
             result_limit=int(os.environ.get("OLCR_RESULT_LIMIT", "20")),
             db_path=os.environ.get("OLCR_DB_PATH") or default_db_path(),
+            task_manager_enabled=os.environ.get("OLCR_TASK_MANAGER_ENABLED", "false").lower() == "true",
         ).validated()
 
     def validated(self) -> "Settings":
@@ -71,6 +77,7 @@ class Settings:
             raise ValueError("reranker_threshold must be non-negative")
         if self.web_mode not in {"off", "manual", "auto"}: raise ValueError("web_mode must be off, manual, or auto")
         if self.web_provider not in {"none", "brave", "tavily", "duckduckgo"}: raise ValueError("unsupported web provider")
+        if self.router_model.strip() == "embeddinggemma:latest": raise ValueError("router_model is not generative-compatible")
         self.allowed_roots = tuple(str(Path(p).expanduser().resolve()) for p in self.allowed_roots)
         return self
 
@@ -81,10 +88,14 @@ class Settings:
 
     def with_overrides(self, values: dict[str, Any]) -> "Settings":
         allowed=set(self.__dataclass_fields__); unknown=set(values)-allowed
+        # Project-scoped core context is persisted in the same local settings
+        # table, but is not a process Settings field. Keep it out of startup
+        # validation so a saved project cannot prevent the backend from booting.
+        unknown = {key for key in unknown if not key.startswith(("project_core_context:", "project_core_source:", "conversation_project_context:"))}
         if unknown: raise ValueError(f"unknown settings: {sorted(unknown)}")
         merged=self.public_dict()
         # A legacy empty model setting means "unset". It must never erase an
         # explicit environment value or the packaged default.
-        merged.update({key: value for key, value in values.items() if key not in MODEL_NAME_FIELDS or bool(str(value).strip())})
+        merged.update({key: value for key, value in values.items() if key in allowed and (key not in MODEL_NAME_FIELDS or bool(str(value).strip()))})
         merged["allowed_roots"]=tuple(merged["allowed_roots"])
         return Settings(**merged).validated()

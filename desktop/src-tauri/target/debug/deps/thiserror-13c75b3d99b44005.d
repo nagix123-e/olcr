@@ -1,0 +1,12 @@
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/thiserror-13c75b3d99b44005.d: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs /Users/nagimachino/Documents/ChatGPT/lightweight\ local\ llm/olcr/desktop/src-tauri/target/debug/build/thiserror-83606357a99287fc/out/private.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libthiserror-13c75b3d99b44005.rmeta: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs /Users/nagimachino/Documents/ChatGPT/lightweight\ local\ llm/olcr/desktop/src-tauri/target/debug/build/thiserror-83606357a99287fc/out/private.rs
+
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs:
+/Users/nagimachino/Documents/ChatGPT/lightweight\ local\ llm/olcr/desktop/src-tauri/target/debug/build/thiserror-83606357a99287fc/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/build/thiserror-83606357a99287fc/out

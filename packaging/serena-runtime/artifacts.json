@@ -1,0 +1,38 @@
+{
+  "python": {
+    "distribution": "astral-sh/python-build-standalone",
+    "version": "3.11.16",
+    "release": "20260901",
+    "artifact": "cpython-3.11.16+20260901-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.11.16%2B20260901-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "sha256": "768f05cf200273bbdda9a5955a5a6892a4b22f2a0b1e4b0a9160f5c7fce86816",
+    "platform": "macos-arm64"
+  },
+  "serena": {
+    "distribution": "serena-agent",
+    "version": "1.7.0",
+    "artifact": "serena_agent-1.7.0-py3-none-any.whl",
+    "sha256": "6dbf1459670d96fb0595f84932adef34260a6fe14ba5135b901fdb3c8c76e891",
+    "entrypoint": [
+      "-c",
+      "from serena.cli import top_level; top_level()",
+      "start-mcp-server",
+      "--transport",
+      "stdio",
+      "--enable-web-dashboard",
+      "false",
+      "--enable-gui-log-window",
+      "false",
+      "--open-web-dashboard",
+      "false"
+    ]
+  },
+  "wheelhouse_manifest": "packaging/serena-runtime/wheelhouse-manifest.json",
+  "source_only_build_inputs": {
+    "proxy_tools": {
+      "version": "0.1.0",
+      "source_sha256": "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010",
+      "built_wheel_sha256": "03c8607bf4bec16b54d77217203dd28f6595338f1258ff4231bacd0dd51647a8"
+    }
+  }
+}

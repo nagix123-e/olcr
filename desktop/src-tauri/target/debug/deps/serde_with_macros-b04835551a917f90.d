@@ -1,0 +1,8 @@
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/serde_with_macros-b04835551a917f90.d: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/apply.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lazy_bool.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/utils.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libserde_with_macros-b04835551a917f90.dylib: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/apply.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lazy_bool.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/utils.rs
+
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lib.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/apply.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/lazy_bool.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.22.0/src/utils.rs:

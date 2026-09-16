@@ -1,0 +1,10 @@
+{
+  "name": "olcr-bundled-mcp-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned build-only inputs for OLCR MCP resources",
+  "dependencies": {
+    "@playwright/mcp": "0.0.80",
+    "shadcn": "4.16.2"
+  }
+}

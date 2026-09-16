@@ -1,0 +1,10 @@
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/time_core-f9a2bde3f22d9223.d: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/hint.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/unit.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/util.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libtime_core-f9a2bde3f22d9223.rlib: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/hint.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/unit.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/util.rs
+
+/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/desktop/src-tauri/target/debug/deps/libtime_core-f9a2bde3f22d9223.rmeta: /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/lib.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/hint.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/unit.rs /Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/util.rs
+
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/lib.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/hint.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/unit.rs:
+/Users/nagimachino/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-core-0.1.9/src/util.rs:

@@ -17,7 +17,7 @@ from .models import Risk, Route, Task, TaskState
 from .ollama import ModelFailure, ModelProvider
 from .procedures import LOWERCASE_PROCEDURE, ProcedureRunner
 from .retrieval import RetrievalRouter
-from .web import search as web_search, brave_search, tavily_search, fetch as web_fetch, setup_guidance
+from .web import search as web_search, brave_search, brave_news_search, tavily_search, fetch as web_fetch, setup_guidance
 from .tools import ToolValidationError, registry
 
 VISION_SCHEMA_KEYS = ("elements", "text", "relationships", "anomalies", "confidence", "uncertainty")
@@ -171,6 +171,59 @@ class Runtime:
         return "\n".join(lines) if len(lines)>2 else ""
 
     @staticmethod
+    def _news_articles(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep individual article pages for news claims; hubs are discovery only."""
+        articles=[]
+        for source in sources:
+            url=str(source.get("final_url") or source.get("url") or "").lower()
+            title=str(source.get("title") or "").lower()
+            path=url.split("?",1)[0].split("#",1)[0]
+            segments=[part for part in path.split("/") if part]
+            structural_tokens={token for segment in segments for token in re.split(r"[-_]+", segment) if token}
+            if any(host in url for host in ("x.com/", "twitter.com/")): continue
+            if structural_tokens.intersection({"topic","topics","keyword","keywords","category","categories","tag","tags","search","archive"}): continue
+            if re.search(r"ニュース\s*(?:一覧|リスト)|\b(?:news\s+list|topic|topics|category|archive)\b", title, re.I): continue
+            if not segments or path.endswith("/") or len(segments) < 2: continue
+            source["result_kind"]="article"; articles.append(source)
+        return articles
+
+    @staticmethod
+    def _used_web_sources(answer: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Select only current sources evidenced by the generated answer."""
+        used=[]; body=answer.lower()
+        for source in sources:
+            title=str(source.get("title") or "").strip()
+            words=[w for w in re.findall(r"[a-z0-9]{4,}|[\u3040-\u30ff\u3400-\u9fff]{3,}", title.lower())]
+            if words and (sum(1 for word in words if word in body) >= max(1, min(2, len(words)))):
+                used.append(source)
+        return used
+
+    @staticmethod
+    def _web_contradiction_category(answer: str) -> str | None:
+        value=re.sub(r"\s+", "", answer or "").lower()
+        if re.search(r"インターネット(?:に|へ|への)?アクセス(?:が)?(?:できません|できない|ありません)|internet(?:access)?(?:is)?(?:unavailable|notavailable|cannot)", value): return "INTERNET_UNAVAILABLE"
+        if re.search(r"(?:web|ウェブ)検索(?:を)?(?:実行)?(?:できません|できない|できませんでした)|検索機能(?:は)?(?:ありません|利用できません)", value): return "WEB_SEARCH_UNAVAILABLE"
+        if re.search(r"リアルタイム(?:の)?(?:情報|検索)(?:を)?(?:取得|提供)(?:できません|できない)|realtime(?:data|search).*(?:unavailable|cannot)", value): return "REALTIME_DATA_UNAVAILABLE"
+        if re.search(r"(?:私の|学習済み|モデルの)?知識(?:ベース|カットオフ)|trainingcutoff|knowledgecutoff|2023年までの知識", value): return "PARAMETRIC_KNOWLEDGE_FALLBACK"
+        return None
+
+    @staticmethod
+    def _parse_web_composition(raw: str, sources: list[dict[str, Any]]) -> list[dict[str, str]]:
+        try:
+            payload=json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
+        except (TypeError, ValueError, json.JSONDecodeError): return []
+        items=payload.get("items") if isinstance(payload,dict) else None
+        allowed={str(x.get("source_id")):x for x in sources}
+        if not isinstance(items,list): return []
+        seen=set(); valid=[]
+        for item in items[:5]:
+            if not isinstance(item,dict) or set(item)-{"result_id","summary"}: return []
+            rid=str(item.get("result_id") or ""); summary=str(item.get("summary") or "").strip()
+            if rid not in allowed or rid in seen or not summary or re.search(r"https?://|www\.", summary, re.I): return []
+            seen.add(rid); valid.append({"result_id":rid,"summary":summary})
+        return valid
+
+    @staticmethod
     def _freshness_check(answer: str, sources: list[dict[str, Any]], requested_prerelease: bool = False) -> tuple[str, str]:
         return Runtime._freshness_check_scoped(answer, sources, requested_prerelease, None)
 
@@ -244,38 +297,90 @@ class Runtime:
         self.tools, self.policy = registry(), AuthorizationPolicy()
         self.procedures = ProcedureRunner(self.tools, self.policy)
         self.artifacts = artifacts
-    def execute(self, text: str, approved: bool = False, core_context: str = "") -> tuple[Task, str]:
+    def execute(self, text: str, approved: bool = False, core_context: str = "", suppress_web: bool = False, workspace_root: str | None = None, managed_context: dict | None = None) -> tuple[Task, str]:
         task = Task(text); task.transition(TaskState.ROUTING); started = time.perf_counter()
         try:
             lower = text.strip().lower()
+            # A managed implementation phase is an explicit, typed execution
+            # context.  It must not be re-routed from the generated phase prose:
+            # words such as "website", "GitHub", or "release" are common in a
+            # coding request but are not an instruction to replace the workspace
+            # mutation with the normal-chat Web composer.
+            coding_implementation = bool(
+                managed_context
+                and managed_context.get("managed_coding_task")
+                and managed_context.get("operation_intent") == "IMPLEMENTATION"
+                and workspace_root
+            )
             web_evidence=[]; web_freshness_required=False
-            web_search_attempted=False; web_provider_not_ready=False; web_provider_name=getattr(self.settings, "web_provider", "none")
+            web_raw_result_count=0
+            web_search_attempted=False; web_provider_not_ready=False; web_provider_failed=False; web_provider_name=getattr(self.settings, "web_provider", "none")
+            search_api_attempt_count=0; merged_raw_count=0; cross_attempt_duplicates=0; attempt_queries=[]
             web_decision="NO_SEARCH"
-            if getattr(self.settings, "web_mode", "off") == "auto":
+            explicit_web_request = bool(re.search(r"(?:web検索|webで|ネットで|インターネットで|search the web|search web)", text, re.I))
+            news_request = bool(re.search(r"ニュース|news", text, re.I))
+            coding_web_support = bool(coding_implementation and managed_context.get("coding_web_support") is True and explicit_web_request)
+            print(f"RUNTIME_EXECUTE_FUNCTION=Runtime.execute RUNTIME_EXPLICIT_WEB_FLAG={'true' if explicit_web_request else 'false'} RUNTIME_INPUT_CHARS={len(text)} CODING_CONTEXT_SIGNAL={'CODING_IMPLEMENTATION' if coding_implementation else 'NONE'}", file=sys.stderr, flush=True)
+            web_mode = getattr(self.settings, "web_mode", "off")
+            generic_web_routing = not coding_implementation
+            if coding_implementation and not coding_web_support:
+                print("RUNTIME_SELECTED_BRANCH=CODING_IMPLEMENTATION WEB_BRANCH_MATCH=false WEB_AUTO_ROUTE_GUARD=MANAGED_CODING", file=sys.stderr, flush=True)
+            elif coding_web_support:
+                print("CODING_WEB_SUPPORT=AUTHORIZED WEB_SUPPORT_IS_AUXILIARY=true", file=sys.stderr, flush=True)
+            if not suppress_web and (generic_web_routing or coding_web_support) and (web_mode == "auto" or (web_mode == "manual" and explicit_web_request) or (web_mode == "off" and explicit_web_request)):
                 freshness=bool(re.search(r"\b(latest|current|recent|today|news|release|price|schedule|documentation)\b|最新|現在|今日|最近|リリース|価格|ニュース", text, re.I)); web_freshness_required=freshness
                 web_decision="SEARCH" if freshness else "NO_SEARCH"
-                if freshness:
+                if explicit_web_request: web_decision="EXPLICIT_SEARCH"
+                if freshness or explicit_web_request:
+                    print("RUNTIME_SELECTED_BRANCH=WEB_SEARCH WEB_BRANCH_MATCH=true", file=sys.stderr, flush=True)
                     web_search_attempted=True
                     try:
-                        query="Ollama latest release version changelog" if re.search(r"ollama", text, re.I) else " ".join(text.split())[:300]
+                        query="Ollama latest release version changelog" if re.search(r"ollama", text, re.I) else re.sub(r"(?:今日|本日|today|最新の?|recent)\s*", "", re.sub(r"(?:を)?(?:web検索|webで|ネットで|インターネットで)(?:して|調べて|検索して)?|(?:search the web for|search web for)", "", text, flags=re.I)).strip(" の。！？!?")[:300]
+                        if re.search(r"ニュース|news", text, re.I): query = f"AI 人工知能 生成AI ニュース {query}".strip()
                         provider=web_provider_name
+                        if web_mode == "off": raise RuntimeError("WEB_SEARCH_DISABLED")
                         if provider == "none": raise RuntimeError("WEB_SEARCH_PROVIDER_NOT_READY")
-                        candidates=(brave_search(query, 5) if provider == "brave" else tavily_search(query, 5) if provider == "tavily" else web_search(query, 5))
-                        for candidate in candidates[:5]:
-                            try:
-                                source=web_fetch(candidate["url"]); source.update({"source_id":f"web-{len(web_evidence)+1}","title":candidate.get("title",""),"url":candidate.get("url",""),"provider":candidate.get("provider","duckduckgo"),"rank":candidate.get("rank",0),"fetch_success":True}); web_evidence.append(source)
-                            except Exception: continue
+                        for attempt in range(1, 3):
+                            attempt_query=query if attempt == 1 else f"{query} 個別記事 最新 AI ニュース"
+                            attempt_queries.append(attempt_query); search_api_attempt_count += 1
+                            if news_request and provider == "brave":
+                                candidates=brave_news_search(attempt_query, 10, "pd" if re.search(r"今日|本日|today|current", text, re.I) else None)
+                            else:
+                                candidates=(brave_search(attempt_query, 10) if provider == "brave" else tavily_search(attempt_query, 10) if provider == "tavily" else web_search(attempt_query, 10))
+                            if attempt == 1: web_raw_result_count=len(candidates)
+                            else: web_raw_result_count += len(candidates)
+                            seen={str(x.get("final_url") or x.get("url") or "").split("#",1)[0].rstrip("/") for x in web_evidence}
+                            for candidate in candidates[:10]:
+                                identity=str(candidate.get("url") or "").split("#",1)[0].rstrip("/")
+                                if identity in seen: cross_attempt_duplicates += 1; continue
+                                try:
+                                    source=web_fetch(candidate["url"]); source.update({"source_id":f"web-{len(web_evidence)+1}","title":candidate.get("title",""),"url":candidate.get("url",""),"provider":candidate.get("provider","duckduckgo"),"rank":candidate.get("rank",0),"fetch_success":True}); web_evidence.append(source); seen.add(identity)
+                                except Exception: continue
+                            filtered_attempt=self._news_articles(web_evidence)
+                            if filtered_attempt: break
+                            if attempt == 1: print("ATTEMPT_2_TRIGGER_REASON=HUB_DOMINATED_OR_NO_ARTICLE_LEVEL_RESULTS", file=sys.stderr, flush=True)
+                        print(f"SEARCH_API_ATTEMPT_COUNT={search_api_attempt_count} ATTEMPT_1_QUERY={attempt_queries[0] if attempt_queries else ''} ATTEMPT_2_QUERY={attempt_queries[1] if len(attempt_queries)>1 else ''} MERGED_RAW_COUNT={web_raw_result_count} CROSS_ATTEMPT_DUPLICATE_COUNT={cross_attempt_duplicates}", file=sys.stderr, flush=True)
                     except RuntimeError as exc:
                         web_evidence=[]; web_provider_not_ready=(str(exc) == "WEB_SEARCH_PROVIDER_NOT_READY")
-                    except Exception: web_evidence=[]
-            print(f"WEB_MODE={getattr(self.settings, 'web_mode', 'off')} WEB_DECISION={web_decision} WEB_SEARCH_RESULT_COUNT={len(web_evidence)} WEB_SOURCE_COUNT={len(web_evidence)} WEB_ZERO_WRITE=YES", file=sys.stderr, flush=True)
-            if web_search_attempted and web_freshness_required and not web_evidence:
+                        web_provider_failed = str(exc) not in ("WEB_SEARCH_DISABLED", "WEB_SEARCH_PROVIDER_NOT_READY")
+                    except Exception:
+                        web_evidence=[]; web_provider_failed=True
+            if web_evidence and re.search(r"ニュース|news", text, re.I):
+                filtered=self._news_articles(web_evidence)
+                print(f"WEB_NEWS_ARTICLE_CANDIDATE_COUNT={len(filtered)} WEB_NEWS_HUB_REJECTED_COUNT={len(web_evidence)-len(filtered)} WEB_HUB_REJECT_COUNT={len(web_evidence)-len(filtered)} WEB_ARTICLE_ACCEPT_COUNT={len(filtered)}", file=sys.stderr, flush=True)
+                web_evidence=filtered[:5]
+            final_status = "SUCCESS" if web_evidence else ("WEB_PROVIDER_NOT_CONFIGURED" if web_provider_not_ready else "WEB_SEARCH_FAILED" if web_provider_failed else "WEB_SEARCH_DISABLED" if web_mode == "off" and web_search_attempted else "WEB_SEARCH_NO_RESULTS" if web_raw_result_count == 0 else "WEB_SEARCH_NO_USABLE_RESULTS")
+            print(f"FINAL_ACCEPTED_RESULT_IDS={','.join(str(x.get('source_id','')) for x in web_evidence)} WEB_SUCCESS_GATE={'PASS' if bool(web_evidence) == (final_status == 'SUCCESS') else 'FAIL'}", file=sys.stderr, flush=True)
+            print(f"WEB_MODE={getattr(self.settings, 'web_mode', 'off')} WEB_DECISION={web_decision} WEB_SEARCH_RESULT_COUNT={len(web_evidence)} WEB_SOURCE_COUNT={len(web_evidence)} WEB_FINAL_STATUS={final_status} WEB_ZERO_WRITE={'NO' if coding_implementation else 'YES'}", file=sys.stderr, flush=True)
+            if web_search_attempted and (web_freshness_required or explicit_web_request) and not web_evidence and not coding_implementation:
                 print("WEB_FAILURE_BRAIN_GENERATION=NOT_RUN", file=sys.stderr, flush=True)
+                print("FINAL_RESPONSE_PATH=WEB_TERMINAL_RESPONSE NORMAL_BRAIN_CALLED=false", file=sys.stderr, flush=True)
                 task.route=Route.NEURAL; task.transition(TaskState.GENERATING); task.transition(TaskState.COMPLETED)
-                disclosure=("Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\n" + setup_guidance(web_provider_name if web_provider_name != "none" else None) if web_provider_not_ready else "Web検索を完了できなかったため、最新情報として確認できませんでした。")
+                disclosure=("Web検索は現在オフになっています。Settings で Web Search を manual または auto にしてください。" if web_mode == "off" else "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\n" + setup_guidance(web_provider_name if web_provider_name != "none" else None) if web_provider_not_ready else "Web検索に失敗したため、最新情報を取得できませんでした。" if web_provider_failed else "Web検索は実行できましたが、個別記事として確認できる今日のAIニュースを特定できませんでした。" if web_raw_result_count > 0 else "Web検索は実行できましたが、該当する結果が見つかりませんでした。")
                 return self._finish(task, disclosure, started)
             if web_evidence:
-                core_context=(core_context + "\n" if core_context else "") + "[WEB_CONTEXT_UNTRUSTED]\nAnswer prose only: do not output URLs, Markdown links, citations, or a source/reference section; OLCR will append verified sources separately.\n" + ("For freshness questions, compare all fetched sources, prefer the newest explicitly supported item, and do not call an older item latest when a newer fetched item exists.\n" if web_freshness_required else "") + "\n\n".join(f"SOURCE_TITLE={x.get('title') or x.get('requested_url')}\nSOURCE_URL={x.get('final_url')}\nSOURCE_PROVIDER_RANK={x.get('rank',0)}\n{x.get('text','')[:4000]}" for x in web_evidence)
+                core_context=(core_context + "\n" if core_context else "") + "[WEB_SEARCH_SUCCESS]\nOLCR has already executed Web Search for this request. The following are current externally retrieved results. Use them to answer the user; do not claim that Internet access or Web Search is unavailable.\nAnswer prose only: do not output URLs, Markdown links, citations, or a source/reference section; OLCR will append verified sources separately.\n" + ("For freshness questions, compare all fetched sources, prefer the newest explicitly supported item, and do not call an older item latest when a newer fetched item exists.\n" if web_freshness_required else "") + "\n\n".join(f"SOURCE_TITLE={x.get('title') or x.get('requested_url')}\nSOURCE_URL={x.get('final_url')}\nSOURCE_PROVIDER_RANK={x.get('rank',0)}\n{x.get('text','')[:4000]}" for x in web_evidence)
+                print(f"WEB_SUCCESS_COMPOSER_USED=true CURRENT_WEB_RESULT_COUNT_SUPPLIED={len(web_evidence)} PREVIOUS_WEB_RESULT_COUNT_SUPPLIED=0 NORMAL_CHAT_COMPOSER_USED=false", file=sys.stderr, flush=True)
                 print(f"WEB_CONTEXT_TOTAL_CHARS={len(core_context)} WEB_EVIDENCE_TOTAL_CHARS={sum(len(x.get('text','')[:4000]) for x in web_evidence)} WEB_FRESHNESS_GUARD={'RUN' if web_freshness_required else 'NOT_APPLICABLE'} WEB_FRESHNESS_GUARD_STATUS={'INSUFFICIENT' if not web_evidence else 'READY'}", file=sys.stderr, flush=True)
             if any(x in lower for x in ("sudo ", "recursive delete", "rm -rf", "credentials", "system configuration")):
                 task.route, task.authorization_state, task.reason_category = Route.DIRECT, "blocked", "deny_default_operation"
@@ -303,8 +408,18 @@ class Runtime:
                 task.route, task.reason_category = Route.PROCEDURE, "validated_procedure_match"; task.transition(TaskState.EXECUTING)
                 task.tool_executions = self.procedures.run(LOWERCASE_PROCEDURE, {"text": text.split(":",1)[1].strip()})
                 task.transition(TaskState.COMPLETED); return self._finish(task, json.dumps(task.tool_executions[-1]["output"]), started)
-            if self._implementation_intent(lower):
-                return self._execute_implementation(task, text, core_context, started)
+            managed_write = coding_implementation
+            global_no_write = self._global_file_execution_forbidden(text)
+            implementation_requested = coding_implementation or self._implementation_intent(lower)
+            if implementation_requested and self._file_execution_forbidden(text) and (global_no_write or not managed_write):
+                print("FILE_EXECUTION_INTENT=false FILE_EXECUTION_NEGATED=true FILE_WRITE_ATTEMPTED=false FILE_PATCH_ATTEMPTED=false FILE_FINAL_STATUS=FORBIDDEN_BY_USER", file=sys.stderr, flush=True)
+                task.route, task.reason_category = Route.NEURAL, "explicit_no_write_request"
+                task.transition(TaskState.DENIED)
+                return self._finish(task, "No file changes were made because the request explicitly prohibited modifying files.", started)
+            elif implementation_requested:
+                if coding_implementation and web_search_attempted:
+                    print("CODING_WEB_SUPPORT_RETURNED_TO_IMPLEMENTATION=true", file=sys.stderr, flush=True)
+                return self._execute_implementation(task, text, core_context, started, workspace_root)
             retrieval_query = self._retrieval_query(text)
             evidence = []
             if retrieval_query:
@@ -320,8 +435,33 @@ class Runtime:
                     return self._finish(task, json.dumps({"retrieval_method": method, "results": task.selected_context, "artifact":artifact}, ensure_ascii=False), started)
             task.route = task.route or Route.NEURAL; task.reason_category = task.reason_category or "open_ended_generation"; task.transition(TaskState.GENERATING)
             messages, selected = ContextManager(self.settings.context_budget).build(text, evidence, core_context); task.selected_context = selected
+            if web_evidence:
+                messages=[{"role":"system","content":"WEB SUCCESS RUNTIME FACT: OLCR has already executed Web Search successfully for this request. Return ONLY valid JSON: {\"items\":[{\"result_id\":\"accepted ID\",\"summary\":\"grounded summary\"}]}. Use only accepted result IDs and evidence; no URLs, no extra keys, no model knowledge, no Internet-unavailable statements."}, *messages]
+                print("WEB_SUCCESS_SYSTEM_CONTEXT_APPLIED=true", file=sys.stderr, flush=True)
             result = self._generate_brain(messages, text)
-            if web_freshness_required and web_evidence:
+            if web_evidence:
+                structured=self._parse_web_composition(result.get("text", ""), web_evidence)
+                category=self._web_contradiction_category(result.get("text", ""))
+                used_web_evidence=[next(x for x in web_evidence if x.get("source_id")==item["result_id"]) for item in structured]
+                grounded=bool(used_web_evidence)
+                print(f"WEB_SUCCESS_OUTPUT_RUNTIME_CONTRADICTION={'true' if category else 'false'} WEB_SUCCESS_CONTRADICTION_CATEGORY={category or 'NONE'} WEB_SUCCESS_OUTPUT_GROUNDED={'true' if grounded else 'false'} WEB_SUCCESS_COMPOSITION_ATTEMPT_COUNT=1", file=sys.stderr, flush=True)
+                if category or not grounded:
+                    repair=[{"role":"system","content":"Return ONLY valid JSON with items containing result_id and summary. Each result_id must be one of the accepted IDs and each summary must use only that result's evidence. No URLs or extra keys."}, *messages]
+                    result=self._generate_brain(repair, text)
+                    category=self._web_contradiction_category(result.get("text", ""))
+                    structured=self._parse_web_composition(result.get("text", ""), web_evidence)
+                    used_web_evidence=[next(x for x in web_evidence if x.get("source_id")==item["result_id"]) for item in structured]
+                    print(f"WEB_SUCCESS_RETRY_TRIGGER={'RUNTIME_CONTRADICTION' if category else 'UNGROUNDED'} WEB_SUCCESS_COMPOSITION_ATTEMPT_COUNT=2", file=sys.stderr, flush=True)
+                if not category and not used_web_evidence:
+                    used_web_evidence=web_evidence[:3]
+                    result["text"]="現在のWeb検索で確認できたAI関連ニュースです。\n"+"\n".join(f"- {x.get('title','')}" for x in used_web_evidence)
+                    print("WEB_SUCCESS_DETERMINISTIC_FALLBACK_USED=true BAD_WEB_SUCCESS_BRAIN_OUTPUT_RENDERED=false", file=sys.stderr, flush=True)
+                elif structured:
+                    titles={str(x.get("source_id")):str(x.get("title") or "") for x in web_evidence}
+                    result["text"]="現在のWeb検索で確認できたAI関連ニュースです。\n\n"+"\n\n".join(f"{i}. {titles.get(item['result_id'],'')}\n   {item['summary']}" for i,item in enumerate(structured,1))
+                print(f"BRAIN_RETURNED_USED_RESULT_IDS={','.join(x.get('source_id','') for x in used_web_evidence)} FINAL_USED_RESULT_IDS={','.join(x.get('source_id','') for x in used_web_evidence)}", file=sys.stderr, flush=True)
+                web_evidence=used_web_evidence
+            if web_freshness_required and web_evidence and not news_request:
                 freshness_status, freshness_claim = self._freshness_check_scoped(result.get("text", ""), web_evidence, bool(re.search(r"prerelease|pre-release|beta|rc|release candidate", lower)), self._freshness_target(text))
                 print(f"WEB_FRESHNESS_CLAIM={freshness_claim or 'NONE'} WEB_FRESHNESS_CANDIDATE_COUNT={len(web_evidence)} WEB_FRESHNESS_HIGHER_CANDIDATE_COUNT={'1' if freshness_status == 'CONFLICT' else '0'} WEB_FRESHNESS_CONFLICT_COUNT={'1' if freshness_status == 'CONFLICT' else '0'} WEB_FRESHNESS_CORRECTION_ATTEMPTED={'YES' if freshness_status == 'CONFLICT' else 'NO'} WEB_FRESHNESS_GUARD_STATUS={freshness_status}", file=sys.stderr, flush=True)
                 if freshness_status == "CONFLICT":
@@ -335,6 +475,7 @@ class Runtime:
                 result["text"], brain_fragment_detected = self._suppress_brain_source_fragments(result["text"])
                 print(f"WEB_BRAIN_URL_DETECTED={'YES' if brain_url_detected else 'NO'} WEB_BRAIN_URL_SUPPRESSED={'YES' if brain_url_detected else 'NO'} WEB_BRAIN_SOURCE_FRAGMENT_DETECTED={'YES' if brain_fragment_detected else 'NO'} WEB_BRAIN_SOURCE_FRAGMENT_SUPPRESSED={'YES' if brain_fragment_detected else 'NO'}", file=sys.stderr, flush=True)
                 rendered_sources=self._render_web_sources(web_evidence)
+                print(f"FINAL_SOURCE_RESULT_IDS={','.join(x.get('source_id','') for x in web_evidence)} UNUSED_ACCEPTED_SOURCE_RENDERED=NO FINAL_USED_RESULT_COUNT={len(web_evidence)}", file=sys.stderr, flush=True)
                 if rendered_sources: result["text"]=result.get("text", "").rstrip()+rendered_sources
             task.model_calls.append({"model": self.settings.main_model, **{k: result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms")}, "status": "success"})
             task.transition(TaskState.COMPLETED); return self._finish(task, result["text"], started)
@@ -346,13 +487,56 @@ class Runtime:
     def _finish(self, task: Task, response: str, started: float) -> tuple[Task, str]:
         task.updated_at = task.created_at + (time.perf_counter()-started); self.db.save_task(task); return task, response
 
+    def compose_tool_result(self, request: str, tool_result: dict[str, Any]) -> tuple[Task, str]:
+        """Inference-only composition for already executed external tools.
+
+        This intentionally bypasses request routing and retrieval so words such as
+        "research" cannot turn a provider result into OLCR retrieval diagnostics.
+        """
+        task = Task(request); task.transition(TaskState.ROUTING); started = time.perf_counter()
+        try:
+            task.route = Route.NEURAL; task.reason_category = "external_tool_composition"; task.transition(TaskState.GENERATING)
+            packet = json.dumps(tool_result, ensure_ascii=False)[:14000]
+            messages = [
+                {"role": "system", "content": "Answer only from the supplied external tool result. Write a concise user-facing answer. Do not output JSON, diagnostics, Markdown links, URLs, or a source section."},
+                {"role": "user", "content": request + "\n[TOOL_RESULT_UNTRUSTED]\n" + packet},
+            ]
+            result = self._generate_brain(messages, request)
+            response = str(result.get("text", "")).strip()
+            if not response: raise RuntimeError("EMPTY_BRAIN_RESPONSE")
+            task.model_calls.append({"model": self.settings.main_model, **{k: result.get(k) for k in ("prompt_tokens", "completion_tokens", "latency_ms")}, "status": "success"})
+            task.transition(TaskState.COMPLETED)
+            return self._finish(task, response, started)
+        except (ModelFailure, RuntimeError) as exc:
+            task.error = str(exc); task.transition(TaskState.FAILED)
+            return self._finish(task, "", started)
+
     def execute_image(self, text: str, image: dict[str, Any], core_context: str = "") -> tuple[Task, str]:
         """Image preprocessing pipeline; vision remains evidence, never authorization."""
         _vision_diag(IMAGE_REQUEST_EXECUTION_PATH="BACKEND", LIVE_EXECUTION_ENTRY="Runtime.execute_image")
         task = Task(text); task.transition(TaskState.ROUTING); started=time.perf_counter()
         try:
-            path=Path(image["canonical_path"]); raw=path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() != image.get("sha256"): raise RuntimeError("image changed since load; reload required")
+            project_context_present="[ACTIVE_PROJECT_CONTEXT]" in core_context
+            project_fact_count=0
+            if project_context_present:
+                try:
+                    payload=core_context.split("[ACTIVE_PROJECT_CONTEXT]",1)[1].split("[/ACTIVE_PROJECT_CONTEXT]",1)[0]
+                    project_fact_count=len(json.loads(payload.strip().splitlines()[0]))
+                except (IndexError, json.JSONDecodeError):
+                    project_fact_count=0
+            _vision_diag(PROJECT_CONTEXT_INJECTED_TO_MAIN_MODEL="YES" if project_context_present else "NO",
+                         PROJECT_CONTEXT_FACT_COUNT=project_fact_count,
+                         PLANNING_CONTEXT_INJECTED="YES" if "[INTERACTIVE_PLANNING_STATE]" in core_context else "NO",
+                         CODING_CONTEXT_INJECTED="YES" if "[ACTIVE_CODING_TASK_STATE]" in core_context else "NO")
+            if image.get("data_url"):
+                encoded=str(image["data_url"]).split(",",1)[-1]
+                raw=base64.b64decode(encoded, validate=True)
+                if len(raw)>5_000_000: raise RuntimeError("image too large; maximum is 5 MB")
+            else:
+                if not image.get("canonical_path"):
+                    raise RuntimeError("image attachment payload missing; please reattach the image")
+                path=Path(image["canonical_path"]); raw=path.read_bytes()
+                if hashlib.sha256(raw).hexdigest() != image.get("sha256"): raise RuntimeError("image changed since load; reload required")
             _vision_diag(SEMANTIC_ENABLED="YES" if self.settings.vector_enabled else "NO", R1_START="YES")
             _vision_diag(SEMANTIC_JUDGE_CONFIGURED="YES" if self.settings.semantic_judge_model else "NO", SEMANTIC_JUDGE_MODEL=self.settings.semantic_judge_model or "")
             _vision_diag(R1_NORMALIZER_AVAILABLE="YES" if getattr(self.retrieval.semantic_normalizer, "model", "") else "NO", R1_EVALUATOR_AVAILABLE="YES" if getattr(self.retrieval.semantic_evaluator, "model", "") else "NO")
@@ -404,7 +588,14 @@ class Runtime:
             r2="\n".join(x.snippet[:800] for x in refined[:8])
             task.route=Route.IMPLEMENTATION if self._implementation_intent(text.lower()) else Route.NEURAL
             task.transition(TaskState.GENERATING)
-            packet=f"[USER_TASK]\n{text}\n[RETRIEVED_CONTEXT_INITIAL]\n{r1}\n[VISUAL_EVIDENCE]\n{json.dumps(visual,ensure_ascii=False)}\n[RETRIEVED_CONTEXT_REFINED]\n{r2}\n"
+            # The vision model is only a sensor.  Main-model reasoning receives
+            # its evidence together with exactly the same bounded project
+            # context used by the text Brain path.
+            packet=(f"[CURRENT_USER_MESSAGE]\n{text}\n"
+                    f"[CURRENT_ATTACHMENT_VISION_EVIDENCE]\n{json.dumps(visual,ensure_ascii=False)}\n"
+                    f"[ACTIVE_PROJECT_AND_CONVERSATION_CONTEXT]\n{core_context}\n"
+                    f"[RETRIEVED_CONTEXT_INITIAL]\n{r1}\n[RETRIEVED_CONTEXT_REFINED]\n{r2}\n")
+            _vision_diag(VISION_EVIDENCE_INJECTED="YES", PROJECT_CONTEXT_INJECTED_TO_MAIN_MODEL="YES" if project_context_present else "NO")
             _vision_diag(MAIN_MODEL_START="YES"); main_started=time.perf_counter(); answer=self._generate_brain([{"role":"user","content":packet}], text)
             _vision_diag(MAIN_MODEL_RESPONSE_RECEIVED="YES")
             task.model_calls.append({"model":self.settings.main_model,"stage":"QWEN36_MAIN_MODEL","duration_ms":(time.perf_counter()-main_started)*1000,"status":"success"})
@@ -449,19 +640,58 @@ class Runtime:
         # the user lists filenames directly (e.g. ``create index.html, style.css``).
         if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(作成|作って|実装|書き込|更新|変更|完成|格納|ファイル).*(workspace|ワークスペース|ファイル|コード|index\.html|style\.css|game\.js|tetris|テトリス)", lower):
             return True
-        if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(?:直して|修正して|変更して|更新して|確認して.*修正|落ちず|浮いて止まる)", lower) and re.search(r"(?:ファイル|実装|workspace|ワークスペース|テトリス|script\.js|index\.html)", lower):
+        if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(?:編集して|置き換えて|置換して|直して|修正して|変更して|更新して|確認して.*修正|落ちず|浮いて止まる)", lower) and re.search(r"(?:ファイル|実装|workspace|ワークスペース|テトリス|script\.js|index\.html|\.html\b|\.css\b|\.js\b)", lower):
+            return True
+        # Natural Japanese often places the destination before the action:
+        # ``作業ディレクトリ内に test.html を作成して``.
+        if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", lower) and re.search(r"(?:作業ディレクトリ|作業領域|ワークスペース|workspace).*(?:作成|作って|書き込|保存|更新|変更)", lower) and re.search(r"\.[a-z0-9]{1,6}\b|ファイル", lower, re.I):
             return True
         return bool(re.search(r"\b(implement|create (?:the |.* )?files?|create\s+[^\n]*(?:\.(?:html?|css|js|jsx|ts|py)\b)|modify|fix|refactor|update|write .* (?:into|to) (?:the )?(?:project|workspace)|build)\b", lower))
 
-    def _workspace_files(self) -> list[str]:
-        root = self.settings.allowed_roots[0] if self.settings.allowed_roots else None
+    @staticmethod
+    def _file_execution_forbidden(text: str) -> bool:
+        """Detect an explicit prohibition on the requested file action.
+
+        The check is clause-scoped so an unrelated instruction such as
+        ``説明はしないで、test.html を編集して`` remains executable.
+        """
+        clauses = re.split(r"[、。.!?\n]+", text)
+        negative = re.compile(r"(?:しないで|しないでください|しない|反映しない|変更しない|編集しない|更新しない|作成しない)")
+        file_action = re.compile(r"(?:編集|変更|更新|作成|置き換え|置換|修正|書き込|保存|ファイル|\.html\b|\.css\b|\.js\b)", re.I)
+        for clause in clauses:
+            if not negative.search(clause) or not file_action.search(clause):
+                continue
+            # These clauses constrain the mutation scope; they explicitly
+            # preserve unrelated content/files while authorizing the target
+            # action in another clause.
+            if re.match(r"\s*(?:他の部分|それ以外|指定箇所以外|他は|他のファイル|[^、。]+?\s*以外のファイル|このTask以外の既存ファイル|既存ファイル)\s*(?:は|を)?", clause, re.I):
+                continue
+            if re.search(r"(?:説明|解説|回答|文言).*(?:しないで|しない)", clause) and not re.search(r"(?:ファイル|\.html\b|\.css\b|\.js\b)", clause, re.I):
+                continue
+            return True
+        return bool(re.search(r"(?:まだ|実際に|実際のファイル).{0,24}(?:編集|変更|更新|作成|反映).{0,12}(?:しないで|しない)", text, re.S))
+
+    @staticmethod
+    def _global_file_execution_forbidden(text: str) -> bool:
+        """True only for an unqualified request to make no workspace changes."""
+        for clause in re.split(r"[、。.!?\n]+", text):
+            if re.search(r"(?:何も|一切).*(?:書き込|保存|作成|変更|編集|更新).*(?:しないで|しない)", clause):
+                return True
+            if re.search(r"^\s*ファイル(?:を|は)?.*(?:作成|変更|編集|書き込|保存|更新).*(?:しないで|しない)", clause):
+                return True
+            if re.search(r"^\s*実装(?:は|を)?.*(?:しないで|しない)", clause):
+                return True
+        return False
+
+    def _workspace_files(self, workspace_root: Path | None = None) -> list[str]:
+        root = workspace_root or (Path(self.settings.allowed_roots[0]) if self.settings.allowed_roots else None)
         if not root: raise PermissionError("an authorized workspace is required for implementation work")
         base = Path(root)
         return sorted(str(item.relative_to(base)) for item in base.rglob("*") if item.is_file())[:200]
 
-    def _related_sources(self, target: Path, limit: int = 8) -> dict[Path, str]:
+    def _related_sources(self, target: Path, limit: int = 8, root: Path | None = None) -> dict[Path, str]:
         """Read bounded source context for an existing target and its direct web links."""
-        root = Path(self.settings.allowed_roots[0]).resolve()
+        root = (root or Path(self.settings.allowed_roots[0])).resolve()
         candidates = [target]
         if target.suffix.lower() in {".js", ".ts", ".jsx", ".tsx"}:
             candidates += [p for p in root.glob("*.html")]
@@ -488,15 +718,25 @@ class Runtime:
             if ids and html and any(f'id="{i}"' not in html and f"id='{i}'" not in html for i in ids): return False
         return True
 
-    def _execute_implementation(self, task: Task, text: str, core_context: str, started: float) -> tuple[Task, str]:
+    def _execute_implementation(self, task: Task, text: str, core_context: str, started: float, workspace_root: str | None = None) -> tuple[Task, str]:
         """One bounded model→typed-file-tools→inspection loop for workspace mutations."""
         task.route, task.reason_category, task.authorization_state = Route.IMPLEMENTATION, "authorized_workspace_mutation", "authorized"
         task.transition(TaskState.EXECUTING)
-        files = self._workspace_files()
+        root = Path(workspace_root).resolve() if workspace_root else Path(self.settings.allowed_roots[0]).resolve()
+        if not root.is_dir(): raise PermissionError("an authorized workspace is required for implementation work")
+        edit_request = bool(re.search(r"(?:編集|置き換え|置換|修正|変更|更新)\s*(?:して|しろ|ください|する)", text, re.I))
+        target_match = re.search(r"(?:^|[\s「『])([\w./-]+\.(?:html?|css|js|mjs|ts|jsx|tsx|py))", text, re.I)
+        if edit_request and target_match:
+            candidate = (root / target_match.group(1)).resolve()
+            if root not in candidate.parents or not candidate.is_file():
+                print(f"FILE_EXECUTION_INTENT=true FILE_EXECUTION_NEGATED=false FILE_TARGET={candidate} FILE_TARGET_EXISTS=false FILE_WRITE_ATTEMPTED=false FILE_PATCH_ATTEMPTED=false FILE_OPERATION_SUCCEEDED=false FILE_FINAL_STATUS=TARGET_NOT_FOUND", file=sys.stderr, flush=True)
+                task.transition(TaskState.COMPLETED)
+                return self._finish(task, f"Target not found: {candidate}. The requested file could not be edited because it does not exist in the selected project workspace.", started)
+        files = self._workspace_files(root)
         task.tool_executions.append({"tool":"workspace_list","version":"1.0","risk":"SAFE","input":{},"output":{"files":files},"status":"success","latency_ms":0})
         existing = {}
         for rel in files:
-            p = Path(self.settings.allowed_roots[0]) / rel
+            p = root / rel
             if p.suffix.lower() in {".html", ".css", ".js", ".mjs", ".ts", ".jsx", ".tsx"} and len(existing) < 8:
                 try: existing[rel] = p.read_text(encoding="utf-8")[:500_000]
                 except (OSError, UnicodeDecodeError): pass
@@ -522,34 +762,51 @@ class Runtime:
                 return self._finish(task, "No changes needed. Verified: source inspection PASS; requested condition already satisfied PASS; workspace writes: 0. Runtime behavior: NOT_RUN.", started)
             raise RuntimeError("invalid empty implementation result")
         if len(operations)>20: raise RuntimeError("implementation plan exceeds the 20-operation safety limit")
-        changed=[]; snapshots={}
+        changed=[]; snapshots: dict[Path, str | None] = {}; patch_attempted=False; write_attempted=False
         try:
           for operation in operations:
             if not isinstance(operation,dict) or operation.get("op") not in {"patch", "write"} or not isinstance(operation.get("path"),str):
                 raise RuntimeError("implementation plan contains an unsupported file operation")
             requested=Path(operation["path"])
-            if not requested.is_absolute(): requested=Path(self.settings.allowed_roots[0]) / requested
-            target=self.retrieval.files.guard.resolve(str(requested))
-            current = target.read_text(encoding="utf-8") if target.exists() else ""
-            snapshots[target] = current
+            if not requested.is_absolute(): requested=root / requested
+            target=requested.expanduser().resolve()
+            if root not in target.parents and target != root: raise PermissionError("target outside allowed roots: outside authorized project workspace")
+            existed_before=target.exists()
+            current = target.read_text(encoding="utf-8") if existed_before else ""
+            snapshots[target] = current if existed_before else None
             if operation["op"] == "patch":
+                patch_attempted=True
                 old, new = operation.get("expected_old_fragment"), operation.get("replacement_fragment")
+                # A complete create plan may be emitted as a patch by the
+                # implementation model.  For an absent (or empty artifact)
+                # target, normalize it to a content-bearing write.  Existing
+                # non-empty files retain strict patch preconditions.
+                if (not existed_before or current == "") and isinstance(new, str) and new and (old in (None, "")):
+                    operation = {"op":"write", "path":operation["path"], "content":new}
+                    task.tool_executions.append({"tool":"workspace_write_normalized","version":"1.0","risk":"SAFE","input":{"path":str(target),"reason":"new_file_complete_content"},"output":{},"status":"normalized","latency_ms":0})
+
+            if operation["op"] == "patch":
                 if not isinstance(old, str) or not isinstance(new, str) or not old or current.count(old) != 1:
                     raise RuntimeError("patch precondition failed; source changed or fragment is ambiguous")
                 content = current.replace(old, new, 1)
             else:
+                write_attempted=True
                 content = operation.get("content")
                 if not isinstance(content, str) or len(content) > 500_000: raise RuntimeError("invalid full-file operation")
             if target.exists() and operation["op"] == "write" and len(content) < max(32, len(current)//2):
                 raise RuntimeError("minor edit cannot replace most of an existing file")
-            related = self._related_sources(target)
+            related = self._related_sources(target, root=root)
             if not self._structural_ok(target, content, related): raise RuntimeError("structural validation failed")
             target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content, encoding="utf-8")
             changed.append(str(target))
             task.tool_executions.append({"tool":"workspace_write","version":"1.0","risk":"SAFE","input":{"path":str(target),"content_length":len(content)},"output":{"path":str(target),"bytes":target.stat().st_size},"status":"success","latency_ms":0})
         except Exception:
           for path, original in snapshots.items():
-            try: path.write_text(original, encoding="utf-8")
+            try:
+                if original is None:
+                    if path.exists(): path.unlink()
+                else:
+                    path.write_text(original, encoding="utf-8")
             except OSError: pass
           raise
         inspected=[]
@@ -558,6 +815,7 @@ class Runtime:
             inspected.append({"path":target,"bytes":len(value)})
             task.tool_executions.append({"tool":"workspace_read","version":"1.0","risk":"SAFE","input":{"path":target},"output":{"bytes":len(value)},"status":"success","latency_ms":0})
         task.transition(TaskState.COMPLETED)
+        print(f"FILE_EXECUTION_INTENT=true FILE_EXECUTION_NEGATED=false FILE_TARGET_EXISTS=true FILE_WRITE_ATTEMPTED={'true' if write_attempted else 'false'} FILE_PATCH_ATTEMPTED={'true' if patch_attempted else 'false'} FILE_OPERATION_SUCCEEDED=true FILE_READBACK_SUCCEEDED=true FILE_FINAL_STATUS=SUCCESS", file=sys.stderr, flush=True)
         return self._finish(task, "Updated: " + ", ".join(changed) + ". Write: PASS; read-back: PASS; structural validation: PASS. Runtime behavior: NOT_RUN.", started)
     @staticmethod
     def _retrieval_query(text: str) -> str | None:

@@ -189,6 +189,21 @@ class OllamaSemanticRelationEvaluator(SemanticRelationEvaluator):
 
 class OllamaEmbeddingProvider(EmbeddingProvider):
     def __init__(self, endpoint: str, timeout: float=MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint,self.timeout=endpoint.rstrip("/"),timeout
+    def model_identity(self, model: str) -> str:
+        """Return Ollama's immutable digest when it exposes one.
+
+        Coding Knowledge uses this only to reject an index created by a
+        different embedding model.  It does not fetch documents or mutate an
+        index.
+        """
+        req=request.Request(self.endpoint+"/api/show",data=json.dumps({"model":model}).encode(),headers={"Content-Type":"application/json"})
+        try:
+            with request.urlopen(req,timeout=min(self.timeout, 5.0)) as response: data=json.load(response)
+        except error.HTTPError as exc: raise EmbeddingFailure("model_unavailable" if exc.code==404 else "provider_error",f"Ollama model identity HTTP {exc.code}") from exc
+        except (error.URLError,TimeoutError) as exc: raise EmbeddingFailure("provider_unavailable",str(exc)) from exc
+        digest=data.get("digest") or data.get("model_info",{}).get("general.file_sha256")
+        if not isinstance(digest,str) or not digest.strip(): raise EmbeddingFailure("invalid_response","Ollama did not expose an embedding model identity")
+        return digest.strip()
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not model: raise EmbeddingFailure("model_unavailable","No embedding model configured")
         req=request.Request(self.endpoint+"/api/embed",data=json.dumps({"model":model,"input":texts,"truncate":True}).encode(),headers={"Content-Type":"application/json"})
