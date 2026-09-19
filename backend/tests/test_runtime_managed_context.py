@@ -17,7 +17,7 @@ class DeterministicFileModel:
         self.calls = []
 
     def generate(self, messages, model, stream=False, think=None, format=None):
-        self.calls.append({"messages": messages, "model": model})
+        self.calls.append({"messages": messages, "model": model, "think": think, "format": format})
         return {
             "text": json.dumps(
                 {
@@ -37,6 +37,38 @@ class DeterministicFileModel:
             ),
             "latency_ms": 0,
         }
+
+
+class OutOfScopeFileModel(DeterministicFileModel):
+    def generate(self, messages, model, stream=False, think=None, format=None):
+        self.calls.append({"messages": messages, "model": model, "think": think, "format": format})
+        return {
+            "text": json.dumps({
+                "change_required": True,
+                "source_inspected": True,
+                "condition_evaluated": True,
+                "reason_code": "scope_probe",
+                "operations": [
+                    {"op": "write", "path": "src/math.py", "content": "def add(a, b):\n    return a + b\n"},
+                    {"op": "write", "path": "tests/test_math.py", "content": "changed\n"},
+                ],
+                "verification": "read back the authorized file",
+            }),
+            "latency_ms": 0,
+        }
+
+
+class PatchFileModel(DeterministicFileModel):
+    def __init__(self, old="return a - b", new="return a + b"):
+        super().__init__()
+        self.old, self.new = old, new
+
+    def generate(self, messages, model, stream=False, think=None, format=None):
+        self.calls.append({"messages": messages, "model": model, "think": think, "format": format})
+        return {"text": json.dumps({"operations": [{
+            "op": "patch", "path": "src/math.py",
+            "expected_old_fragment": self.old, "replacement_fragment": self.new,
+        }]}), "latency_ms": 0}
 
 
 class RealRuntimeManagedContextTests(unittest.TestCase):
@@ -91,6 +123,10 @@ class RealRuntimeManagedContextTests(unittest.TestCase):
         self.assertEqual("IMPLEMENTATION", task.route.value)
         self.assertEqual("completed", task.state.value)
         self.assertTrue(self.model.calls)
+        self.assertFalse(self.model.calls[0]["think"])
+        self.assertIsInstance(self.model.calls[0]["format"], dict)
+        self.assertIn("Return ONLY JSON", self.model.calls[0]["messages"][-1]["content"])
+        self.assertIn('"operations"', self.model.calls[0]["messages"][-1]["content"])
         self.assertEqual("OLCR_REAL_RUNTIME_PROBE", probe.read_text(encoding="utf-8"))
         self.assertIn("Write: PASS; read-back: PASS", response)
         self.assertGreater(len(write_operations), 0)
@@ -113,6 +149,73 @@ class RealRuntimeManagedContextTests(unittest.TestCase):
         self.assertEqual("explicit_no_write_request", denied.reason_category)
         self.assertFalse((self.workspace / "forbidden_probe.txt").exists())
         self.assertEqual(1, len(self.model.calls))
+
+    def test_approved_scope_is_enforced_before_any_operation_is_written(self):
+        model = OutOfScopeFileModel()
+        runtime = Runtime(self.runtime.settings, self.db, self.runtime.retrieval, model)
+        source = self.workspace / "src" / "math.py"
+        source.parent.mkdir()
+        source.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+        tests = self.workspace / "tests" / "test_math.py"
+        tests.parent.mkdir()
+        tests.write_text("original\n", encoding="utf-8")
+
+        task, response = runtime.execute(
+            "Fix src/math.py and verify the focused test.",
+            workspace_root=str(self.workspace),
+            managed_context={
+                **self.managed_context,
+                "approved_scopes": [{"source": "original_request", "requested_scope": ["src/math.py"]}],
+            },
+        )
+
+        self.assertEqual("failed", task.state.value)
+        self.assertIn("authorized mutation scope", response)
+        self.assertEqual("def add(a, b):\n    return a - b\n", source.read_text(encoding="utf-8"))
+        self.assertEqual("original\n", tests.read_text(encoding="utf-8"))
+
+    def test_python_source_is_supplied_to_typed_implementer(self):
+        source = self.workspace / "src" / "math.py"
+        source.parent.mkdir()
+        source.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+        task, _ = self.runtime.execute(
+            "Fix src/math.py.",
+            workspace_root=str(self.workspace),
+            managed_context=self.managed_context,
+        )
+        self.assertEqual("completed", task.state.value)
+        self.assertIn("def add(a, b):", self.model.calls[-1]["messages"][-1]["content"])
+
+    def test_exact_patch_applies_to_current_source(self):
+        source = self.workspace / "src" / "math.py"
+        source.parent.mkdir()
+        source.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+        model = PatchFileModel()
+        runtime = Runtime(self.runtime.settings, self.db, self.runtime.retrieval, model)
+        task, _ = runtime.execute("Fix src/math.py.", workspace_root=str(self.workspace), managed_context={
+            **self.managed_context,
+            "approved_scopes": [{"source": "original_request", "requested_scope": ["src/math.py"]}],
+        })
+        self.assertEqual("completed", task.state.value)
+        self.assertIn("return a + b", source.read_text(encoding="utf-8"))
+        self.assertTrue(any(item["tool"] == "operation_preflight" for item in task.tool_executions))
+
+    def test_invalid_preimage_is_deterministic_and_rolls_back(self):
+        source = self.workspace / "src" / "math.py"
+        source.parent.mkdir()
+        original = "def add(a, b):\n    return a - b\n"
+        source.write_text(original, encoding="utf-8")
+        model = PatchFileModel(old="return never_existed")
+        runtime = Runtime(self.runtime.settings, self.db, self.runtime.retrieval, model)
+        task, _ = runtime.execute("Fix src/math.py.", workspace_root=str(self.workspace), managed_context={
+            **self.managed_context,
+            "approved_scopes": [{"source": "original_request", "requested_scope": ["src/math.py"]}],
+        })
+        self.assertEqual("failed", task.state.value)
+        self.assertEqual(original, source.read_text(encoding="utf-8"))
+        failure = next(item for item in task.tool_executions if item["tool"] == "operation_application_failure")
+        self.assertEqual("PREIMAGE_MISMATCH", failure["input"]["failure_class"])
+        self.assertEqual("ROLLED_BACK", failure["output"]["worktree_state"])
 
     def test_managed_web_words_do_not_select_normal_chat_web_search(self):
         self.runtime.settings.web_mode = "auto"

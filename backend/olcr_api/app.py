@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import time
 import uuid
 import re
-from typing import Optional
+from typing import Any, Optional
 import threading
 import os
+import subprocess
 from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -17,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .config import Settings
+from .config import DEFAULT_ROUTER_MODEL, Settings
 from .artifacts import ArtifactStore
 from .db import Database
 from .ollama import OllamaProvider
@@ -32,21 +34,27 @@ from .ollama import ModelFailure
 from .commands import catalog, resolve
 from .external_tools import (ExternalToolError, REGISTRY, execute as execute_external_tool,
     route as route_external_tool, compile_provider_arguments, normalize_weather_arguments,
-    normalize_research_arguments, normalize_wiki_arguments, status as external_tool_status)
-from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TASK, coding_candidate,
+    normalize_research_arguments, normalize_wiki_arguments, status as external_tool_status,
+    NEW_TOOL_IDS)
+from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TASK, PHASE_EXECUTION_MODES, coding_candidate,
                             classify_coding_request,
-    completion_prompt, final_report_prompt, manager_review_prompt, model_slot, new_id, plan_prompt,
+    completion_prompt, deterministic_final_report, manager_review_prompt, model_slot, new_id, plan_prompt,
     plan_repair_prompt, report_has_authoritative_failure,
     validate_phase_report, validate_plan, extract_plan_json, plan_schema, coding_action_intent,
     normalize_manager_decision, evaluate_phase, classify_waiting_input, classify_execution_mode,
     compact_normal_plan, execution_mode_diagnostics, resumable_continuation_eligible,
     workspace_mutation_count, zero_mutation_retry_instruction, task_profile,
-    required_mcp_contract, normalize_task_graph, canonical_coding_requirements, normalize_coding_requirements, animejs_project_version, animejs_version_compatibility,
-    phase_has_observable_deliverable, coding_classification_diagnostics, classify_mutation_mode)
+    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, animejs_project_version, animejs_version_compatibility,
+    phase_has_observable_deliverable, coding_classification_diagnostics, classify_mutation_mode,
+    attachment_repair_evidence, validate_fix_plan_quality, phase_execution_contract_errors)
 from .mcp_manifest import server_definition
 from .mcp_runtime import MCPRuntime
 from .node_mcp_runtime import launch_command as node_mcp_launch_command, resolve_mcp_resources as node_mcp_resource_status
 from .interactive_planning import parse_pending_questions, resolve_short_reply
+from .implementation_plan import prepare_implementation_plan
+from .coding_telemetry import CodingTelemetry
+from .node_mcp_runtime import runtime_diagnostics
+print(json.dumps(runtime_diagnostics(), ensure_ascii=False), file=__import__('sys').stderr, flush=True)
 class RouterUnavailable(RuntimeError): pass
 
 
@@ -60,6 +68,7 @@ class ChatInput(BaseModel):
     attachment: Optional[dict] = None
     external: Optional[dict] = None
     message_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    execution_intent: Optional[str] = Field(default=None, max_length=64)
 
 
 class SearchInput(BaseModel):
@@ -81,7 +90,7 @@ class SettingsInput(BaseModel):
     ollama_endpoint: str
     main_model: str = ""
     vision_model: str = "qwen2.5vl:3b"
-    router_model: str = "gemma3:1b"
+    router_model: str = DEFAULT_ROUTER_MODEL
     embedding_model: str = ""
     semantic_judge_model: str = ""
     reranker_enabled: bool = False
@@ -149,6 +158,8 @@ vectors = LocalVectorStore(db,OllamaEmbeddingProvider(settings.ollama_endpoint),
 retrieval = RetrievalRouter(files, FTSRetriever(db), vectors, settings.vector_enabled, OllamaSemanticRelationEvaluator(settings.ollama_endpoint,settings.semantic_judge_model), OllamaIntentNormalizer(settings.ollama_endpoint,settings.semantic_judge_model), QwenReranker(settings.reranker_model,settings.reranker_enabled,settings.reranker_threshold) if settings.reranker_enabled else None, settings.reranker_threshold)
 artifacts=ArtifactStore(str(Path(settings.db_path).parent/"artifacts"),db)
 runtime = Runtime(settings, db, retrieval, OllamaProvider(settings.ollama_endpoint),artifacts)
+_coding_telemetry: dict[str, CodingTelemetry] = {}
+print("CODING_TELEMETRY_ENABLED=YES CODING_TELEMETRY_STORE=coding_task_telemetry MODEL_ENGINE_DEFAULT=UNKNOWN PREFIX_CACHE_OBSERVED=UNKNOWN", file=__import__('sys').stderr, flush=True)
 conversation_memory = ConversationMemory(db, OllamaEmbeddingProvider(settings.ollama_endpoint), settings.embedding_model)
 coding_knowledge = CodingKnowledge()
 cancel_events: dict[str,threading.Event]={}
@@ -222,7 +233,8 @@ def coding_knowledge_context_for_subtask(request: str, workspace_root: str | Non
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": app.version, "bind_scope":"loopback_only", "app_support":str(Path(settings.db_path).parent), "db_path":settings.db_path, "model_configuration": "ready" if settings.main_model else "not_ready", "router_model": settings.router_model, "session_auth_required":bool(_gui_session_token)}
+    print(f"PRIMARY_QWEN_MODEL={settings.main_model} NORMAL_BRAIN_MODEL={settings.main_model} CODING_PLANNER_MODEL={settings.main_model} CODING_IMPLEMENTER_MODEL={settings.main_model} NORMAL_BRAIN_MODEL_AVAILABLE=UNKNOWN CODING_MODEL_UNCHANGED=YES API_ROUTER_ENABLED={'YES' if settings.router_model else 'NO'} API_ROUTER_MODEL={settings.router_model or 'NONE'} API_ROUTER_MODEL_AVAILABLE=UNKNOWN GEMMA_ACTIVE=NO GLOBAL_MODEL_EXECUTION_LIMIT=1", file=__import__('sys').stderr, flush=True)
+    return {"status": "ok", "version": app.version, "bind_scope":"loopback_only", "app_support":str(Path(settings.db_path).parent), "db_path":settings.db_path, "model_configuration": "ready" if settings.main_model else "not_ready", "main_model": settings.main_model, "router_model": settings.router_model, "session_auth_required":bool(_gui_session_token)}
 
 @app.get("/api/models/status")
 def model_status():
@@ -232,7 +244,7 @@ def model_status():
             payload=json.load(response); installed=[str(x.get("name")) for x in payload.get("models", []) if isinstance(x,dict)]
     except Exception:
         pass
-    return {"router_model":settings.router_model, "router_installed":settings.router_model in installed, "installed":installed}
+    return {"main_model":settings.main_model, "main_installed":settings.main_model in installed, "router_model":settings.router_model, "router_installed":settings.router_model in installed, "installed":installed}
 
 def valid_workspace(path: str | None) -> str | None:
     if path is None or not path.strip(): return None
@@ -292,6 +304,28 @@ def _coding_task_context(conversation_id: str) -> str:
     if not task: return ""
     safe={key:task.get(key) for key in ("id", "original_goal", "status", "activity", "current_phase_id", "recovery_action", "recovery_reason", "plan_revision") if task.get(key) not in (None, "", "NONE")}
     return "\n[ACTIVE_CODING_TASK_STATE]\n"+json.dumps(safe, ensure_ascii=False)+"\n[/ACTIVE_CODING_TASK_STATE]\n"
+
+
+_INTERNAL_CONTROL_FRAME = re.compile(r"\[ACTIVE_CODING_TASK_STATE\].*?\[/ACTIVE_CODING_TASK_STATE\]", re.IGNORECASE | re.DOTALL)
+
+
+def _sanitize_user_visible_assistant_text(value: str) -> str:
+    """Strip internal coding-task control frames before persistence/rendering."""
+    text = str(value or "")
+    if "[ACTIVE_CODING_TASK_STATE]" not in text:
+        return text
+    cleaned = _INTERNAL_CONTROL_FRAME.sub("", text)
+    # Fail closed for an unterminated or frame-only response; control JSON is
+    # never allowed to become an assistant message.
+    cleaned = re.sub(r"\[ACTIVE_CODING_TASK_STATE\].*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip()
+
+
+def _blocked_task_user_message(task: dict) -> str:
+    reason = str(task.get("recovery_reason") or "")
+    if reason == "NARRATIVE_ONLY_RETRY_EXHAUSTED":
+        return "実装操作を開始できない状態が再試行上限まで続いたため、タスクを停止しました。"
+    return "Coding Task はブロックされています。状態を確認してから再試行してください。"
 
 def _planning_context_prompt(session: dict | None) -> str:
     if not session: return ""
@@ -398,7 +432,7 @@ def update_coding_task(task_id: str, value: CodingTaskUpdate):
         if updates: db.update_coding_task(task_id,**updates)
         replan_epoch_resume = _begin_human_recovery_epoch(task)
         result=db.enqueue_coding_task(task_id); _coding_scheduler_wake.set()
-        print(f"TASK_ID={task_id} RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE STATUS_AFTER_RESUME=QUEUED RECOVERY_ACTION={task.get('recovery_action','NONE')} RECOVERY_REASON={task.get('recovery_reason','NONE')} RECOVERY_EPOCH={result.get('recovery_epoch',0) if result else task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={result.get('replan_count_in_epoch','unchanged') if result else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
+        print(f"TASK_ID={task_id} RESUME_SAME_TASK=YES RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE STATUS_AFTER_RESUME=QUEUED RECOVERY_ACTION={task.get('recovery_action','NONE')} RECOVERY_REASON={task.get('recovery_reason','NONE')} RECOVERY_EPOCH={result.get('recovery_epoch',0) if result else task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={result.get('replan_count_in_epoch','unchanged') if result else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
         return result
     if value.pause_requested is True:
         result=db.dequeue_coding_task(task_id)
@@ -413,6 +447,11 @@ def update_coding_task(task_id: str, value: CodingTaskUpdate):
 def coding_task_phase_reports(task_id: str):
     if not db.coding_task(task_id): raise HTTPException(404,"coding task not found")
     return {"reports":db.coding_phase_reports(task_id)}
+
+@app.get("/api/coding-tasks/{task_id}/telemetry")
+def coding_task_telemetry(task_id: str):
+    if not db.coding_task(task_id): raise HTTPException(404, "coding task not found")
+    return db.coding_telemetry(task_id) or {"task_id": task_id, "status": "NOT_AVAILABLE"}
 
 @app.get("/api/coding-tasks/{task_id}")
 def get_coding_task(task_id: str):
@@ -446,18 +485,64 @@ def _begin_human_recovery_epoch(task: dict) -> bool:
     db.update_coding_task(task["id"], recovery_epoch=int(task.get("recovery_epoch") or 0) + 1, replan_count_in_epoch=0)
     return True
 
+def _telemetry_role(activity: str) -> str:
+    """Map a task activity to its model-call role for telemetry only."""
+    if activity == "QWEN_PLANNING":
+        return "PLANNER"
+    if activity == "QWEN_REPLANNING":
+        return "REPLANNER"
+    if "PLAN_SCHEMA_REPAIR" in activity:
+        return "PLAN_REPAIR"
+    if "REPORT_SCHEMA_REPAIR" in activity:
+        return "REPORT_SCHEMA_REPAIR"
+    if "REVIEW" in activity:
+        return "SEMANTIC_VERIFICATION"
+    return "OTHER_CODING"
+
+
 def _model_text(task_id: str, status: str, activity: str, model: str, messages: list[dict], structured_schema: dict | None = None) -> str | None:
     if _pause_at_checkpoint(task_id): return None
     db.update_coding_task(task_id,status=status,activity=activity)
     print(f"TASK_ID={task_id} TASK_STATUS={status} TASK_ACTIVITY={activity} MODEL_SLOT_OWNER={task_id} MODEL_NAME={model}",file=__import__('sys').stderr,flush=True)
+    role = _telemetry_role(activity)
     with model_slot():
+        started = time.perf_counter()
         try:
             raw=runtime.model.generate(messages,model,think=False,format=structured_schema) if structured_schema is not None else runtime.model.generate(messages,model,think=False)
         except TypeError:
             # Deterministic test doubles and older compatible providers may not
             # expose the optional Ollama format argument.
-            raw=runtime.model.generate(messages,model,think=False)
+            try:
+                raw=runtime.model.generate(messages,model,think=False)
+            except Exception as exc:
+                telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
+                telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages, result=None,
+                                   started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__)
+                raise
+        except Exception as exc:
+            telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
+            telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages, result=None,
+                               started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__)
+            raise
+    telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
+    telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages,
+                       result=raw if isinstance(raw, dict) else None, started=time.time() - (time.perf_counter() - started), finished=time.time(),
+                       structured=structured_schema is not None, thinking=False, success=isinstance(raw, dict), failure_class="NONE" if isinstance(raw, dict) else "INVALID_RESPONSE")
+    print(f"TASK_ID={task_id} CODING_TELEMETRY_CALL=RECORDED CODING_TELEMETRY_ROLE={role} MODEL_CALL_COUNT={telemetry.record['model_call_count']}", file=__import__('sys').stderr, flush=True)
     return raw.get("text","") if isinstance(raw,dict) else ""
+
+def _finish_coding_telemetry(task_id: str, verify_status: str = "UNKNOWN") -> None:
+    telemetry=_coding_telemetry.pop(task_id, None)
+    if telemetry is None:
+        return
+    record=telemetry.finish(verify_status)
+    db.save_coding_telemetry(task_id, record)
+    print(f"TASK_ID={task_id} CODING_TELEMETRY_FINISHED=YES MODEL_CALL_COUNT={record['model_call_count']} TOTAL_TASK_MS={record['total_task_ms']:.2f} INPUT_TOKENS_TOTAL={record['input_tokens_total']} OUTPUT_TOKENS_TOTAL={record['output_tokens_total']}", file=__import__('sys').stderr, flush=True)
+
+def _persist_coding_telemetry_snapshot(task_id: str) -> None:
+    telemetry=_coding_telemetry.get(task_id)
+    if telemetry is not None and db.coding_task(task_id):
+        db.save_coding_telemetry(task_id, telemetry.record)
 
 def _phase_status(plan: dict, phase_id: str, status: str) -> dict:
     revised=json.loads(json.dumps(plan))
@@ -520,9 +605,274 @@ def _set_subtask_state(task_id: str, phase_id: str, status: str, *, attempt: int
 
 def _typed_summary(execution: Task) -> dict:
     operations=[]
+    failure_class = "UNKNOWN"
+    worktree_state = "UNKNOWN"
     for item in execution.tool_executions:
         operations.append({"tool":item.get("tool"),"status":item.get("status"),"output":item.get("output"),"error":item.get("error")})
-    return {"state":execution.state.value,"error":execution.error,"operations":operations}
+        if item.get("tool") == "operation_application_failure":
+            output = item.get("output") or {}
+            failure_class = str((item.get("input") or {}).get("failure_class") or failure_class)
+            worktree_state = str(output.get("worktree_state") or worktree_state)
+    return {"state":execution.state.value,"error":execution.error,"operations":operations,
+            "failure_class":failure_class,"worktree_state":worktree_state}
+
+
+def _phase_execution_expectations(phase: dict) -> dict:
+    """Return the scheduler contract, preferring explicit phase metadata.
+
+    New plans carry ``execution_mode``.  Legacy persisted plans do not, so
+    they retain the previous conservative behavior and can never gain the
+    verification-only elision accidentally.
+    """
+    explicit_mode = phase.get("execution_mode") if isinstance(phase, dict) else None
+    if explicit_mode is not None:
+        errors = phase_execution_contract_errors(phase)
+        if explicit_mode not in PHASE_EXECUTION_MODES or errors:
+            return {
+                "execution_mode": explicit_mode,
+                "execution_mode_source": "EXPLICIT_PHASE_FIELD",
+                "execution_mode_valid": False,
+                "execution_mode_errors": errors or ["invalid phase execution_mode"],
+                "requires_repo_mutation": True,
+                "requires_tool_execution": True,
+                "requires_verification": bool(phase.get("verify")),
+                "read_only_allowed": False,
+            }
+        mutation = explicit_mode in {"IMPLEMENTATION", "IMPLEMENTATION_AND_VERIFICATION"}
+        return {
+            "execution_mode": explicit_mode,
+            "execution_mode_source": "EXPLICIT_PHASE_FIELD",
+            "execution_mode_valid": True,
+            "execution_mode_errors": [],
+            "requires_repo_mutation": mutation,
+            "requires_tool_execution": mutation,
+            "requires_verification": bool(phase.get("verify")),
+            "read_only_allowed": explicit_mode == "VERIFICATION_ONLY",
+        }
+    phase_text = " ".join([str(phase.get("goal") or ""),
+                            *map(str, phase.get("done") or []),
+                            *map(str, phase.get("verify") or [])])
+    verification = bool(re.search(
+        r"(?:browser|visual|manual|verification|verify|test|pytest|check)"
+        r"|(?:ブラウザ|視覚|手動|検証|確認|テスト)", phase_text, re.I))
+    mutation = bool(re.search(
+        r"\b(?:implement|create|build|write|edit|modify|modified|update|updated|fix|fixed|correct|corrected|patch|delete|remove|add|change|changed)\b"
+        r"|(?:実装|作成|構築|書込|編集|変更|修正|更新|削除|追加)", phase_text, re.I))
+    # A phase whose observable work is only test/verification work is a
+    # read-only phase.  This generic distinction is independent of fixture
+    # filenames and prevents a verification target from becoming a write
+    # target merely because a planner used it in a phase description.
+    read_only = phase.get("kind") == "ORCHESTRATOR_BLUEPRINT" or (verification and not mutation)
+    return {
+        "execution_mode": None,
+        "execution_mode_source": "LEGACY_TEXT_HEURISTIC",
+        "execution_mode_valid": False,
+        "execution_mode_errors": [],
+        "requires_repo_mutation": not read_only,
+        "requires_tool_execution": not read_only,
+        "requires_verification": bool(phase.get("verify")),
+        "read_only_allowed": read_only,
+    }
+
+
+def _approved_scope_paths(scopes: list[Any] | None) -> list[str]:
+    """Flatten persisted scope entries without changing their authority."""
+    paths: list[str] = []
+    for scope in scopes or []:
+        values = scope.get("requested_scope", []) if isinstance(scope, dict) else scope
+        if isinstance(values, str):
+            values = [values]
+        if isinstance(values, (list, tuple, set)):
+            for value in values:
+                normalized = str(value).strip().replace("\\", "/").lstrip("./")
+                if normalized and normalized not in paths:
+                    paths.append(normalized)
+    return paths
+
+
+def _read_only_context(workspace_root: str | None, approved_scopes: list[Any] | None) -> dict[str, Any]:
+    """Describe readable files separately from the writable implementation scope."""
+    if not workspace_root:
+        return {"access": "READ_ONLY", "paths": []}
+    root = Path(workspace_root).expanduser().resolve()
+    allowed = _approved_scope_paths(approved_scopes)
+    paths: list[str] = []
+    try:
+        candidates = sorted(path for path in root.rglob("*") if path.is_file())
+    except OSError:
+        candidates = []
+    for path in candidates:
+        relative = path.relative_to(root).as_posix()
+        if relative == ".benchmark_metadata.json":
+            continue
+        if any(relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/") for item in allowed):
+            continue
+        paths.append(relative)
+    return {"access": "READ_ONLY", "paths": paths[:200]}
+
+
+def _verification_spec(phase: dict, workspace_root: str | None) -> dict[str, Any] | None:
+    """Return a trusted read-only verification command, when one is available.
+
+    Production tasks may provide ``verification_command`` directly.  The
+    benchmark harness persists the same generic contract in
+    ``.benchmark_metadata.json``.  Planner prose is never treated as an
+    executable command.
+    """
+    command = phase.get("verification_command")
+    targets = phase.get("verification_targets")
+    metadata: dict[str, Any] = {}
+    if workspace_root:
+        metadata_path = Path(workspace_root).expanduser().resolve() / ".benchmark_metadata.json"
+        try:
+            loaded = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                metadata = loaded
+        except (OSError, ValueError, TypeError):
+            pass
+    if command is None:
+        command = metadata.get("verify_command")
+    if targets is None:
+        targets = metadata.get("verification_targets")
+    if not isinstance(command, (list, tuple)) or not command or any(not isinstance(item, str) or not item.strip() for item in command):
+        return None
+    if len(command) > 32 or any(len(item) > 400 for item in command):
+        return None
+    return {"command": [item.strip() for item in command],
+            "targets": [str(item).replace("\\", "/").lstrip("./") for item in (targets or []) if str(item).strip()],
+            "source": "PHASE_CONTRACT" if phase.get("verification_command") is not None else "WORKSPACE_VERIFICATION_CONTRACT"}
+
+
+def _workspace_scope_contract(workspace_root: str | None) -> dict[str, list[str]]:
+    """Load a trusted generic writable/read-only file-role contract."""
+    if not workspace_root:
+        return {"write_allowed": [], "read_only": []}
+    metadata_path = Path(workspace_root).expanduser().resolve() / ".benchmark_metadata.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"write_allowed": [], "read_only": []}
+    if not isinstance(metadata, dict):
+        return {"write_allowed": [], "read_only": []}
+    allowed = metadata.get("allowed_mutation") or metadata.get("target_files") or []
+    read_only = metadata.get("verification_targets") or []
+    def normalize(values: Any) -> list[str]:
+        if isinstance(values, str): values = [values]
+        return list(dict.fromkeys(str(value).replace("\\", "/").lstrip("./") for value in (values or []) if str(value).strip()))
+    return {"write_allowed": normalize(allowed), "read_only": normalize(read_only)}
+
+
+def _bind_scope_contract(plan: dict, contract: dict[str, list[str]]) -> dict:
+    """Bind planner output to a pre-existing task file-role contract."""
+    allowed = list(contract.get("write_allowed") or [])
+    if not allowed:
+        return plan
+    scope = dict(plan.get("scope") or {})
+    forbidden = list(scope.get("forbidden") or [])
+    for path in contract.get("read_only") or []:
+        if path not in forbidden:
+            forbidden.append(path)
+    def writable(path: Any) -> bool:
+        candidate = str(path or "").replace("\\", "/").lstrip("./")
+        return any(candidate == item.rstrip("/") or candidate.startswith(item.rstrip("/") + "/") for item in allowed)
+    # Keep the planner's typed manifest/task graph consistent with the trusted
+    # contract.  Verification files remain phase evidence and are never
+    # represented as mutation entries.
+    manifest = [entry for entry in (plan.get("file_manifest") or [])
+                if isinstance(entry, dict) and writable(entry.get("path"))]
+    tasks = []
+    for item in (plan.get("tasks") or []):
+        if not isinstance(item, dict):
+            continue
+        tasks.append({**item, "change_scope": [path for path in (item.get("change_scope") or []) if writable(path)]})
+    bound = {**plan, "scope": {**scope, "allowed": allowed, "forbidden": forbidden},
+             "file_manifest": manifest, "tasks": tasks}
+    print(f"PLANNER_SCOPE_CONTRACT_BOUND=YES WRITABLE_TARGET_COUNT={len(allowed)} READ_ONLY_TARGET_COUNT={len(contract.get('read_only') or [])}", file=__import__('sys').stderr, flush=True)
+    return bound
+
+
+def _run_read_only_verification(phase: dict, workspace_root: str | None) -> tuple[Task, dict[str, Any]] | None:
+    """Run a typed verification command while forbidding verification writes."""
+    spec = _verification_spec(phase, workspace_root)
+    if spec is None or not workspace_root:
+        return None
+    root = Path(workspace_root).expanduser().resolve()
+    task = Task("read-only verification")
+    task.route = Route.DIRECT
+    task.transition(TaskState.ROUTING)
+    task.transition(TaskState.EXECUTING)
+    snapshots: dict[Path, bytes] = {}
+    for relative in spec["targets"]:
+        target = (root / relative).resolve()
+        if root not in target.parents or not target.is_file():
+            continue
+        try:
+            snapshots[target] = target.read_bytes()
+        except OSError:
+            continue
+    command = spec["command"]
+    started = time.perf_counter()
+    try:
+        completed = subprocess.run(command, cwd=str(root), capture_output=True, text=True,
+                                   timeout=20, check=False)
+        output = (completed.stdout or "") + (completed.stderr or "")
+        changed_targets: list[str] = []
+        for target, original in snapshots.items():
+            try:
+                if target.read_bytes() != original:
+                    changed_targets.append(target.relative_to(root).as_posix())
+                    target.write_bytes(original)
+            except OSError:
+                changed_targets.append(target.relative_to(root).as_posix())
+        passed = completed.returncode == 0 and not changed_targets
+        status = "success" if passed else "failed"
+        task.tool_executions.append({"tool": "verification_command", "version": "1.0", "risk": "SAFE",
+                                     "input": {"command": command, "cwd": str(root), "write_scope": "NONE"},
+                                     "output": {"returncode": completed.returncode, "output": output[-4000:],
+                                                "read_only_targets": spec["targets"], "changed_targets": changed_targets},
+                                     "status": status, "latency_ms": 0})
+        if passed:
+            task.transition(TaskState.COMPLETED)
+        else:
+            task.error = "verification command failed" if completed.returncode else "verification attempted to modify read-only targets"
+            task.transition(TaskState.FAILED)
+        return task, {"command": command, "output": output[-4000:], "returncode": completed.returncode,
+                      "passed": passed, "changed_targets": changed_targets, "targets": spec["targets"],
+                      "elapsed_ms": (time.perf_counter() - started) * 1000}
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        task.error = f"verification command failed: {exc}"
+        task.tool_executions.append({"tool": "verification_command", "version": "1.0", "risk": "SAFE",
+                                     "input": {"command": command, "cwd": str(root), "write_scope": "NONE"},
+                                     "output": {"error": str(exc), "read_only_targets": spec["targets"]},
+                                     "status": "failed", "latency_ms": 0})
+        task.transition(TaskState.FAILED)
+        return task, {"command": command, "output": str(exc), "returncode": None,
+                      "passed": False, "changed_targets": [], "targets": spec["targets"],
+                      "elapsed_ms": (time.perf_counter() - started) * 1000}
+
+
+def _implementation_result_kind(phase: dict, execution: Task, response: str) -> str:
+    """Classify a typed implementation outcome without treating prose as work."""
+    expectations = phase.get("execution_expectations") or _phase_execution_expectations(phase)
+    successful = [item for item in execution.tool_executions if item.get("status") == "success"]
+    mutations = [item for item in successful if item.get("tool") in {
+        "workspace_write", "workspace_write_normalized", "workspace_patch", "workspace_delete", "workspace_remove"}]
+    error = str(execution.error or "").lower()
+    prose = str(response or "").strip().lower()
+    narrative_markers = ("i will", "here's what", "here is what", "next step", "次に", "これから", "実装します", "変更します")
+    invalid_plan = "did not return a valid file-operation plan" in error or "invalid empty implementation result" in error
+    if expectations["requires_repo_mutation"] and not mutations and (invalid_plan or any(marker in prose for marker in narrative_markers)):
+        return "NARRATIVE_ONLY"
+    if execution.state == TaskState.DENIED:
+        return "BLOCKED"
+    if execution.state == TaskState.FAILED or execution.error:
+        return "FAILED"
+    if mutations:
+        return "EXECUTED"
+    if expectations["read_only_allowed"] and successful:
+        return "READ_ONLY_COMPLETED"
+    return "NARRATIVE_ONLY" if expectations["requires_repo_mutation"] else "READ_ONLY_COMPLETED"
+
 
 def _report_from_execution(phase: dict, attempt: int, execution: Task, response: str) -> dict:
     typed=_typed_summary(execution)
@@ -533,17 +883,22 @@ def _report_from_execution(phase: dict, attempt: int, execution: Task, response:
         # A managed implementation phase can never treat a normal-chat/web
         # response as successful implementation evidence.
         print("CODING_IMPLEMENTATION_ZERO_WRITE_WEB_ROUTE=true",file=__import__('sys').stderr,flush=True)
+    expectations=phase.get("execution_expectations") or _phase_execution_expectations(phase)
+    result_kind=_implementation_result_kind({**phase, "execution_expectations": expectations}, execution, response)
     failed=execution.state in {TaskState.FAILED,TaskState.DENIED} or bool(execution.error) or web_only_zero_write
     changed=[]
     for item in execution.tool_executions:
         output=item.get("output") or {}
         if item.get("tool") in {"workspace_write","workspace_write_normalized"} and output.get("path"):
             changed.append(output["path"])
+    # Do not surface a model's future-tense narrative as an implementation
+    # result.  The structured report records the detection for audit/retry.
     return {"phase_id":phase["id"],"attempt":attempt,"status":"FAIL" if failed else "PASS",
-            "implemented":[response[:400]] if response else [],"changed_files":changed,
+            "implemented":([] if result_kind == "NARRATIVE_ONLY" else [response[:400]] if response else []),"changed_files":changed,
             "test_executed":[],"test_pass":[],"test_fail":[],"build_executed":"NOT_RUN",
             "build_pass":"NOT_RUN","errors":([execution.error] if execution.error else []) + (["CODING_IMPLEMENTATION_ZERO_WRITE_WEB_ROUTE"] if web_only_zero_write else []),"blockers":[],"risks":[],
-            "typed_execution_summary":typed}
+            "typed_execution_summary":typed, "execution_expectations":expectations,
+            "implementation_result_kind":result_kind}
 
 def _save_report(task_id: str, phase_id: str, attempt: int, report: dict, validation_status: str) -> dict:
     db.add_coding_phase_report(task_id,phase_id,attempt,report,validation_status,time.time())
@@ -579,6 +934,8 @@ def _bounded_review_context(report: dict) -> dict:
         },
         "typed_state": str(typed_summary.get("state") or "")[:80],
         "typed_error": str(typed_summary.get("error") or "")[:500],
+        "typed_failure_class": str(typed_summary.get("failure_class") or "UNKNOWN")[:80],
+        "typed_worktree_state": str(typed_summary.get("worktree_state") or "UNKNOWN")[:40],
     }
 
 
@@ -596,7 +953,7 @@ def _evidence_counts(report: dict, typed_summary: dict) -> tuple[int, int]:
 
 
 def _phase_signature(phase: dict) -> str:
-    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "risks")}
+    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "risks", "execution_mode")}
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, completed: list[dict], workspace_root: str | None = None) -> str | None:
@@ -615,7 +972,14 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
     # Coding Orchestrator decisions are derived from typed evidence.  The
     # lightweight router model remains available to unrelated external-tool
     # routing, but is never a Coding phase manager.
-    if evaluation["phase_complete"]:
+    narrative_only = report.get("implementation_result_kind") == "NARRATIVE_ONLY"
+    if narrative_only:
+        attempt=int(report.get("attempt", 0))
+        decision = {"decision": "RETRY" if attempt < MAX_RETRIES_PER_PHASE else "BLOCKED",
+                    "reason": "implementation returned narrative only; no authoritative workspace operation was executed"}
+        print(f"TASK_ID={task_id} IMPLEMENTATION_RESULT_KIND=NARRATIVE_ONLY NARRATIVE_ONLY_DETECTED=YES "
+              f"NARRATIVE_RETRY_CAUSE=NO_EXECUTED_OPERATION ATTEMPT={attempt}", file=__import__('sys').stderr, flush=True)
+    elif evaluation["phase_complete"]:
         decision = {"decision": "PASS", "reason": "typed phase evidence is complete"}
     elif evaluation["authorization_blocker_present"]:
         decision = {"decision": "NEED_USER", "reason": "authorization is required"}
@@ -627,7 +991,8 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
         decision = {"decision": "REPLAN_REQUIRED", "reason": "phase retry budget exhausted"}
     report["manager_decision"] = decision
     report["manager_diagnostics"] = {"raw_decision": None, "decision_valid": True,
-                                      "effective_decision": decision["decision"], "phase_complete": evaluation["phase_complete"]}
+                                      "effective_decision": decision["decision"], "phase_complete": evaluation["phase_complete"],
+                                      "execution_binding_diagnosis": ("MODEL_RETURNED_NARRATIVE_INSTEAD_OF_FILE_OPERATION_PLAN" if narrative_only else None)}
     # Persist the deterministic decision before callers advance the plan.  The
     # completion path reloads reports from storage and treats this decision as
     # the authority for a completed phase.
@@ -714,20 +1079,20 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
           file=__import__('sys').stderr,flush=True)
     return decision["decision"]
 
-def _generate_plan(task_id: str, goal: str, prompt: str, activity: str) -> tuple[dict | None, str | None]:
+def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirements: dict | None = None) -> tuple[dict | None, str | None]:
     raw=_model_text(task_id,"PLANNING" if activity=="QWEN_PLANNING" else "RUNNING",activity,settings.main_model,[
         {"role":"system","content":"You are OLCR Qwen Planning Mode. Return JSON only; this is read-only planning."},
         {"role":"user","content":prompt},
     ], structured_schema=plan_schema())
     if raw is None: return None,None
     plan,parse_error=extract_plan_json(raw)
-    errors=([parse_error] if parse_error else []) + validate_plan(plan,goal)
+    errors=([parse_error] if parse_error else []) + validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements)
     # The task goal is persisted host state; a model paraphrase must never
     # consume the single schema-repair attempt or alter that identity.
     if plan is not None and errors == ["original goal mismatch"]:
         print("PLAN_ORIGINAL_GOAL_SOURCE=task PLAN_MODEL_ORIGINAL_GOAL_PRESENT=yes PLAN_MODEL_ORIGINAL_GOAL_MATCH=no",file=__import__('sys').stderr,flush=True)
         plan={**plan,"original_goal":goal}
-        errors=validate_plan(plan,goal)
+        errors=validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements)
         print("CANONICAL_PLAN_ORIGINAL_GOAL_SOURCE=task",file=__import__('sys').stderr,flush=True)
     # The planner may provide an advisory task graph, but OLCR derives the
     # authoritative graph after profile normalization.  Preserve a valid phase
@@ -736,7 +1101,7 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str) -> tuple
     # the orchestrator replaces anyway.
     if errors and isinstance(plan, dict) and "tasks" in plan:
         phase_plan={key:value for key,value in plan.items() if key != "tasks"}
-        phase_plan_errors=validate_plan(phase_plan,goal)
+        phase_plan_errors=validate_plan(phase_plan,goal) + validate_fix_plan_quality(phase_plan, requirements)
         if not phase_plan_errors:
             print("PLAN_ADVISORY_TASK_GRAPH=DISCARDED_INVALID AUTHORITATIVE_TASK_GRAPH=PENDING_NORMALIZATION",file=__import__('sys').stderr,flush=True)
             plan,errors=phase_plan,[]
@@ -750,7 +1115,7 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str) -> tuple
     plan,repair_parse_error=extract_plan_json(repaired)
     if plan is not None and isinstance(plan,dict):
         plan={**plan,"original_goal":goal}
-    repair_errors=([repair_parse_error] if repair_parse_error else []) + validate_plan(plan,goal)
+    repair_errors=([repair_parse_error] if repair_parse_error else []) + validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements)
     print(f"PLAN_REPAIR_PARSE={'PASS' if not repair_parse_error else 'FAIL'} PLAN_REPAIR_SCHEMA={'PASS' if not validate_plan(plan,goal) else 'FAIL'} PLAN_REPAIR_ERRORS={json.dumps(repair_errors,ensure_ascii=False)}",file=__import__('sys').stderr,flush=True)
     return (plan,repaired) if not repair_errors else (None,repaired)
 
@@ -779,6 +1144,7 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         _transition_resumable(task_id,"REPLAN_LIMIT","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
         return "Coding Task could not continue after the replan limit."
     current=managed.get("plan") or {}
+    continuation_policy = (managed.get("requirements") or {}).get("execution_policy") or {}
     reports=[r["structured_report"] for r in db.coding_phase_reports(task_id)]
     unfinished=[phase for phase in current.get("phases",[]) if phase.get("id") not in completed_ids]
     failure_history=[_bounded_review_context(report) for report in reports[-8:] if report.get("manager_decision")]
@@ -789,11 +1155,15 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     structural_reason = structural_reason or any(term in reason.lower() for term in (
         "structur", "verification criteria", "verify criteria", "unobservable", "unsatisfiable"))
     prompt=("Return a replacement read-only coding plan JSON. Preserve original goal, approved scope, completed phase IDs "
-            "and verified results. Redesign only unfinished work. Use the bounded failure history and unmet criteria to "
+            "and verified results. The approved file scope is immutable: do not add paths to scope.allowed, do not "
+            "turn verification targets into mutation targets, and treat files outside the approved scope as read-only. "
+            "Redesign only unfinished work. Use the bounded failure history and unmet criteria to "
             "make the next phase materially actionable; do not repeat an ineffective phase structure. " + json.dumps({"original_goal":managed["original_goal"],"current_plan":current,
             "current_plan_revision":int(managed.get("plan_revision") or 0),"failing_phase_id":unfinished[0].get("id") if unfinished else None,
             "completed_phase_ids":sorted(completed_ids),"attempt_reports":reports[-12:],"failure_history":failure_history,"reason":reason,
             "approved_scopes":managed.get("approved_scopes",[]),"replan_count":managed.get("replan_count",0)},ensure_ascii=False))
+    if continuation_policy.get("task_size") == "LARGE":
+        prompt += "\nPreserve the completed orchestrator blueprint. Keep unfinished work in coherent major deliverables; do not combine inspection/preflight, implementation, and final verification. Continuation policy: " + json.dumps(continuation_policy)
     print(f"TASK_ID={task_id} REPLAN_FAILURE_CONTEXT_PRESENT={'true' if failure_history else 'false'} "
           f"REPLAN_BOUNDED_FAILURE_COUNT={len(failure_history)} REPLAN_CONTEXT_FINGERPRINT={_context_fingerprint({'revision': managed.get('plan_revision',0), 'completed': sorted(completed_ids), 'history': failure_history, 'reason': reason[:500]})}",
           file=__import__('sys').stderr,flush=True)
@@ -801,6 +1171,24 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     if not plan:
         _transition_resumable(task_id,"REPLAN_VALIDATION","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
         return "Coding Task replan could not be validated."
+    conversation = db.conversation(managed.get("conversation_id", "")) or {}
+    project = db.project(conversation.get("project_id", "")) or {}
+    replan_root = str(Path(project.get("workspace_path")).expanduser().resolve()) if project.get("workspace_path") else None
+    plan = _bind_scope_contract(plan, _workspace_scope_contract(replan_root))
+    if continuation_policy.get("task_size") == "LARGE":
+        from .continuation import phase_lifecycle_stages
+        if any(len(phase_lifecycle_stages(p)) >= 4 for p in plan["phases"] if p["id"] not in completed_ids):
+            _transition_resumable(task_id,"REPLAN_PHASE_COMPLEXITY","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
+            return "Coding Task replan still combines too many lifecycle stages."
+        plan["blueprint"] = current.get("blueprint", {})
+        for previous in current.get("phases", []):
+            if previous.get("kind") != "ORCHESTRATOR_BLUEPRINT":
+                continue
+            proposed_blueprint = next((p for p in plan["phases"] if p["id"] == previous["id"]), None)
+            if not proposed_blueprint or _phase_signature(proposed_blueprint) != _phase_signature(previous):
+                _transition_resumable(task_id,"REPLAN_BLUEPRINT_CHANGED","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
+                return "Coding Task replan must preserve its completed planning artifact."
+            proposed_blueprint["kind"] = "ORCHESTRATOR_BLUEPRINT"
     # A replan may only redesign unfinished work.  Persisted manager-approved
     # reports are the authority for completed phases, so do not let a model
     # silently omit or reopen one of them.
@@ -855,6 +1243,24 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         authorization={"requested_scope":expansion,"reason":reason,"source":"replan","state":"PENDING"}
         db.update_coding_task(task_id,status="WAITING_FOR_USER",activity="SCOPE_AUTHORIZATION",pending_plan=plan,pending_authorization=authorization,pending_user_confirmation=1,replan_count=count,replan_count_in_epoch=epoch_count)
         return "Coding Task requires authorization for the proposed scope expansion."
+    # A replan changes only unfinished phase contracts.  Retain the already
+    # validated artifact and manifest unless the planner explicitly supplies a
+    # replacement; this keeps Continue/recovery bound to the same root/scope.
+    prior_artifact = current.get("implementation_plan_artifact") if isinstance(current, dict) else None
+    if isinstance(prior_artifact, dict) and "file_manifest" not in plan:
+        plan["file_manifest"] = list(prior_artifact.get("file_manifest") or [])
+        plan["implementation_plan_artifact"] = {**prior_artifact, "plan_revision": int(managed.get("plan_revision") or 0) + 1}
+    elif isinstance(prior_artifact, dict) and isinstance(plan.get("file_manifest"), list):
+        try:
+            plan, replacement_artifact = prepare_implementation_plan(
+                task_id, plan, prior_artifact.get("target_root"),
+                {**(managed.get("requirements") or {}), "requirements_hash": _context_fingerprint(managed.get("requirements") or {})})
+            replacement_artifact["plan_revision"] = int(managed.get("plan_revision") or 0) + 1
+            plan["implementation_plan_artifact"] = replacement_artifact
+            print(f"TASK_ID={task_id} IMPLEMENTATION_PLAN_REVISED=YES IMPLEMENTATION_PLAN_LOCATION=task_state:coding_tasks.plan_json FILE_MANIFEST_COUNT={replacement_artifact['file_manifest_count']}", file=__import__('sys').stderr, flush=True)
+        except (OSError, TypeError, ValueError, PermissionError) as exc:
+            _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "REPLAN_CONTINUATION", exc)
+            return "Coding Task の再計画ファイル範囲を検証できないため、実装は開始していません。"
     next_phase=next((phase for phase in plan.get("phases",[])
                      if phase.get("id") not in completed_ids
                      and all(dep in completed_ids for dep in phase.get("dependencies",[]))), None)
@@ -1056,14 +1462,37 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
                           status_before=before.get("status", "UNKNOWN"),
                           status_after=after.get("status", "RESUMABLE"),
                           failure_stage="REQUIRED_ACCEPTANCE", exception_type="NONE")
+        _finish_coding_telemetry(task_id, "FAIL")
         return "Coding Task final verification is incomplete: " + ", ".join(gaps)
+    # Final report generation is a deterministic projection of persisted task
+    # evidence.  Keep it as a separate lifecycle activity so the frontend can
+    # show the existing FINAL_REPORTING state, while never routing this path
+    # through a model or changing the already-established task result.
+    db.update_coding_task(task_id, status="FINAL_REPORTING", activity="DETERMINISTIC_FINAL_REPORT")
+    format_started = time.perf_counter()
     try:
-        final=_model_text(task_id,"FINAL_REPORTING","QWEN_FINAL_REPORT",settings.main_model,[
-            {"role":"system","content":"You are OLCR Qwen final report mode. Read-only: do not execute tools or edit files."},
-            {"role":"user","content":final_report_prompt(managed["original_goal"],plan,reports)},
-        ])
+        report_task = dict(db.coding_task(task_id) or managed)
+        # The report is persisted only after this projection succeeds. The
+        # successful completion path therefore reports the terminal status.
+        report_task["status"] = "COMPLETED"
+        final = deterministic_final_report(
+            report_task,
+            plan,
+            reports,
+            handoff=report_task.get("batch_handoff"),
+        )
+        conversation = db.conversation(managed.get("conversation_id", "")) or {}
+        project = db.project(conversation.get("project_id", "")) or {}
+        persisted_reports = [row["structured_report"] for row in db.coding_phase_reports(task_id)
+                             if row.get("validation_status") == "PASS"]
+        final = _append_artifact_paths(final, persisted_reports or reports, project.get("workspace_path"))
+        final = _append_mcp_telemetry(final, db.coding_task(task_id) or managed)
+        format_ms = (time.perf_counter() - format_started) * 1000
+        telemetry = _coding_telemetry.get(task_id)
+        if telemetry is not None:
+            telemetry.record_final_report_format(format_ms, generation_mode="DETERMINISTIC")
     except Exception as exc:
-        _transition_resumable(task_id,"FINAL_REPORT","RECOVERABLE_INTERNAL","FINAL_REPORT",exc,"MODEL_CALL")
+        _transition_resumable(task_id,"FINAL_REPORT","RECOVERABLE_INTERNAL","FINAL_REPORT",exc,"FORMATTER")
         _finalization_log(task_id,final_phase_id=final_phase_id,all_phases_pass=True,completion_check_started=completion_check_started,
                           completion_check_raw_decision=completion_check_raw_decision,completion_check_valid=completion_check_valid,final_report_started=True,
                           final_report_valid=False,final_report_persisted=False,status_before=before.get("status","UNKNOWN"),
@@ -1084,12 +1513,6 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
                           final_report_valid=False,final_report_persisted=False,status_before=before.get("status","UNKNOWN"),
                           status_after="RESUMABLE",failure_stage="FINAL_REPORT",exception_type="INVALID_OUTPUT")
         return "Coding Task final report could not be validated."
-    conversation = db.conversation(managed.get("conversation_id", "")) or {}
-    project = db.project(conversation.get("project_id", "")) or {}
-    persisted_reports = [row["structured_report"] for row in db.coding_phase_reports(task_id)
-                         if row.get("validation_status") == "PASS"]
-    final_text = _append_artifact_paths(final_text, persisted_reports or reports, project.get("workspace_path"))
-    final_text = _append_mcp_telemetry(final_text, db.coding_task(task_id) or managed)
     try:
         db.update_coding_task(task_id,status="COMPLETED",activity="NONE",current_phase_id=None,
                               final_report={"text":final_text},final_report_status="PASS",
@@ -1109,6 +1532,7 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
                       completion_check_raw_decision=completion_check_raw_decision,completion_check_valid=completion_check_valid,final_report_started=True,
                       final_report_valid=True,final_report_persisted=True,status_before=before.get("status","UNKNOWN"),
                       status_after="COMPLETED")
+    _finish_coding_telemetry(task_id, "PASS")
     return "Coding Task completed."
 
 
@@ -1150,27 +1574,76 @@ def _complete_task(task_id: str, managed: dict) -> str:
     return _final_report_only(task_id, managed, plan, reports, completion_check_started=False,
                               completion_check_raw_decision="DETERMINISTIC_PASS", completion_check_valid=True)
 
-def _heavy_batch_checkpoint(task_id: str, plan: dict, completed: set[str]) -> str | None:
+def _heavy_batch_checkpoint(task_id: str, plan: dict, completed: set[str], *, blueprint_report: dict | None = None,
+                            await_continuation: bool = True, checkpoint_reason: str | None = None) -> str | None:
     """Persist a bounded handoff after one heavy batch; never use authorization."""
     remaining=[phase for phase in plan.get("phases",[]) if phase.get("id") not in completed]
     if not remaining:
         return None
-    reports=[row["structured_report"] for row in db.coding_phase_reports(task_id)]
+    task = db.coding_task(task_id) or {}
+    if task.get("pending_authorization"):
+        return None
+    reports=[]
+    for phase in plan.get("phases", []):
+        if phase["id"] not in completed:
+            continue
+        row = _latest_current_phase_report(task_id, phase["id"], int(task.get("plan_revision") or 0)) or _latest_completed_phase_report(task_id, phase["id"])
+        report = blueprint_report if blueprint_report and blueprint_report["phase_id"] == phase["id"] else (row or {}).get("structured_report")
+        if not report or report_has_authoritative_failure(report, phase):
+            raise RuntimeError("checkpoint requires successful phase evidence")
+        reports.append(report)
     changed=sorted({path for report in reports for path in (report.get("changed_files") or []) if isinstance(path,str)})
     cursor=next((index for index,phase in enumerate(plan.get("phases",[])) if phase.get("id") not in completed),len(plan.get("phases",[])))
     handoff={"changed_files":changed,"created_interfaces":[],"data_contracts":[],"decisions":[],"verification":[],"unresolved":[],"next_constraints":[str(remaining[0].get("goal") or "")[:500]]}
-    db.update_coding_task(task_id,status="RESUMABLE",activity="NONE",batch_cursor=cursor,batch_handoff=handoff,
-                          pending_authorization=None,pending_user_confirmation=0,
-                          recovery_action="NONE",recovery_reason="RESOURCE_CHECKPOINT")
-    print(f"TASK_ID={task_id} EXECUTION_MODE=HEAVY_BATCHED RESOURCE_CHECKPOINT=true BATCH_CURSOR={cursor} BATCHES_REMAINING={len(remaining)}",file=__import__('sys').stderr,flush=True)
-    return "Heavy batch completed; task is resumable."
+    handoff.update(completed_phases=sorted(completed), next_phase_id=remaining[0]["id"],
+                   verification=[{"phase_id": r.get("phase_id"), "status": r.get("status"), "test_pass": r.get("test_pass", []), "build_pass": r.get("build_pass")} for r in reports],
+                   unresolved=[item for r in reports for item in r.get("risks", [])],
+                   completed_phase_id=reports[-1]["phase_id"],
+                   plan_revision=int(task.get("plan_revision") or 0),
+                   mcp_evidence=list(task.get("mcp_evidence") or []),
+                   blueprint=plan.get("blueprint"))
+    saved = db.save_coding_checkpoint(task_id, plan, handoff, cursor, int(task.get("plan_revision") or 0),
+                                      blueprint_report, await_continuation, checkpoint_reason)
+    _persist_coding_telemetry_snapshot(task_id)
+    if not saved or saved.get("batch_handoff") != handoff:
+        raise RuntimeError("Checkpoint persistence failed")
+    reason = checkpoint_reason or ("RESOURCE_CHECKPOINT" if await_continuation else "CONTINUOUS")
+    print(f"TASK_ID={task_id} CHECKPOINT_CREATED={'YES' if await_continuation else 'NO'} CHECKPOINT_REASON={reason} NEXT_PHASE_ID={remaining[0]['id']} BATCH_CURSOR={cursor}",file=__import__('sys').stderr,flush=True)
+    return ("計画と実装ファイルの準備が完了しました。続行すると次の工程を開始します。" if reason == "IMPLEMENTATION_PREPARED"
+            else "ここまで完了しました。続行すると次の工程を開始します。") if await_continuation else None
+
+
+def _finish_planning_boundary(task_id: str, plan: dict, await_continuation: bool, *, checkpoint_reason: str | None = None) -> str | None:
+    """Record actual orchestration work and its persisted blueprint, once."""
+    task = db.coding_task(task_id) or {}
+    phase = next(p for p in plan["phases"] if p.get("kind") == "ORCHESTRATOR_BLUEPRINT")
+    if "preflight" not in (plan.get("blueprint") or {}):
+        raise RuntimeError("planning boundary has no persisted preflight context")
+    report = {"phase_id": phase["id"], "attempt": 0, "plan_revision": int(task.get("plan_revision") or 0), "status": "PASS",
+              "implemented": ["Validated implementation blueprint and preflight context persisted"], "changed_files": [],
+              "test_executed": [], "test_pass": [], "test_fail": [], "build_executed": "NOT_APPLICABLE",
+              "build_pass": "NOT_APPLICABLE", "errors": [], "blockers": [], "risks": [],
+              "manager_decision": {"decision": "PASS", "reason": "Validated planning artifact; implementation has not started"}}
+    stable_plan = _phase_status(plan, phase["id"], "pass")
+    return _heavy_batch_checkpoint(task_id, stable_plan, {phase["id"]}, blueprint_report=report,
+                                   await_continuation=await_continuation, checkpoint_reason=checkpoint_reason)
 
 def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
     """Run one approved task serially through the existing typed Runtime executor."""
     managed=db.coding_task(task_id)
     if not managed or managed["status"] not in {"QUEUED","RUNNING"} or managed["archived"] or managed["pause_requested"]: return ""
     plan=managed.get("plan") or {}; phases=plan.get("phases",[])
+    implementation_artifact = plan.get("implementation_plan_artifact") if isinstance(plan, dict) else None
+    if isinstance(implementation_artifact, dict) and implementation_artifact.get("target_root"):
+        persisted_root = str(Path(str(implementation_artifact["target_root"])).expanduser().resolve())
+        supplied_root = str(Path(workspace_root).expanduser().resolve()) if workspace_root else None
+        print(f"TASK_ID={task_id} CANONICAL_TARGET_ROOT={persisted_root} PATHGUARD_TARGET_ROOT_MATCH={'YES' if supplied_root in {None, persisted_root} else 'NO'}", file=__import__('sys').stderr, flush=True)
+        # The persisted artifact is the continuation boundary.  Reuse it on
+        # Continue/restart so planner, scaffold and implementation agree.
+        workspace_root = persisted_root
     heavy=managed.get("execution_mode") == "HEAVY_BATCHED"
+    policy = (managed.get("requirements") or {}).get("execution_policy") or {}
+    major_checkpoints = policy.get("continuation_policy") == "MAJOR_CHECKPOINTS" if policy else heavy
     current_revision=int(managed.get("plan_revision") or 0)
     completed={phase["id"] for phase in phases
                if phase.get("status") == "pass" or
@@ -1198,6 +1671,9 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
     for phase in phases:
         if phase["id"] in completed: continue
         if any(dep not in completed for dep in phase.get("dependencies",[])): continue
+        if phase.get("kind") == "ORCHESTRATOR_BLUEPRINT":
+            checkpoint = _finish_planning_boundary(task_id, plan, major_checkpoints)
+            return checkpoint or _run_managed_task(task_id, workspace_root)
         if not phase_has_observable_deliverable(phase):
             print(f"TASK_ID={task_id} CONTROL_PLANE_INVARIANT_FAILURE=NON_ARTIFACT_PHASE_DISPATCH PHASE_ID={phase['id']}",file=__import__('sys').stderr,flush=True)
             db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",recovery_reason="NON_ARTIFACT_PHASE")
@@ -1237,10 +1713,15 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         if retry_context:
             previous=latest["structured_report"]
             instruction=zero_mutation_retry_instruction(phase,previous,[row["structured_report"] for row in reports[:-1]],workspace_root)
+            if previous.get("implementation_result_kind") == "NARRATIVE_ONLY":
+                instruction=("Do not describe future steps. Execute the current phase now using the available "
+                             "repository/file tool protocol. Return one or more valid file operations and then "
+                             "authoritative changed-file and verification evidence.")
             if instruction:
                 retry_context["diagnosis"]["retry_instruction"]=instruction
                 retry_context["diagnosis"]["specific_fix"]=instruction
-            print(f"RETRY_CAUSE={'ZERO_WORKSPACE_MUTATION' if instruction else 'PHASE_EVIDENCE_INCOMPLETE'} RETRY_INSTRUCTION_KIND={'ZERO_MUTATION' if instruction else 'PRIOR_DIAGNOSIS'} PREVIOUS_WORKSPACE_MUTATION_COUNT={workspace_mutation_count(previous)}",file=__import__('sys').stderr,flush=True)
+            retry_cause = "NARRATIVE_ONLY" if previous.get("implementation_result_kind") == "NARRATIVE_ONLY" else ("ZERO_WORKSPACE_MUTATION" if instruction else "PHASE_EVIDENCE_INCOMPLETE")
+            print(f"RETRY_CAUSE={retry_cause} RETRY_INSTRUCTION_KIND={'EXECUTION_BINDING' if retry_cause == 'NARRATIVE_ONLY' else 'ZERO_MUTATION' if instruction else 'PRIOR_DIAGNOSIS'} PREVIOUS_WORKSPACE_MUTATION_COUNT={workspace_mutation_count(previous)}",file=__import__('sys').stderr,flush=True)
         context_payload={"phase_id":phase["id"],"plan_revision":plan_revision,"attempt":attempt,
                          "prior_review":retry_context} if retry_context else {"phase_id":phase["id"],"plan_revision":plan_revision,"attempt":attempt}
         print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PHASE_ATTEMPT={attempt} "
@@ -1279,25 +1760,118 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                     print(f"TASK_ID={task_id} REQUIRED_MCP={server_id} MCP_USAGE=FAILED TASK_STATUS=BLOCKED",file=__import__('sys').stderr,flush=True)
                     return f"Coding Task is blocked: required {server_id} MCP failed."
             mcp_context.append(evidence)
-        phase_with_contract={**phase,"required_mcp":phase_mcp}
+        phase_with_contract={**phase,"required_mcp":phase_mcp,"execution_expectations":_phase_execution_expectations(phase)}
+        expectations = phase_with_contract["execution_expectations"]
+        print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PHASE_EXECUTION_MODE={expectations.get('execution_mode') or 'LEGACY'} "
+              f"PHASE_EXECUTION_MODE_SOURCE={expectations.get('execution_mode_source')} "
+              f"PHASE_EXECUTION_MODE_VALID={'YES' if expectations.get('execution_mode_valid') else 'NO'} "
+              f"IMPLEMENTER_REQUIRED={'YES' if expectations.get('requires_repo_mutation') else 'NO'}",
+              file=__import__('sys').stderr, flush=True)
         animejs_context = ((db.coding_task(task_id) or {}).get("requirements") or {}).get("animejs_project")
         animejs_safety = ("Anime.js version evidence: " + json.dumps(animejs_context, ensure_ascii=False) + "\n"
                           if isinstance(animejs_context, dict) else "")
-        phase_request=(f"Implement the approved coding phase only. Original goal: {managed['original_goal']}\n"
-                       f"Workspace: {workspace_root or '(project workspace)'}\nPhase: {phase['goal']}\n"
-                       f"Done: {phase['done']}\nVerify: {phase['verify']}\n"
-                       f"Plan revision: {plan_revision}\nAttempt: {attempt}\nApproved scope: {managed.get('approved_scopes', [])}\n" + animejs_safety
-                       + "Use OLCR's typed workspace executor. Do not expand scope or claim unrun verification.\n"
+        # Never resend a huge original request at each phase.  The persisted
+        # plan is the authorization boundary; this bounded contract is enough
+        # for the runtime's JSON file-operation executor.
+        phase_contract={"phase_id":phase["id"],"goal":phase["goal"],"done":phase["done"],"verify":phase["verify"],
+                        "execution_expectations":phase_with_contract["execution_expectations"],"approved_scope":managed.get("approved_scopes", []),
+                        "writable_implementation_scope":_approved_scope_paths(managed.get("approved_scopes", [])),
+                        "read_only_context":_read_only_context(workspace_root, managed.get("approved_scopes", [])),
+                        "plan_revision":plan_revision,"attempt":attempt,
+                        "implementation_scope_source":"PLAN_MANIFEST" if implementation_artifact else "APPROVED_SCOPE",
+                        "target_root": implementation_artifact.get("target_root") if implementation_artifact else workspace_root,
+                        "file_manifest": implementation_artifact.get("file_manifest", []) if implementation_artifact else []}
+        phase_request=("Execute the approved coding phase now. Do not describe future steps. "
+                       "Use the typed workspace file-operation protocol and produce authoritative changed-file and read-back evidence. "
+                       "Do not expand scope or claim unrun verification.\n"
+                       f"Workspace: {workspace_root or '(project workspace)'}\n"
+                       f"Phase: {phase['goal']}\n"
+                       f"Attempt: {attempt}\n"
+                       "Writable implementation scope is explicit in writable_implementation_scope. "
+                       "Files in read_only_context are readable evidence only and must never be written.\n"
+                       "Bounded execution contract: " + json.dumps(phase_contract,ensure_ascii=False,sort_keys=True) + "\n" + animejs_safety
                        + ("Required MCP evidence (use this bounded result): " + json.dumps(mcp_context,ensure_ascii=False) + "\n" if mcp_context else "")
                        + ("Previous bounded review diagnosis (address these criteria before returning): "
                           + json.dumps(retry_context, ensure_ascii=False, sort_keys=True) + "\n" if retry_context else ""))
         phase_request += _frontend_quality_guidance(db.coding_task(task_id) or managed, phase_with_contract, workspace_root)
-        if heavy and managed.get("batch_handoff"):
+        if managed.get("batch_handoff"):
             phase_request += "Persisted handoff from the prior batch (reconcile only what is listed): " + json.dumps(managed["batch_handoff"],ensure_ascii=False,sort_keys=True)[:4000] + "\n"
         knowledge_context = coding_knowledge_context_for_subtask(phase_request, workspace_root)
-        with model_slot():
-            execution, response=runtime.execute(phase_request,core_context=knowledge_context,workspace_root=workspace_root,managed_context={"managed_coding_task":True,"task_id":task_id,"operation_intent":"IMPLEMENTATION","global_no_write":False})
+        print(f"TASK_ID={task_id} RUNTIME_INPUT_CHARS={len(phase_request)} ORIGINAL_GOAL_OMITTED=true",file=__import__('sys').stderr,flush=True)
+        print(f"IMPLEMENTATION_PHASE_DISPATCH=Runtime.execute EXECUTION_SCHEMA_BUILDER=Runtime._execute_implementation GENERATE_BRAIN_CALLSITE=Runtime._generate_brain", file=__import__('sys').stderr, flush=True)
+        verification_result = _run_read_only_verification(phase_with_contract, workspace_root) if phase_with_contract["execution_expectations"]["read_only_allowed"] else None
+        if verification_result is not None:
+            execution, verification = verification_result
+            response = json.dumps({"verification": "PASS" if verification["passed"] else "FAIL",
+                                   "command": verification["command"]}, ensure_ascii=False)
+            print(f"TASK_ID={task_id} VERIFICATION_PHASE_READ_ONLY=YES VERIFY_READ_PATH_ALLOWED=YES VERIFY_WRITE_PATH_ALLOWED=NO "
+                  f"PHASE_EXECUTION_MODE={expectations.get('execution_mode') or 'LEGACY'} IMPLEMENTER_SKIPPED=YES IMPLEMENTER_SKIP_REASON=VERIFICATION_ONLY "
+                  f"VERIFY_COMMAND_EXECUTED=YES VERIFY_STATUS={'PASS' if verification['passed'] else 'FAIL'} "
+                  f"VERIFY_CHANGED_TARGET_COUNT={len(verification['changed_targets'])}", file=__import__('sys').stderr, flush=True)
+        else:
+            if expectations.get("execution_mode") == "VERIFICATION_ONLY":
+                print(f"TASK_ID={task_id} PHASE_EXECUTION_MODE=VERIFICATION_ONLY IMPLEMENTER_SKIPPED=NO IMPLEMENTER_SKIP_REASON=NO_TRUSTED_VERIFICATION_SPEC",
+                      file=__import__('sys').stderr, flush=True)
+            with model_slot():
+                execution, response=runtime.execute(phase_request,core_context=knowledge_context,workspace_root=workspace_root,managed_context={"managed_coding_task":True,"task_id":task_id,"operation_intent":"IMPLEMENTATION","global_no_write":False,"implementation_plan_artifact":implementation_artifact,"approved_scopes":managed.get("approved_scopes", []),"read_only_context":phase_contract["read_only_context"]})
+        telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=settings.main_model))
+        telemetry.record["tool_active_ms"] += sum(float(item.get("latency_ms") or 0) for item in execution.tool_executions if isinstance(item, dict))
+        telemetry.record.setdefault("tool_categories", {})
+        for item in execution.tool_executions:
+            if isinstance(item, dict):
+                tool_name=str(item.get("tool") or "other"); category="filesystem" if tool_name.startswith("workspace_") else "other"
+                telemetry.record["tool_categories"][category]=telemetry.record["tool_categories"].get(category, 0.0)+float(item.get("latency_ms") or 0)
+        for call in execution.model_calls:
+            elapsed_ms=call.get("latency_ms") if isinstance(call, dict) else None
+            finished_at=time.time(); started_at=finished_at - (float(elapsed_ms or 0) / 1000)
+            telemetry.add_call(phase_id=phase["id"], role="IMPLEMENTER", model=str(call.get("model") or settings.main_model), messages=[{"role":"user","content":phase_request}],
+                               result={key: call.get(key) for key in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms")},
+                               started=started_at, finished=finished_at, structured=True, thinking=False, success=call.get("status") == "success", failure_class=str(call.get("error") or "NONE"))
         report=_report_from_execution(phase_with_contract,attempt,execution,response)
+        # A planner may legally combine an implementation criterion with a
+        # test criterion in one phase.  Keep the implementation write scope
+        # unchanged, then run the trusted verification command separately as
+        # read-only evidence instead of asking the implementer to mutate test
+        # files or claim that it ran a command.
+        if verification_result is None and phase_with_contract["execution_expectations"]["requires_verification"]:
+            post_verification = _run_read_only_verification(phase_with_contract, workspace_root)
+            if post_verification is not None:
+                _, verification = post_verification
+                verification_result = post_verification
+                print(f"TASK_ID={task_id} VERIFICATION_PHASE_READ_ONLY=YES VERIFY_READ_PATH_ALLOWED=YES VERIFY_WRITE_PATH_ALLOWED=NO "
+                      f"PHASE_EXECUTION_MODE={expectations.get('execution_mode') or 'LEGACY'} IMPLEMENTER_SKIPPED=NO VERIFY_AFTER_IMPLEMENTATION=YES "
+                      f"VERIFY_COMMAND_EXECUTED=YES VERIFY_STATUS={'PASS' if verification['passed'] else 'FAIL'} "
+                      f"VERIFY_CHANGED_TARGET_COUNT={len(verification['changed_targets'])}",
+                      file=__import__('sys').stderr, flush=True)
+        if verification_result is not None:
+            telemetry.record_verification(
+                mode="DETERMINISTIC_COMMAND",
+                evidence_source="READ_ONLY_COMMAND",
+                elapsed_ms=verification_result[1].get("elapsed_ms"),
+            )
+        if verification_result is not None:
+            verification = verification_result[1]
+            verification_only = phase_with_contract["execution_expectations"]["read_only_allowed"]
+            implementation_succeeded = execution.state is TaskState.COMPLETED and not execution.error
+            criteria = {
+                **{str(item): bool(verification["passed"] and (verification_only or implementation_succeeded))
+                   for item in (phase.get("done") or [])},
+                **{str(item): bool(verification["passed"])
+                   for item in (phase.get("verify") or [])},
+            }
+            report.update({
+                "status": ("PASS" if verification["passed"] else "FAIL") if (verification_only or implementation_succeeded) else report.get("status", "FAIL"),
+                "implemented": [*(report.get("implemented") or []), "Read-only verification command executed"],
+                "test_executed": [" ".join(verification["command"])],
+                "test_pass": [" ".join(verification["command"]) + " (exit_code=0)"] if verification["passed"] else [],
+                "test_fail": [] if verification["passed"] else [verification["output"][-1000:] or "verification command failed"],
+                "errors": [] if verification["passed"] else ["verification command failed"],
+                "criteria_evidence": criteria,
+                "verification_read_only": True,
+                "verification_targets": verification["targets"],
+            })
+            if not verification["passed"] and verification["changed_targets"]:
+                report["errors"] = ["verification attempted to modify read-only targets"]
         report["mcp_evidence"]=mcp_context
         report["plan_revision"]=plan_revision
         errors=validate_phase_report(report,phase["id"],attempt)
@@ -1332,16 +1906,28 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         if decision == "PASS":
             _set_subtask_state(task_id,phase["id"],"DONE",attempt=attempt,report=report_row["structured_report"],decision=decision)
             completed.add(phase["id"]); plan=_phase_status(plan,phase["id"],"pass"); db.update_coding_task(task_id,plan=plan,activity="NONE",retry_count=0,recovery_action="NONE",recovery_reason="NONE")
-            if heavy:
+            if major_checkpoints:
                 checkpoint=_heavy_batch_checkpoint(task_id,plan,completed)
                 if checkpoint:return checkpoint
             continue
+        if report_row["structured_report"].get("implementation_result_kind") == "NARRATIVE_ONLY":
+            channel_available = bool(callable(getattr(runtime, "execute", None)) and workspace_root and Path(workspace_root).is_dir())
+            print(f"EXECUTION_CHANNEL_AVAILABLE={'YES' if channel_available else 'NO'} MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0", file=__import__('sys').stderr, flush=True)
+            if not channel_available:
+                _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,report=report_row["structured_report"],decision="BLOCKED")
+                db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",recovery_reason="EXECUTION_CHANNEL_FAILURE")
+                return "Coding Task is blocked: 実装実行チャネルを利用できないため、操作を開始できませんでした。"
         if decision == "RETRY" and attempt < (1 if heavy else MAX_RETRIES_PER_PHASE):
             # Re-enter only this persisted phase. Its immutable plan fields
             # remain unchanged and the existing report makes the next attempt
             # number deterministic (0 → 1 → 2, never 3).
             db.update_coding_task(task_id,status="RUNNING",activity="QWEN_IMPLEMENTATION",retry_count=attempt+1)
             return _run_managed_task(task_id,workspace_root)
+        if decision == "BLOCKED":
+            _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,report=report_row["structured_report"],decision=decision)
+            db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",recovery_reason="NARRATIVE_ONLY_RETRY_EXHAUSTED")
+            reason = report_row["structured_report"].get("manager_decision",{}).get("reason") or "implementation execution contract failed"
+            return "Coding Task is blocked: " + str(reason)
         if decision == "REPLAN_REQUIRED" or (decision == "RETRY" and attempt >= MAX_RETRIES_PER_PHASE):
             _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,report=report_row["structured_report"],decision=decision)
             diagnosis=report_row["structured_report"].get("manager_decision",{}).get("diagnosis")
@@ -1500,8 +2086,11 @@ def _planning_preflight_context(task_id: str, workspace_root: str | None) -> dic
     task = db.coding_task(task_id) or {}
     evidence = [{key: item.get(key) for key in ("mcp_name", "tool_name", "status", "purpose", "result_summary")}
                 for item in (task.get("mcp_evidence") or []) if isinstance(item, dict) and item.get("status") == "PASS"]
-    return {"repo_summary": {"workspace_entries": paths}, "shadcn_mcp_evidence": [item for item in evidence if item["mcp_name"] == "shadcn"],
+    scope_contract = _workspace_scope_contract(workspace_root)
+    return {"repo_summary": {"workspace_entries": paths}, "mutation_scope_contract": scope_contract,
+            "shadcn_mcp_evidence": [item for item in evidence if item["mcp_name"] == "shadcn"],
             "animejs_mcp_evidence": [item for item in evidence if item["mcp_name"] == "animejs"],
+            "animejs_project": (task.get("requirements") or {}).get("animejs_project", {}),
             "required_stack": ["React", "TypeScript", "Vite", "Tailwind CSS", "shadcn/ui"],
             "constraints": ["Required MCP preflight is already complete.", "Do not emit repo inspection, MCP consultation, planning, or final reporting as a task phase."]}
 
@@ -1539,17 +2128,6 @@ def _run_required_mcp(task_id: str, server_id: str, workspace_root: str | None, 
     A required MCP that is unavailable is a truthful blocked condition.  This
     never falls back to a prose-only claim or lets Qwen decide to skip it.
     """
-    if server_id == "animejs":
-        task = db.coding_task(task_id) or {}
-        project = animejs_project_version(workspace_root)
-        compatibility = animejs_version_compatibility(project, str(task.get("original_goal") or ""))
-        project = {**project, "ANIMEJS_REFERENCE_VERSION": "4", "ANIMEJS_VERSION_COMPATIBILITY": compatibility}
-        requirements = task.get("requirements") if isinstance(task.get("requirements"), dict) else {}
-        db.update_coding_task(task_id, requirements={**requirements, "animejs_project": project})
-        if compatibility in {"CONFLICT_V3_V4", "UNKNOWN"}:
-            item = _mcp_evidence(task_id, server_id, status="VERSION_CONFLICT", purpose=purpose,
-                                 result=project, error="VERSION_CONFLICT" if compatibility == "CONFLICT_V3_V4" else "ANIMEJS_PROJECT_VERSION_UNKNOWN")
-            return None, item["error"]
     definition = server_definition(server_id)
     if not definition or not definition.get("enabled_by_policy"):
         item = _mcp_evidence(task_id, server_id, status="BLOCKED", purpose=purpose,
@@ -1608,7 +2186,7 @@ def _run_required_mcp(task_id: str, server_id: str, workspace_root: str | None, 
         _mcp_evidence(task_id, server_id, status="PASS", purpose=purpose,
                       tool_name="tools/list", result=listing.get("response"), resource_mode=resource_mode)
         arguments = ({"query": "card", "registries": ["@shadcn"], "limit": 5} if server_id == "shadcn" else
-                     {"query": "scroll timeline stagger React lifecycle scope reduced motion cleanup"} if server_id == "animejs" else
+                     {"query": "scope"} if server_id == "animejs" else
                      {"url": "http://127.0.0.1:5173"} if server_id == "playwright" else {})
         called = runtime.call(tool, arguments)
         if called.get("status") != "AVAILABLE":
@@ -1633,13 +2211,31 @@ def _run_required_mcp(task_id: str, server_id: str, workspace_root: str | None, 
                              tool_name=tool, result=result, resource_mode=resource_mode)
         if server_id == "animejs":
             _animejs_resource_diagnostics(resolution, initialize="YES", tools_list="YES", tool_call="PASS", available="YES")
+            print("ANIMEJS_MCP_RUNTIME_READY=YES ANIMEJS_MCP_PREFLIGHT=PASS", file=__import__('sys').stderr, flush=True)
+            task = db.coding_task(task_id) or {}
+            project = animejs_project_version(workspace_root)
+            compatibility = animejs_version_compatibility(project, str(task.get("original_goal") or ""))
+            action = "ADD_V4" if compatibility == "PASS_FOR_INSTALL" else "KEEP_V4" if compatibility == "PASS" else "MIGRATE_V4" if compatibility == "MIGRATION_REQUESTED" else "BLOCK"
+            project.update(ANIMEJS_VERSION_COMPATIBILITY=compatibility, ANIMEJS_PROJECT_ACTION=action, ANIMEJS_REFERENCE_VERSION="V4")
+            requirements = task.get("requirements") or {}
+            db.update_coding_task(task_id, requirements={**requirements, "animejs_project": project})
+            print(json.dumps(project), file=__import__('sys').stderr, flush=True)
+            if action == "BLOCK":
+                error = "VERSION_CONFLICT" if compatibility == "CONFLICT_V3_V4" else "ANIMEJS_PROJECT_VERSION_UNKNOWN"
+                _mcp_evidence(task_id, server_id, status="VERSION_CONFLICT", purpose=purpose, result=project, error=error)
+                return None, error
         return item, None
     finally:
         runtime.close()
 
 def _run_coding_planning(managed: dict) -> None:
+    from .continuation import task_continuation_policy, major_phase_plan
     task_id=managed["id"]
+    _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=settings.main_model))
     requirements=_persisted_requirements(managed)
+    policy = task_continuation_policy(managed["original_goal"], requirements)
+    requirements = {**requirements, "execution_policy": policy}
+    print(f"TASK_SIZE={policy['task_size']} TASK_SIZE_SIGNALS={json.dumps(policy['task_size_signals'])} CONTINUATION_POLICY={policy['continuation_policy']}", file=__import__('sys').stderr, flush=True)
     diagnostics={"TASK_PROFILE":requirements["task_profile"],"EXECUTION_MODE":requirements["execution_mode"],
                  "POSITIVE_SIGNALS":requirements["required_capabilities"],"NEGATED_SIGNALS":requirements["forbidden_capabilities"]}
     print(" ".join(f"{key}={json.dumps(value,ensure_ascii=False)}" for key,value in diagnostics.items()),file=__import__("sys").stderr,flush=True)
@@ -1686,24 +2282,33 @@ def _run_coding_planning(managed: dict) -> None:
             print(f"TASK_ID={task_id} TASK_PROFILE={profile} REQUIRED_MCP={server_id} MCP_PREFLIGHT=BLOCKED ERROR={error}",file=__import__('sys').stderr,flush=True)
             db.add_message(managed["conversation_id"],"assistant",response,time.time(),str(uuid.uuid4()),task_id)
             return
-        requirements={**requirements,"preflight":{**(requirements.get("preflight") or {}),server_id:"PASS"}}
+        requirements={**((db.coding_task(task_id) or {}).get("requirements") or requirements),"preflight":{**(requirements.get("preflight") or {}),server_id:"PASS"}}
         db.update_coding_task(task_id,requirements=requirements)
         print(f"TASK_ID={task_id} SHADCN_PREFLIGHT={'PASS' if server_id == 'shadcn' else 'NOT_APPLICABLE'} SHADCN_EVIDENCE_PERSISTED={'PASS' if server_id == 'shadcn' else 'NOT_APPLICABLE'} ANIMEJS_MCP_PREFLIGHT={'PASS' if server_id == 'animejs' else 'NOT_APPLICABLE'}",file=__import__('sys').stderr,flush=True)
     planning_suffix=(" Do not create verification-only phases; attach focused verification to each implementation batch and consolidated verification to the final batch." if execution_mode == "HEAVY_BATCHED" else "")
-    workspace_root=(db.project((db.conversation(managed["conversation_id"]) or {}).get("project_id", "")) or {}).get("workspace_path")
+    workspace_value=(db.project((db.conversation(managed["conversation_id"]) or {}).get("project_id", "")) or {}).get("workspace_path")
+    workspace_root=str(Path(workspace_value).expanduser().resolve()) if workspace_value else None
     preflight=_planning_preflight_context(task_id,workspace_root)
     mutation_mode=str(requirements.get("mutation_mode") or "IMPLEMENTATION")
     print(f"TASK_ID={task_id} CODING_MUTATION_MODE={mutation_mode} FIX_REASON={requirements.get('fix_reason','')} "
           f"FIX_SCOPE_EXPANDED=NO FIX_ESCALATED_TO_IMPLEMENTATION=NO FIX_RETRY_COUNT={managed.get('retry_count',0)}", file=__import__('sys').stderr, flush=True)
-    planner_input=(plan_prompt(managed["original_goal"],execution_mode,mutation_mode)+planning_suffix
+    planner_input=(plan_prompt(managed["original_goal"],execution_mode,mutation_mode,policy["task_size"])+planning_suffix
                    + "\n[ORCHESTRATOR_PREFLIGHT_ALREADY_COMPLETED]\n"
-                   + json.dumps(preflight, ensure_ascii=False, sort_keys=True))
+                   + json.dumps(preflight, ensure_ascii=False, sort_keys=True)
+                   + ("\n[ATTACHMENT_BACKED_VISUAL_FIX]\nInspect the existing workspace and identify the observed target before writing. Keep the patch narrow; include runtime/browser verification and do not claim visual success without evidence.\n"
+                      + json.dumps(requirements.get("attachment_evidence") or {}, ensure_ascii=False, sort_keys=True)
+                      if requirements.get("visual_repair") else ""))
     print(f"TASK_ID={task_id} QWEN_PLANNING_AFTER_PREFLIGHT=YES",file=__import__('sys').stderr,flush=True)
-    plan,_=_generate_plan(task_id,managed["original_goal"],planner_input,"QWEN_PLANNING")
+    plan,_=_generate_plan(task_id,managed["original_goal"],planner_input,"QWEN_PLANNING",requirements)
     if not plan:
         _transition_resumable(task_id,"PLANNING","RECOVERABLE_INTERNAL","RECOVERY_REVIEW")
         response="Coding Task の計画を検証できませんでした。実装は開始していません。"
     else:
+        # A persisted task/workspace contract is the source of truth for file
+        # roles.  Planner output can describe verification files, but cannot
+        # promote them to writable implementation targets.
+        plan = _bind_scope_contract(plan, _workspace_scope_contract(workspace_root))
+        protected_scope_before_normalization = _plan_authorization_boundary(plan)
         original_phase_count=len(plan.get("phases") or [])
         if profile == "FRONTEND_ONLY_MARKETING_SITE":
             plan=normalize_task_graph(plan,profile,required_mcp)
@@ -1711,16 +2316,79 @@ def _run_coding_planning(managed: dict) -> None:
             if selected and plan.get("tasks"):
                 plan["tasks"][0]["selected_mcp"] = selected
             print(f"TASK_GRAPH_NORMALIZATION=PASS TASK_PROFILE={profile} ORIGINAL_PLAN_PHASE_COUNT={original_phase_count} NORMALIZED_PLAN_PHASE_COUNT={len(plan.get('phases') or [])} FINAL_REPORT_PHASE_COUNT=0",file=__import__('sys').stderr,flush=True)
-        elif execution_mode == "NORMAL":
+        elif execution_mode == "NORMAL" and policy["task_size"] != "LARGE":
             candidate=compact_normal_plan(plan,managed["original_goal"])
             compact_errors=validate_plan(candidate,managed["original_goal"])
             if not compact_errors:
                 plan=candidate
             print(f"NORMAL_PLAN_COMPACTION={'PASS' if len(plan.get('phases') or []) < original_phase_count else 'NOT_APPLICABLE'} ORIGINAL_PLAN_PHASE_COUNT={original_phase_count} COMPACTED_PLAN_PHASE_COUNT={len(plan.get('phases') or [])}",file=__import__('sys').stderr,flush=True)
+        plan = major_phase_plan(plan, policy)
+        if requirements.get("visual_repair") and plan.get("phases"):
+            # Visual completion is a separate evidence gate.  Bind the
+            # browser MCP only to the final actionable phase so implementation
+            # phases may remain focused while a screenshot-backed fix cannot
+            # be reported complete without runtime/browser evidence.
+            actionable = [p for p in plan["phases"] if p.get("kind") != "ORCHESTRATOR_BLUEPRINT"]
+            final_phase = actionable[-1] if actionable else plan["phases"][-1]
+            final_phase["required_mcp"] = sorted(set(final_phase.get("required_mcp") or []) | {"playwright"})
+            final_phase["verify"] = list(final_phase.get("verify") or [])
+            if not any(re.search(r"browser|playwright|visual|screenshot|ブラウザ|視覚", str(item), re.I) for item in final_phase["verify"]):
+                final_phase["verify"].append("browser runtime screenshot verification")
+        post_plan_errors = validate_plan(plan, managed["original_goal"])
+        if post_plan_errors:
+            print(f"TASK_ID={task_id} PHASE_COMPLEXITY_VALIDATION_ERRORS={json.dumps(post_plan_errors, ensure_ascii=False)} "
+                  f"PHASE_COUNT={len(plan.get('phases') or [])} TASK_COUNT={len(plan.get('tasks') or [])}",
+                  file=__import__('sys').stderr, flush=True)
+            # The task graph is advisory; the persisted phase list is the
+            # executable contract.  Scope binding and normal phase transforms
+            # can make a previously valid model graph stale (for example when
+            # a verification-only entry is removed).  Re-derive that graph
+            # instead of pausing an otherwise valid small implementation.
+            graph_error = any(error.startswith("tasks ") or "task graph" in error or "task phase_id" in error or "task dependency" in error
+                              for error in post_plan_errors)
+            if graph_error:
+                candidate = derive_task_graph(plan, required_mcp)
+                if not validate_plan(candidate, managed["original_goal"]):
+                    plan = candidate
+                    post_plan_errors = []
+                    print(f"TASK_ID={task_id} TASK_GRAPH_REDERIVED=YES PHASE_COMPLEXITY_CHECK=PASS", file=__import__('sys').stderr, flush=True)
+            if post_plan_errors:
+                _transition_resumable(task_id, "PHASE_COMPLEXITY", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW")
+                return
+        if plan.get("blueprint"):
+            plan["blueprint"]["preflight"] = preflight
+        print(f"PLAN_PHASE_COUNT={len(plan.get('phases', []))} PHASE_COMPLEXITY_CHECK={(plan.get('phase_complexity') or {}).get('status', 'NOT_APPLICABLE')}", file=__import__('sys').stderr, flush=True)
         # Planner output cannot claim work was completed before execution.
         plan={**plan,"phases":[{**phase,"status":"pending"} for phase in plan.get("phases",[])]}
+        # LARGE tasks publish one canonical implementation artifact before the
+        # first checkpoint.  The same root is later handed to Runtime, while
+        # the manifest is retained in task state for Continue/restart.
+        if policy["task_size"] == "LARGE":
+            canonical_root = str(Path(workspace_root).expanduser().resolve()) if workspace_root else None
+            if not canonical_root:
+                print(f"TASK_ID={task_id} PLAN_PATH_VALIDATION=FAIL CANONICAL_TARGET_ROOT=NONE", file=__import__('sys').stderr, flush=True)
+                _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW")
+                db.add_message(managed["conversation_id"], "assistant", "実装対象のプロジェクトルートを確定できないため、実装は開始していません。", time.time(), str(uuid.uuid4()), task_id)
+                return
+            artifact_requirements = {**requirements, "requirements_hash": _context_fingerprint(requirements)}
+            try:
+                plan, artifact = prepare_implementation_plan(task_id, plan, canonical_root, artifact_requirements)
+            except (OSError, ValueError, PermissionError) as exc:
+                print(f"TASK_ID={task_id} PLAN_PATH_VALIDATION=FAIL CANONICAL_TARGET_ROOT={canonical_root} ERROR_TYPE={type(exc).__name__} IMPLEMENTATION_STARTED=NO", file=__import__('sys').stderr, flush=True)
+                _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW", exc)
+                db.add_message(managed["conversation_id"], "assistant", "実装計画のファイル範囲を検証できないため、実装は開始していません。計画を修正して再開してください。", time.time(), str(uuid.uuid4()), task_id)
+                return
+            print(" ".join([f"TASK_ID={task_id}", "IMPLEMENTATION_PLAN_PERSISTED=YES", "IMPLEMENTATION_PLAN_LOCATION=task_state:coding_tasks.plan_json",
+                             f"CANONICAL_TARGET_ROOT={artifact['target_root']}", "PLAN_PATH_VALIDATION=PASS",
+                             f"FILE_MANIFEST_COUNT={artifact['file_manifest_count']}",
+                             f"FILE_MANIFEST_CREATE_COUNT={artifact['file_manifest_create_count']}",
+                             f"FILE_MANIFEST_MODIFY_COUNT={artifact['file_manifest_modify_count']}",
+                             f"FILE_MANIFEST_DELETE_COUNT={artifact['file_manifest_delete_count']}",
+                             f"SCAFFOLD_CREATED_COUNT={artifact['scaffold_created_count']}",
+                             f"SCAFFOLD_SKIPPED_EXISTING_COUNT={artifact['scaffold_skipped_existing_count']}",
+                             f"PATHGUARD_ALLOWED_ROOTS={artifact['target_root']}", "PATHGUARD_TARGET_ROOT_MATCH=YES" ]), file=__import__('sys').stderr, flush=True)
         _initialize_subtask_progress(task_id,plan)
-        protected_scope=_plan_authorization_boundary(plan)
+        protected_scope=list(dict.fromkeys(protected_scope_before_normalization + _plan_authorization_boundary(plan)))
         if protected_scope:
             authorization={"requested_scope":protected_scope,"reason":"The plan includes a protected operation outside ordinary repository implementation.","source":"plan","state":"PENDING"}
             db.update_coding_task(task_id,status="WAITING_FOR_USER",activity="SCOPE_AUTHORIZATION",execution_mode=execution_mode,task_profile=profile,required_mcp=required_mcp,
@@ -1731,13 +2399,24 @@ def _run_coding_planning(managed: dict) -> None:
                       + "\n\n内容を確認し、「承認します」と返信してください。")
         else:
             approved_scope={"source":"original_request","requested_scope":list((plan.get("scope") or {}).get("allowed") or [])}
-            db.update_coding_task(task_id,status="QUEUED",activity="NONE",plan=plan,plan_revision=0,execution_mode=execution_mode,task_profile=profile,required_mcp=required_mcp,batch_cursor=0,batch_handoff=None,
+            db.update_coding_task(task_id,status="PLANNING",activity="NONE",plan=plan,plan_revision=0,execution_mode=execution_mode,task_profile=profile,required_mcp=required_mcp,batch_cursor=0,batch_handoff=None,
                                   approved_scopes=[approved_scope],pending_authorization=None,
                                   pending_user_confirmation=0)
-            db.enqueue_coding_task(task_id)
-            _coding_scheduler_wake.set()
+            checkpoint = None
+            if plan["phases"][0].get("kind") == "ORCHESTRATOR_BLUEPRINT":
+                prepared_reason = "IMPLEMENTATION_PREPARED" if (
+                    policy["task_size"] == "LARGE" and policy["continuation_policy"] == "MAJOR_CHECKPOINTS"
+                    and (plan.get("implementation_plan_artifact") or {}).get("manifest_source") == "PLANNER"
+                ) else None
+                checkpoint = _finish_planning_boundary(task_id, plan, policy["continuation_policy"] == "MAJOR_CHECKPOINTS",
+                                                       checkpoint_reason=prepared_reason)
+            if not checkpoint:
+                db.enqueue_coding_task(task_id)
+                _coding_scheduler_wake.set()
             response=("計画の作成が完了しました。承認済みの依頼範囲で実装と検証を継続します。\n\n実装計画\n"
                       + "\n".join(f"Phase {i} / {len(plan['phases'])}\n{p['goal']}\n確認: " + ", ".join(p['verify']) for i,p in enumerate(plan["phases"],1)))
+            if checkpoint:
+                response = "リポジトリ確認・必須 MCP 検証・実装計画の保存が完了しました。続行すると次の工程を開始します。\n\n" + "\n".join(p["goal"] for p in plan["phases"][1:])
     db.add_message(managed["conversation_id"],"assistant",response,time.time(),str(uuid.uuid4()),task_id)
 
 def _coding_scheduler() -> None:
@@ -1918,15 +2597,83 @@ def external_tool_display_blocks(result: dict) -> list[dict]:
         return [block] if block else []
     return []
 
+
+def _new_provider_summary(result: dict) -> str:
+    """Deterministic, bounded rendering for the 30 first-class providers."""
+    tool, data = result.get("tool_id"), result.get("data") or {}
+    provider = str(result.get("provider") or tool)
+    if data.get("semantic_status") in {"EMPTY", "NO_RESULTS"}:
+        return f"{provider}では、指定された条件に一致するデータが見つかりませんでした。"
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    rows = [item for item in items if isinstance(item, dict)][:5]
+    def first(*keys):
+        for key in keys:
+            value = data.get(key)
+            if value not in (None, "", [], {}): return value
+        for row in rows:
+            for key in keys:
+                value = row.get(key)
+                if value not in (None, "", [], {}): return value
+        return None
+    def label_value(label, value, unit=""):
+        return f"{label}{value}{unit}" if value not in (None, "", [], {}) else None
+    lines = [provider]
+    if tool == "calendar.public_holidays":
+        for row in rows:
+            day, name = first("date"), row.get("localName") or row.get("name") or row.get("holidayName")
+            if day or name: lines.append(f"{day or '日付不明'}：{name or '名称不明'}")
+    elif tool == "space.iss_position":
+        parts = [label_value("緯度 ", first("latitude"), "度"), label_value("経度 ", first("longitude"), "度"), label_value("高度 ", first("altitude"), " km"), label_value("速度 ", first("velocity"), " km/h"), label_value("観測時刻 ", first("timestamp","time"))]
+        lines.append("ISSの現在位置は" + "、".join(part for part in parts if part) + "です。")
+    elif tool == "geo.elevation":
+        lines.append("指定地点の標高は" + str(first("elevation","elevation_m") or "不明") + " mです。")
+    elif tool == "security.exploit_probability":
+        lines.append(f"{first('cve','id') or '指定CVE'} のEPSSスコアは {first('epss','score') or '不明'}、パーセンタイルは {first('percentile') or '不明'}です。")
+    elif tool == "crypto.bitcoin_network":
+        values = [label_value("値 ", first("fastestFee","halfHourFee","hourFee","economyFee","count")), label_value("時刻 ", first("timestamp","time")), label_value("ブロック ", first("blockHeight","height"))]
+        lines.append("Bitcoinネットワークの取得値：" + "、".join(x for x in values if x) + "。")
+    elif tool == "space.space_weather":
+        lines.append("観測値：" + "、".join(x for x in [label_value("値 ", first("kp","value")), label_value("時刻 ", first("time","timestamp")), label_value("種別 ", first("type","metric"))] if x) + "。")
+    elif tool == "space.ephemeris":
+        lines.append(f"対象 {first('target','name') or data.get('query') or '天体'} の観測時刻は {first('epoch','time','timestamp') or '不明'} です。")
+        for key, unit in (("distance", ""), ("range", ""), ("ra", "度"), ("dec", "度")):
+            value = first(key)
+            if value not in (None, ""): lines.append(f"{key}: {value}{unit}")
+    elif tool == "food.recipe":
+        for row in rows[:3]:
+            name = row.get("strMeal") or row.get("name") or row.get("title")
+            if name: lines.append(f"{name}：材料と作り方を取得しました。")
+    elif tool == "games.trivia":
+        for row in rows[:3]:
+            question, answer = row.get("question"), row.get("correct_answer") or row.get("answer")
+            if question: lines.append(f"問題：{question}\n答え：{answer or '未提供'}")
+    else:
+        for index, row in enumerate(rows, 1):
+            title = row.get("title") or row.get("name") or row.get("localName") or row.get("scientificName") or row.get("full_name") or row.get("id")
+            if title is None: title = first("title","name","id")
+            if title is None: continue
+            detail = row.get("description") or row.get("snippet") or row.get("date") or row.get("published") or row.get("url") or row.get("reference")
+            lines.append(f"{index}. {title}" + (f"（{detail}）" if detail else ""))
+    if len(lines) == 1:
+        for key in ("query", "target", "cve", "domain", "ip", "company"):
+            if data.get(key): lines.append(f"対象：{data[key]}"); break
+        if len(lines) == 1:
+            lines.append("プロバイダから利用可能な構造化データを取得しました。")
+    return "\n".join(lines)
+
 def external_tool_summary(result: dict) -> str:
     """Human-readable command copy; the complete normalized data stays typed."""
     tool, data = result["tool_id"], result["data"]
+    if tool in NEW_TOOL_IDS:
+        return _new_provider_summary(result)
     if tool == "weather.open_meteo":
         place=data.get("location", {}); current=data.get("current", {})
         values=[f"Weather · Open-Meteo", ", ".join(x for x in (place.get("name"),place.get("country")) if x)]
         if current.get("temperature_2m") is not None: values.append(f"{current['temperature_2m']}°C" + (f" · Feels like {current['apparent_temperature']}°C" if current.get("apparent_temperature") is not None else ""))
         if current.get("wind_speed_10m") is not None: values.append(f"Wind {current['wind_speed_10m']} km/h")
         return "\n".join(values)
+
+
     if tool == "currency.frankfurter":
         amount=data.get("amount"); converted=data.get("converted_amount"); base=data["base"]; quote=data["quote"]
         values=["Currency · Frankfurter"]
@@ -2149,47 +2896,149 @@ def external_tool_summary(result: dict) -> str:
             if results.get(key): lines.append(f"{key}: {results[key]}")
     return "\n".join(lines)
 
+ROUTER_DECISION_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "decision": {"type": "string", "enum": ["tool", "no_tool", "needs_clarification"]},
+        "tool_id": {"type": ["string", "null"], "enum": [*sorted(REGISTRY), None]},
+        "arguments": {"type": ["object", "null"]},
+        "missing": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["decision"],
+}
+
+
+def _external_router_candidate(message: str) -> bool:
+    """Return true only for unresolved requests that plausibly need a provider."""
+    return bool(re.search(
+        r"(?:search|look\s*up|find|lookup|research|latest|current|news|weather|forecast|exchange\s*rate|currency|temperature|"
+        r"検索|調べ|探して|最新|ニュース|天気|気温|為替|論文|データを取得|外部データ|API)", message, re.I,
+    ))
+
+
 def router_decision(message: str) -> tuple[str, dict] | None:
-    """Ask the configured generative Router for a strict, bounded decision.
-    A missing/unavailable Router is a no-tool result; it never authorizes a call.
-    """
+    """Ask LFM for a strict external-provider decision; never execute a provider."""
+    print(f"API_ROUTER_ENABLED={'YES' if settings.router_model else 'NO'} API_ROUTER_MODEL={settings.router_model or 'NONE'} GLOBAL_MODEL_EXECUTION_LIMIT=1", file=__import__('sys').stderr, flush=True)
     if not settings.router_model or settings.router_model == "embeddinggemma:latest":
+        print("API_ROUTER_MODEL_STATUS=NOT_CONFIGURED API_ROUTER_USED=NO", file=__import__('sys').stderr, flush=True)
         return None
 
     allowed_tools = "|".join(sorted(REGISTRY))
     prompt = ('Return exactly one JSON object, no Markdown. Schema: '
               '{"decision":"tool","tool_id":"' + allowed_tools + '","arguments":{}} '
               'or {"decision":"no_tool"} or {"decision":"needs_clarification","missing":["..."]}. '
-              'Choose the most specific structured tool first: weather before Web Search, currency before Web Search, research for papers, and Wikimedia only when explicitly requested. Generic Web Search is only for open-web/news requests. '
-              'Never output URLs, hosts, methods, credentials, authorization, or other keys.\nUSER: ' + message[:1000])
+              'Choose only a registered provider. Use Wikimedia only when explicitly requested. '
+              'Never output URLs, hosts, methods, credentials, authorization, commands, or filesystem operations. '
+              'Route only the current user request; do not infer from conversation history.\nUSER: ' + message[:1000])
+    print(f"API_ROUTER_USED=YES API_ROUTER_REASON=UNRESOLVED_EXTERNAL API_ROUTER_INPUT_CHARS={len(message[:1000])}", file=__import__('sys').stderr, flush=True)
     try:
         messages=[{"role":"system","content":"You are OLCR Router. Output strict JSON only."},{"role":"user","content":prompt}]
-        raw=runtime.model.generate(messages, settings.router_model, think=False)
-        try: parsed=json.loads(str(raw.get("text", "")).strip().removeprefix("```json").removesuffix("```").strip())
+        try:
+            with model_slot():
+                raw=runtime.model.generate(messages, settings.router_model, think=False, format=ROUTER_DECISION_SCHEMA)
+        except TypeError:
+            with model_slot():
+                raw=runtime.model.generate(messages, settings.router_model, think=False)
+        print("API_ROUTER_MODEL_STATUS=AVAILABLE API_ROUTER_OUTPUT_KIND=JSON", file=__import__('sys').stderr, flush=True)
+        def parse_router_payload(payload: Any) -> dict:
+            if not isinstance(payload, dict):
+                raise ValueError("router response is not an object")
+            text = str(payload.get("text", "")).strip()
+            return json.loads(text.removeprefix("```json").removesuffix("```").strip())
+        try: parsed=parse_router_payload(raw)
         except (ValueError, TypeError, json.JSONDecodeError):
-            raw=runtime.model.generate(messages+[{"role":"user","content":"Correction: return one valid JSON object only."}], settings.router_model, think=False)
-            parsed=json.loads(str(raw.get("text", "")).strip().removeprefix("```json").removesuffix("```").strip())
-        if not isinstance(parsed,dict) or parsed.get("decision") not in {"tool","no_tool","needs_clarification"}: return None
-        if parsed["decision"] != "tool": return None
+            print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_RETRY=YES", file=__import__('sys').stderr, flush=True)
+            with model_slot():
+                raw=runtime.model.generate(messages+[ {"role":"user","content":"Return one valid JSON object matching the schema."}], settings.router_model, think=False, format=ROUTER_DECISION_SCHEMA)
+            parsed=parse_router_payload(raw)
+        if not isinstance(parsed,dict) or parsed.get("decision") not in {"tool","no_tool","needs_clarification"}:
+            print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=INVALID_DECISION", file=__import__('sys').stderr, flush=True)
+            return None
+        allowed_fields = {"decision", "tool_id", "arguments", "missing"}
+        if set(parsed) - allowed_fields:
+            print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=EXTRA_FIELDS", file=__import__('sys').stderr, flush=True)
+            return None
+        decision = parsed["decision"]
+        if decision != "tool":
+            if parsed.get("tool_id") is not None or parsed.get("arguments") is not None:
+                print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=NON_TOOL_WITH_PROVIDER", file=__import__('sys').stderr, flush=True)
+                return None
+            missing = parsed.get("missing", [])
+            if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
+                print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=INVALID_MISSING_FIELDS", file=__import__('sys').stderr, flush=True)
+                return None
+            print(f"API_ROUTER_PARSE_RESULT=PASS API_ROUTER_SELECTED_PROVIDER=NONE API_ROUTER_DECISION={decision}", file=__import__('sys').stderr, flush=True)
+            return None
         tool_id=parsed.get("tool_id"); arguments=parsed.get("arguments")
-        if tool_id not in REGISTRY or not isinstance(arguments,dict): return None
+        if tool_id not in REGISTRY or not isinstance(arguments,dict):
+            print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=UNKNOWN_OR_MALFORMED_PROVIDER", file=__import__('sys').stderr, flush=True)
+            return None
         # Provider adapters perform the final typed bounds and host validation.
+        print(f"API_ROUTER_PARSE_RESULT=PASS API_ROUTER_DECISION=tool API_ROUTER_SELECTED_PROVIDER={tool_id}", file=__import__('sys').stderr, flush=True)
         return tool_id, arguments
     except ModelFailure as exc:
-        print("ROUTER_MODEL_STATUS=UNAVAILABLE_OR_INVALID", file=__import__('sys').stderr, flush=True)
+        print("API_ROUTER_MODEL_STATUS=NOT_AVAILABLE API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_ERROR=ModelFailure", file=__import__('sys').stderr, flush=True)
         raise RouterUnavailable("ROUTER_MODEL_NOT_INSTALLED") from exc
     except (ValueError, TypeError, json.JSONDecodeError):
-        print("ROUTER_DECISION_INVALID=YES", file=__import__('sys').stderr, flush=True)
+        print("API_ROUTER_PARSE_RESULT=FAIL API_ROUTER_REJECTION=INVALID_JSON", file=__import__('sys').stderr, flush=True)
         return None
+
+
+def _external_tool_available(tool_id: str) -> bool:
+    """Report configured availability without implying that a provider ran."""
+    return any(row.get("tool_id") == tool_id and row.get("availability") == "READY"
+               for row in external_tool_status(settings.external_access_enabled))
+
+
+def _print_external_tool_diagnostics(*, selected: bool, available: bool = False,
+                                     executed: bool = False, succeeded: bool = False) -> None:
+    print(f"EXTERNAL_TOOL_SELECTED={'YES' if selected else 'NO'} "
+          f"EXTERNAL_TOOL_AVAILABLE={'YES' if available else 'NO'} "
+          f"EXTERNAL_TOOL_EXECUTED={'YES' if executed else 'NO'} "
+          f"EXTERNAL_TOOL_SUCCEEDED={'YES' if succeeded else 'NO'}",
+          file=__import__('sys').stderr, flush=True)
+
+def _currency_result_is_valid(data: dict) -> bool:
+    """Validate Frankfurter's normalized rate and derived amount before display."""
+    if not isinstance(data, dict) or not data.get("base") or not data.get("quote") or data.get("rate") is None:
+        return False
+    try:
+        rate = Decimal(str(data["rate"]))
+        if not rate.is_finite() or rate <= 0:
+            return False
+        amount, converted = data.get("amount"), data.get("converted_amount")
+        if amount is None and converted is None:
+            return True
+        if amount is None or converted is None:
+            return False
+        amount_d, converted_d = Decimal(str(amount)), Decimal(str(converted))
+        if not amount_d.is_finite() or not converted_d.is_finite() or amount_d < 0:
+            return False
+        expected = amount_d * rate
+        tolerance = max(abs(expected) * Decimal("1e-9"), Decimal("0.000001"))
+        return abs(converted_d - expected) <= tolerance
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+
 
 def compose_external_result(request: str, result: dict) -> tuple[Task, str]:
     """Compose a provider result without re-entering generic retrieval routing."""
     sources = result.get("sources") if isinstance(result, dict) else None
     provider = result.get("provider") if isinstance(result, dict) else None
+    # Wikimedia's typed envelope names the provider ``Wikimedia`` while its
+    # article provenance is user-facing ``Wikipedia``.  They are the same
+    # source for this tool; requiring literal equality incorrectly converted a
+    # successful Wikipedia response into PROVENANCE_UNAVAILABLE.
+    def source_matches_provider(source: dict) -> bool:
+        source_provider = str(source.get("provider") or "").casefold()
+        provider_name = str(provider or "").casefold()
+        if source_provider == provider_name:
+            return True
+        return result.get("tool_id") == "knowledge.wikimedia" and source_provider in {"wikipedia", "wikimedia"} and provider_name in {"wikipedia", "wikimedia"}
     # Provider attribution is authoritative only when the adapter returned a
     # matching source in this result. Never let a Brain completion invent it.
     if not isinstance(sources, list) or not sources or not provider or not any(
-        isinstance(source, dict) and source.get("provider") == provider for source in sources
+        isinstance(source, dict) and source_matches_provider(source) for source in sources
     ):
         task = Task(request)
         task.transition(TaskState.ROUTING); task.error = "PROVENANCE_UNAVAILABLE"; task.transition(TaskState.FAILED)
@@ -2198,15 +3047,23 @@ def compose_external_result(request: str, result: dict) -> tuple[Task, str]:
     # results) whose wording must remain evidence-bound.  Render them
     # deterministically instead of allowing a Brain completion to invent
     # snapshot dates, chemical values, or alternate calculator sources.
-    if result.get("tool_id") in {"chemistry.compound", "government.us_federal_register", "math.symbolic", "web.archive_search", "statistics.world_bank", "earth.natural_event", "geo.routing", "knowledge.wikimedia"}:
+    if result.get("tool_id") == "currency.frankfurter" and not _currency_result_is_valid(result.get("data") or {}):
+        task = Task(request)
+        task.transition(TaskState.ROUTING); task.error = "PROVIDER_SEMANTIC_INVALID"; task.transition(TaskState.FAILED)
+        print("CURRENCY_PROVIDER=Frankfurter PROVIDER_SEMANTIC_STATUS=INVALID_DATA CURRENCY_VALUE_MATCH=NO FINAL_RESPONSE_READY=NO", file=__import__('sys').stderr, flush=True)
+        return task, "構造化データ源から整合性のある通貨換算結果を取得できませんでした。"
+    if result.get("tool_id") in ({"chemistry.compound", "currency.frankfurter", "government.us_federal_register", "math.symbolic", "web.archive_search", "statistics.world_bank", "earth.natural_event", "geo.routing", "knowledge.wikimedia", "research.openalex"} | NEW_TOOL_IDS):
         task = Task(request)
         task.transition(TaskState.ROUTING); task.transition(TaskState.EXECUTING); task.transition(TaskState.COMPLETED)
+        if result.get("tool_id") == "currency.frankfurter":
+            data = result.get("data") or {}
+            print(f"CURRENCY_PROVIDER=Frankfurter CURRENCY_BASE={data.get('base','')} CURRENCY_QUOTE={data.get('quote','')} CURRENCY_INPUT_AMOUNT={data.get('amount','')} CURRENCY_PROVIDER_RATE={data.get('rate','')} CURRENCY_PROVIDER_CONVERTED_AMOUNT={data.get('converted_amount','')} CURRENCY_RENDERED_AMOUNT={data.get('converted_amount','')} CURRENCY_VALUE_MATCH=YES", file=__import__('sys').stderr, flush=True)
         if result.get("tool_id") == "math.symbolic":
             print("SYMPY_DETERMINISTIC_RENDERER_USED=true BRAIN_COMPOSER_USED=false", file=__import__('sys').stderr, flush=True)
         if result.get("tool_id") == "earth.natural_event":
             print("CURRENT_DATA_TERMINAL=SUCCESS BRAIN_FALLBACK_BLOCKED=YES", file=__import__('sys').stderr, flush=True)
         owner = "Federal Register deterministic renderer" if result.get("tool_id") == "government.us_federal_register" else "DETERMINISTIC_RENDERER"
-        print(f"FINAL_RESPONSE_OWNER={owner} TERMINAL_RESPONSE_READY=true DETERMINISTIC_RENDERER={result.get('tool_id')} BRAIN_COMPOSER_USED=NO GENERIC_COMPOSER_USED=NO", file=__import__('sys').stderr, flush=True)
+        print(f"FINAL_RESPONSE_OWNER={owner} TERMINAL_RESPONSE_READY=true DETERMINISTIC_RENDERER={result.get('tool_id')} DETERMINISTIC_RENDER_AVAILABLE=YES DETERMINISTIC_RENDER_STATUS=PASS USER_CONTENT_AVAILABLE=YES BRAIN_COMPOSER_USED=NO GENERIC_COMPOSER_USED=NO", file=__import__('sys').stderr, flush=True)
         return task, external_tool_summary(result)
     payload = {"tool_id": result["tool_id"], "provider": result["provider"], "fetched_at": result["fetched_at"], "data": result["data"], "sources": result["sources"]}
     task, answer = runtime.compose_tool_result(request, payload)
@@ -2248,6 +3105,8 @@ def _external_tool_user_message(code: str, arguments: dict | None = None) -> str
     if code == "LOCATION_NOT_FOUND":
         location = (arguments or {}).get("location", "指定された場所")
         return f"「{location}」を場所として特定できませんでした。もう少し具体的な地域名を指定してください。"
+    if code == "CONFIG_REQUIRED":
+        return "この外部APIに必要な設定がありません。管理者がプロバイダ設定を完了してから再試行してください。"
     if code.startswith(("PROVIDER_", "RATE_")):
         return "外部データを取得できませんでした。しばらくしてから再試行してください。"
     return "外部データを取得できませんでした。検索条件を確認して再試行してください。"
@@ -2368,8 +3227,19 @@ def chat(value: ChatInput):
     user_blocks=([{"type":"attachment","name":str(attachment_meta.get("name") or "attachment")[:200],
                    "mime_type":str(attachment_meta.get("mime_type") or attachment_meta.get("mimeType") or "application/octet-stream")[:120]}]
                  if attachment_meta else None)
-    db.add_message(conversation_id,"user",value.message,time.time(),source_message_id,blocks=user_blocks)
-    conversation_project_state=_conversation_project_context(conversation_id, project_id, value.message)
+    control_event = bool(re.fullmatch(r"\s*(?:再開(?:して)?|resume|続行(?:して)?|continue)\s*", value.message, re.IGNORECASE))
+    has_managed_task = any(task.get("status") in {"RESUMABLE", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
+                           for task in db.coding_tasks(conversation_id))
+    # Continue/resume is an orchestrator control event, not semantic coding
+    # content. Keep it out of the transcript and project-goal context when a
+    # managed task is present.
+    if not (control_event and has_managed_task):
+        db.add_message(conversation_id,"user",value.message,time.time(),source_message_id,blocks=user_blocks)
+    conversation_project_state=_conversation_project_context(conversation_id, project_id, "" if (control_event and has_managed_task) else value.message)
+    attachment_evidence=attachment_repair_evidence(
+        attachment_meta, value.message,
+        project_scoped=bool(conversation_project_state.get("workspace_path")),
+    )
     print(f"ACTIVE_PROJECT_ID={project_id} ACTIVE_WORKSPACE={conversation_project_state.get('workspace_path') or ''} "
           f"PROJECT_CONTEXT_LOADED=YES PROJECT_CONTEXT_REVISION={conversation_project_state.get('revision',0)} "
           f"ACTIVE_SUBJECT={conversation_project_state.get('current_subject','')} "
@@ -2470,15 +3340,20 @@ def chat(value: ChatInput):
     if resume_request and resumable_task:
         replan_epoch_resume = _begin_human_recovery_epoch(resumable_task)
         queued=db.enqueue_coding_task(resumable_task["id"]); _coding_scheduler_wake.set()
-        print(f"TASK_ID={resumable_task['id']} RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE STATUS_AFTER_RESUME=QUEUED RECOVERY_ACTION={resumable_task.get('recovery_action','NONE')} RECOVERY_REASON={resumable_task.get('recovery_reason','NONE')} RECOVERY_EPOCH={queued.get('recovery_epoch',0) if queued else resumable_task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={queued.get('replan_count_in_epoch','unchanged') if queued else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
-        response="Coding Task を再開し、実行キューへ追加しました。" + (" 新しい回復 epoch を開始しました。" if replan_epoch_resume else "")
-        db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),resumable_task["id"])
-        return {"conversation_id":conversation_id,"coding_task_id":resumable_task["id"],"response":response,"sources":[]}
+        print(f"CONTINUE_CONSUMED_AS_CONTROL_EVENT=YES CONTINUE_SAVED_AS_USER_CHAT_CONTENT=NO TASK_ID={resumable_task['id']} RESUME_SAME_TASK=YES RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE TASK_STATUS_AFTER_RESUME=QUEUED TASK_ACTIVITY_AFTER_RESUME=QWEN_IMPLEMENTATION PLAN_REVISION_BEFORE={resumable_task.get('plan_revision',0)} PLAN_REVISION_AFTER={queued.get('plan_revision',resumable_task.get('plan_revision',0)) if queued else resumable_task.get('plan_revision',0)} USER_VISIBLE_MESSAGE_EMITTED_AFTER_RESUME=NO MESSAGE_ORIGIN=HOST_STATUS ASSISTANT_MESSAGE_PERSISTED=NO RECOVERY_ACTION={resumable_task.get('recovery_action','NONE')} RECOVERY_REASON={resumable_task.get('recovery_reason','NONE')} RECOVERY_EPOCH={queued.get('recovery_epoch',0) if queued else resumable_task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={queued.get('replan_count_in_epoch','unchanged') if queued else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
+        # Resume acknowledgement is a control-plane event only. The progress
+        # panel observes the queued/running task; no ordinary assistant turn
+        # is created before the next checkpoint, blocker, or final report.
+        return {"conversation_id":conversation_id,"coding_task_id":resumable_task["id"],"response":"","progress_event":{"type":"coding_task_progress","origin":"HOST_STATUS","task_id":resumable_task["id"],"status":"QUEUED"},"sources":[]}
     blocked=next((task for task in managed_tasks if task["status"]=="BLOCKED"),None)
     control_message=bool(re.search(r"(?:次に進んで|続けて|このtaskを進めて|どうなってる|状態(?:確認)?|今どこ|進捗)",value.message,re.I))
+    if blocked and resume_request:
+        response=_blocked_task_user_message(blocked)
+        print(f"MANAGED_INPUT_ROUTED=true CODING_TASK_ID={blocked['id']} CODING_ROUTE=BLOCKED_TASK_CONTINUE_REJECTED NORMAL_RUNTIME_FALLBACK=false",file=__import__('sys').stderr,flush=True)
+        db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),blocked["id"])
+        return {"conversation_id":conversation_id,"coding_task_id":blocked["id"],"response":response,"sources":[]}
     if blocked and control_message:
-        reason=(blocked.get("pending_authorization") or {}).get("reason") or "計画または実行結果を検証できませんでした"
-        response=f"このCoding Taskは現在ブロックされています。{reason}"
+        response=_blocked_task_user_message(blocked)
         print(f"MANAGED_INPUT_ROUTED=true CODING_TASK_ID={blocked['id']} CODING_ROUTE=BLOCKED_TASK_CONTROL NORMAL_RUNTIME_FALLBACK=false",file=__import__('sys').stderr,flush=True)
         db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),blocked["id"])
         return {"conversation_id":conversation_id,"coding_task_id":blocked["id"],"response":response,"sources":[]}
@@ -2488,6 +3363,8 @@ def chat(value: ChatInput):
         value.message,
         project_scoped=bool((db.project(project_id) or {}).get("workspace_path")),
         attachment_present=bool(attachment_meta),
+        attachment_evidence=attachment_evidence,
+        execution_intent=value.execution_intent,
     )
     activation_class = str(classification["classification"])
     print(f"CODING_ORCHESTRATOR_CLASSIFICATION={activation_class} "
@@ -2515,11 +3392,12 @@ def chat(value: ChatInput):
             "project_metadata": {"project_id": project_id},
             "selected_workspace": (db.project(project_id) or {}).get("workspace_path"),
             "conversation_id": conversation_id,
+            "attachment_evidence": attachment_evidence,
         })
         db.update_coding_task(task_id,requirements=requirements,execution_mode=requirements["execution_mode"],task_profile=requirements["task_profile"],required_mcp=requirements["required_mcp"])
         norm_diag=requirements.get("normalization_diagnostics") or {}
         valid=bool(norm_diag.get("canonical_requirements_valid"))
-        print(f"TASK_ID={task_id} TASK_CREATED=true REQUIREMENTS_NORMALIZED=PASS CANONICAL_REQUIREMENTS_VALID={'PASS' if valid else 'FAIL'} CURRENT_USER_TEXT_HASH={norm_diag.get('current_user_text_hash','')} NORMALIZER_CONTROL_INPUT_HASH={norm_diag.get('normalizer_control_input_hash','')} MODEL_CONTEXT_HASH={norm_diag.get('model_context_hash','')} NORMALIZER_INPUT_CHAR_COUNT={norm_diag.get('normalizer_input_char_count',0)} CURRENT_USER_TEXT_CHAR_COUNT={norm_diag.get('current_user_text_char_count',0)} PROJECT_CONTEXT_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('project_context_added_before_normalization') else 'NO'} CONVERSATION_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('conversation_history_added_before_normalization') else 'NO'} ASSISTANT_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('assistant_history_added_before_normalization') else 'NO'} RAW_REQUEST_HASH={norm_diag.get('raw_request_hash','')} SCOPED_INPUT_HASH={norm_diag.get('scoped_input_hash','')} CANONICAL_REQUIREMENTS_HASH={norm_diag.get('canonical_requirements_hash','')} CODING_MUTATION_MODE={requirements['mutation_mode']} FIX_REASON={requirements['fix_reason']} FIX_SCOPE_EXPANDED=NO FIX_ESCALATED_TO_IMPLEMENTATION=NO REQUIRED_CAPABILITIES={json.dumps(requirements['required_capabilities'])} FORBIDDEN_CAPABILITIES={json.dumps(requirements['forbidden_capabilities'])} REQUIRED_MCPS={json.dumps(requirements['required_mcps'])} CAPABILITY_PROVENANCE={json.dumps(norm_diag.get('capability_provenance', []), ensure_ascii=False, sort_keys=True)}",file=__import__('sys').stderr,flush=True)
+        print(f"TASK_ID={task_id} TASK_CREATED=true REQUIREMENTS_NORMALIZED=PASS CANONICAL_REQUIREMENTS_VALID={'PASS' if valid else 'FAIL'} ATTACHMENT_EVIDENCE_AVAILABLE={'YES' if attachment_evidence.get('available') else 'NO'} FIX_TARGET_SOURCE={requirements.get('attachment_evidence',{}).get('target_source','NONE')} CURRENT_USER_TEXT_HASH={norm_diag.get('current_user_text_hash','')} NORMALIZER_CONTROL_INPUT_HASH={norm_diag.get('normalizer_control_input_hash','')} MODEL_CONTEXT_HASH={norm_diag.get('model_context_hash','')} NORMALIZER_INPUT_CHAR_COUNT={norm_diag.get('normalizer_input_char_count',0)} CURRENT_USER_TEXT_CHAR_COUNT={norm_diag.get('current_user_text_char_count',0)} PROJECT_CONTEXT_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('project_context_added_before_normalization') else 'NO'} CONVERSATION_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('conversation_history_added_before_normalization') else 'NO'} ASSISTANT_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('assistant_history_added_before_normalization') else 'NO'} RAW_REQUEST_HASH={norm_diag.get('raw_request_hash','')} SCOPED_INPUT_HASH={norm_diag.get('scoped_input_hash','')} CANONICAL_REQUIREMENTS_HASH={norm_diag.get('canonical_requirements_hash','')} CODING_MUTATION_MODE={requirements['mutation_mode']} FIX_REASON={requirements['fix_reason']} FIX_SCOPE_EXPANDED=NO FIX_ESCALATED_TO_IMPLEMENTATION=NO REQUIRED_CAPABILITIES={json.dumps(requirements['required_capabilities'])} FORBIDDEN_CAPABILITIES={json.dumps(requirements['forbidden_capabilities'])} REQUIRED_MCPS={json.dumps(requirements['required_mcps'])} CAPABILITY_PROVENANCE={json.dumps(norm_diag.get('capability_provenance', []), ensure_ascii=False, sort_keys=True)}",file=__import__('sys').stderr,flush=True)
         if not valid:
             db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_action="NONE", recovery_reason="INVALID_REQUIREMENTS")
             print(f"TASK_ID={task_id} CONTROL_PLANE_INVARIANT_FAILURE=CANONICAL_REQUIREMENTS_CONFLICT CODING_TASK_STATUS=BLOCKED QUEUED=NO", file=__import__('sys').stderr, flush=True)
@@ -2563,6 +3441,7 @@ def chat(value: ChatInput):
     print(f"EXPLICIT_SEARCH_DETECTED={'YES' if explicit_web_request or requested_wikipedia else 'NO'} REQUESTED_SOURCE={'WIKIPEDIA' if requested_wikipedia else 'GENERIC_WEB' if explicit_web_request else 'NONE'}", file=__import__('sys').stderr, flush=True)
     structured_data_request = bool(re.search(r"(?:構造化データ|structured data|構造化された|データを使って|確認してください|比較|ランキング|人口\s*\d+万人以上|(?:首都|人口|通貨|主要言語).*(?:まとめ|教えて|調べ))", value.message, re.I))
     route_source = "none"
+    explicit_provider_override = False
     try:
         # The deterministic matcher is the single authoritative first pass for
         # strongly recognizable capabilities.  The optional model router may
@@ -2571,7 +3450,9 @@ def chat(value: ChatInput):
         tool_request = None if explicit_web_request else route_external_tool(value.message)
         if tool_request is not None:
             route_source = "deterministic"
-        if tool_request is None and not explicit_web_request:
+            explicit_provider_override = True
+            print(f"EXPLICIT_PROVIDER_OVERRIDE=YES API_ROUTER_USED=NO SELECTED_SEARCH_PROVIDER={tool_request[0]}", file=__import__('sys').stderr, flush=True)
+        if tool_request is None and not explicit_web_request and _external_router_candidate(value.message):
             tool_request = router_decision(value.message)
             if tool_request is not None:
                 route_source = "model"
@@ -2585,6 +3466,9 @@ def chat(value: ChatInput):
                         print(f"TOOL_MODEL_DECISION_REJECTED=BROAD_GEO_FALLBACK TOOL_MODEL_SELECTED={tool_request[0]}", file=__import__('sys').stderr, flush=True)
                         tool_request = None
                         route_source = "none"
+        elif tool_request is None:
+            reason = "EXPLICIT_WEB_REQUEST" if explicit_web_request else "NO_EXTERNAL_PROVIDER_INTENT"
+            print(f"EXPLICIT_PROVIDER_OVERRIDE=NO API_ROUTER_USED=NO API_ROUTER_REASON={reason}", file=__import__('sys').stderr, flush=True)
     except RouterUnavailable:
         # Deterministic provider routes remain usable when the optional router
         # model is unavailable; the compiler still validates every field.
@@ -2593,12 +3477,15 @@ def chat(value: ChatInput):
         print(f"ROUTER_MODEL_FALLBACK=DETERMINISTIC TOOL_SELECTED={tool_request[0] if tool_request else 'NONE'}", file=__import__('sys').stderr, flush=True)
     if tool_request:
         tool_id, arguments = tool_request
-        print(f"TOOL_ROUTE_DECISION=tool TOOL_ROUTE_SOURCE={route_source} TOOL_CAPABILITY={tool_id} TOOL_PROVIDER={REGISTRY[tool_id].provider} TOOL_ROUTER_SELECTED={tool_id}", file=__import__('sys').stderr, flush=True)
+        print(f"TOOL_ROUTE_DECISION=tool TOOL_ROUTE_SOURCE={route_source} TOOL_CAPABILITY={tool_id} TOOL_PROVIDER={REGISTRY[tool_id].provider} TOOL_ROUTER_SELECTED={tool_id} EXPLICIT_PROVIDER_OVERRIDE={'YES' if explicit_provider_override else 'NO'}", file=__import__('sys').stderr, flush=True)
+        tool_available = _external_tool_available(tool_id)
+        _print_external_tool_diagnostics(selected=True, available=tool_available)
         try:
             arguments = compile_provider_arguments(tool_id, value.message, arguments)
         except ExternalToolError as exc:
             code = str(exc)
             print(f"TOOL_ARGUMENTS_VALID=NO TOOL_ARGUMENT_ERROR={code}", file=__import__('sys').stderr, flush=True)
+            _print_external_tool_diagnostics(selected=True, available=tool_available)
             task = Task(value.message)
             task.transition(TaskState.ROUTING); task.error = code; task.transition(TaskState.FAILED)
             db.save_task(task, conversation_id)
@@ -2617,6 +3504,7 @@ def chat(value: ChatInput):
         # Local tools (for example SymPy) do not require network authorization;
         # only providers whose registry entry is external are gated here.
         if REGISTRY[tool_id].external and not settings.external_access_enabled:
+            _print_external_tool_diagnostics(selected=True, available=False)
             task = Task(value.message)
             task.error = "EXTERNAL_ACCESS_REQUIRED"; task.transition(TaskState.ROUTING); task.transition(TaskState.FAILED)
             db.save_task(task, conversation_id)
@@ -2625,16 +3513,18 @@ def chat(value: ChatInput):
             return {"conversation_id":conversation_id,"task":task.__dict__ | {"route":None,"state":task.state.value},"response":response,"sources":[]}
         try:
             print(f"PROVIDER_REQUEST_STARTED={tool_id}", file=__import__('sys').stderr, flush=True)
+            _print_external_tool_diagnostics(selected=True, available=tool_available, executed=True)
             if tool_id == "knowledge.wikimedia": print("WIKIPEDIA_API_CALL_STARTED=YES", file=__import__('sys').stderr, flush=True)
             result = execute_external_tool(tool_id, arguments)
             data = result.get("data") if isinstance(result, dict) else {}
-            print(f"PROVIDER_REQUEST_STATUS=SUCCESS PROVIDER_RESULT_KIND={(data or {}).get('result_kind','unknown')} PROVIDER_HAS_PAYLOAD={(data or {}).get('has_payload','unknown')} PROVIDER_ITEM_COUNT={(data or {}).get('item_count',len((data or {}).get('items') or []))} PROVIDER_EVIDENCE_FIELD_COUNT={(data or {}).get('evidence_field_count','unknown')} PROVIDER_SEMANTIC_STATUS={(data or {}).get('semantic_status','unknown')} PROVIDER_REQUEST_COMPLETE={(data or {}).get('request_complete','unknown')} PROVIDER_PROVENANCE_PRESENT={'YES' if result.get('sources') else 'NO'}", file=__import__('sys').stderr, flush=True)
+            print(f"PROVIDER_REQUEST_STATUS=SUCCESS PROVIDER_RESULT_KIND={(data or {}).get('result_kind','unknown')} PROVIDER_HAS_PAYLOAD={(data or {}).get('has_payload','unknown')} PROVIDER_ITEM_COUNT={(data or {}).get('item_count',len((data or {}).get('items') or []))} PROVIDER_RELEVANT_RESULT_COUNT={(data or {}).get('relevant_result_count','unknown')} PROVIDER_EVIDENCE_FIELD_COUNT={(data or {}).get('evidence_field_count','unknown')} PROVIDER_SEMANTIC_STATUS={(data or {}).get('semantic_status','unknown')} PROVIDER_REQUEST_COMPLETE={(data or {}).get('request_complete','unknown')} PROVIDER_PROVENANCE_PRESENT={'YES' if result.get('sources') else 'NO'}", file=__import__('sys').stderr, flush=True)
             if tool_id == "knowledge.wikimedia": print(f"WIKIPEDIA_API_CALL_FINISHED=YES WIKIPEDIA_RESULT_COUNT={1 if (data or {}).get('title') else 0}", file=__import__('sys').stderr, flush=True)
             if tool_id == "government.us_federal_register":
                 print(f"FEDERAL_HTTP_STATUS=200 FEDERAL_RAW_DOCUMENT_COUNT={(data or {}).get('raw_document_count',(data or {}).get('item_count',len((data or {}).get('items') or [])))} FEDERAL_NORMALIZED_DOCUMENT_COUNT={(data or {}).get('item_count',len((data or {}).get('items') or []))} FEDERAL_SEMANTIC_STATUS_BEFORE_GENERIC={(data or {}).get('semantic_status','unknown')} FEDERAL_SEMANTIC_STATUS_AFTER_GENERIC={(data or {}).get('semantic_status','unknown')}", file=__import__('sys').stderr, flush=True)
         except ExternalToolError as exc:
             code = str(exc)
             print(f"PROVIDER_REQUEST_STATUS=FAILURE PROVIDER_ERROR={code} PROVIDER_PROVENANCE_PRESENT=NO FALLBACK_USED=NO", file=__import__('sys').stderr, flush=True)
+            _print_external_tool_diagnostics(selected=True, available=tool_available, executed=True)
             if tool_id == "knowledge.wikimedia": print("WIKIPEDIA_API_CALL_FINISHED=NO WIKIPEDIA_RESULT_COUNT=0", file=__import__('sys').stderr, flush=True)
             if tool_id == "earth.natural_event":
                 print("CURRENT_DATA_TERMINAL=FAILURE BRAIN_FALLBACK_BLOCKED=YES", file=__import__('sys').stderr, flush=True)
@@ -2660,28 +3550,33 @@ def chat(value: ChatInput):
         # provider outcome.  Do not hand an empty current-data result to Brain,
         # where it could be replaced by model-memory facts.
         if isinstance(result.get("data"), dict) and (
-            result["data"].get("semantic_status") == "EMPTY"
+            result["data"].get("semantic_status") in {"EMPTY", "NO_RELEVANT_RESULT"}
             or (tool_id == "earth.natural_event" and result["data"].get("current_turn_evidence") is not True)
         ):
+            _print_external_tool_diagnostics(selected=True, available=tool_available, executed=True)
             task = Task(value.message); task.transition(TaskState.ROUTING); task.error = "PROVIDER_EMPTY"; task.transition(TaskState.FAILED)
             if tool_id == "earth.natural_event":
                 response = "現在進行中として確認できる自然災害は、今回のEONET検索では見つかりませんでした。"
             elif tool_id == "government.us_federal_register":
                 response = "今回のFederal Register検索では、人工知能に関係する最近のruleまたはnoticeは見つかりませんでした。"
+            elif tool_id == "research.openalex" and result["data"].get("semantic_status") == "NO_RELEVANT_RESULT":
+                response = "OpenAlexでは、指定された論文タイトルに十分一致する結果を確認できませんでした。"
             else:
                 response = "外部データ源から一致する結果を取得できませんでした。検索条件を確認して再試行してください。"
             db.save_task(task, conversation_id); db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()), task.id)
-            print(f"PROVIDER_SEMANTIC_STATUS=EMPTY BRAIN_FALLBACK_BLOCKED=YES CURRENT_DATA_TERMINAL=EMPTY TOOL_ID={tool_id}", file=__import__('sys').stderr, flush=True)
+            print(f"PROVIDER_SEMANTIC_STATUS={(result.get('data') or {}).get('semantic_status','EMPTY')} BRAIN_FALLBACK_BLOCKED=YES CURRENT_DATA_TERMINAL=EMPTY TOOL_ID={tool_id}", file=__import__('sys').stderr, flush=True)
             print(f"FINAL_RESPONSE_OWNER=DETERMINISTIC_RENDERER TERMINAL_RESPONSE_READY=true DETERMINISTIC_RENDERER={tool_id} BRAIN_COMPOSER_USED=NO GENERIC_COMPOSER_USED=NO", file=__import__('sys').stderr, flush=True)
             return {"conversation_id":conversation_id,"task":task.__dict__ | {"route":None,"state":task.state.value},"response":response,"sources":[]}
         # Compose the provider result directly; generic runtime retrieval must not
         # interpret words such as "research" as an OLCR internal search request.
+        _print_external_tool_diagnostics(selected=True, available=tool_available, executed=True, succeeded=True)
         task, response = compose_external_result(value.message, result)
         if tool_id == "knowledge.wikimedia": print("FINAL_RESPONSE_SOURCE=WIKIPEDIA RAW_DIAGNOSTICS_EXPOSED=NO", file=__import__('sys').stderr, flush=True)
         print("FALLBACK_USED=NO FALLBACK_TYPE=PROVIDER_RESULT", file=__import__('sys').stderr, flush=True)
         blocks = external_tool_display_blocks(result)
         db.save_task(task,conversation_id); db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id,blocks=blocks)
         return {"conversation_id":conversation_id,"task":task.__dict__ | {"route": task.route.value if task.route else None, "state": task.state.value},"response":response,"sources":result["sources"],"tool":result,"blocks":blocks}
+    _print_external_tool_diagnostics(selected=False)
     if structured_data_request:
         # A structured/current-data request without a successful provider route
         # must not fall through to the Brain, which could fabricate provenance.
@@ -2735,6 +3630,7 @@ def chat(value: ChatInput):
                       if value.image else runtime.execute(value.message, value.approved, combined, workspace_root=workspace_root))
     db.save_task(task,conversation_id)
     _persist_interactive_planning_questions(conversation_id, response)
+    response = _sanitize_user_visible_assistant_text(response)
     db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id)
     print("GUI_CHAT_ASSISTANT_SAVE=PASS GUI_CHAT_RESPONSE_CREATED", file=__import__("sys").stderr, flush=True)
     try:
@@ -2757,32 +3653,35 @@ def stream_chat(value: ChatInput):
     # specific providers, which made "search on wikipedia ..." serialize a
     # retrieval envelope as assistant prose. Keep this terminal provider path
     # aligned with /api/chat.
-    wiki_request = route_external_tool(value.message)
-    if wiki_request and wiki_request[0] == "knowledge.wikimedia":
-        _, wiki_arguments = wiki_request
-        wiki_arguments = normalize_wiki_arguments(wiki_arguments)
-        print(f"EXPLICIT_SEARCH_DETECTED=YES SEARCH_ACTION=SEARCH REQUESTED_SOURCE=WIKIPEDIA NORMALIZED_SEARCH_QUERY={wiki_arguments.get('query','')} SELECTED_SEARCH_PROVIDER=knowledge.wikimedia WIKIPEDIA_PROVIDER_SELECTED=YES LOCAL_RETRIEVAL_ATTEMPTED=NO", file=__import__('sys').stderr, flush=True)
-        task = Task(value.message); task.transition(TaskState.ROUTING)
-        if not settings.external_access_enabled:
-            task.error="EXTERNAL_ACCESS_REQUIRED"; task.transition(TaskState.FAILED); db.save_task(task, conversation_id)
-            response=_external_tool_user_message("EXTERNAL_ACCESS_REQUIRED", wiki_arguments)
-        else:
+    stream_tool_request = route_external_tool(value.message)
+    if stream_tool_request and stream_tool_request[0] in REGISTRY:
+        stream_tool_id, stream_arguments = stream_tool_request
+        try:
+            stream_arguments = compile_provider_arguments(stream_tool_id, value.message, stream_arguments)
+            print(f"TOOL_ROUTE_DECISION=tool TOOL_ROUTE_SOURCE=deterministic TOOL_CAPABILITY={stream_tool_id} TOOL_PROVIDER={REGISTRY[stream_tool_id].provider} STREAMING_PROVIDER_PARITY=YES", file=__import__('sys').stderr, flush=True)
+        except ExternalToolError as exc:
+            stream_arguments = stream_tool_request[1]
+            task = Task(value.message); task.transition(TaskState.ROUTING); task.error = str(exc); task.transition(TaskState.FAILED); db.save_task(task, conversation_id)
+            response = _external_tool_user_message(str(exc), stream_arguments)
+            stream_tool_id = None
+        if stream_tool_id and REGISTRY[stream_tool_id].external and not settings.external_access_enabled:
+            task = Task(value.message); task.transition(TaskState.ROUTING); task.error = "EXTERNAL_ACCESS_REQUIRED"; task.transition(TaskState.FAILED); db.save_task(task, conversation_id)
+            response = _external_tool_user_message("EXTERNAL_ACCESS_REQUIRED", stream_arguments)
+            stream_tool_id = None
+        if stream_tool_id:
             try:
-                print("WIKIPEDIA_API_CALL_STARTED=YES", file=__import__('sys').stderr, flush=True)
-                result=execute_external_tool("knowledge.wikimedia", wiki_arguments)
-                task,response=compose_external_result(value.message,result)
-                print(f"WIKIPEDIA_API_CALL_FINISHED=YES WIKIPEDIA_RESULT_COUNT={1 if (result.get('data') or {}).get('title') else 0} FINAL_RESPONSE_SOURCE=WIKIPEDIA RAW_DIAGNOSTICS_EXPOSED=NO", file=__import__('sys').stderr, flush=True)
+                result = execute_external_tool(stream_tool_id, stream_arguments)
+                task, response = compose_external_result(value.message, result)
             except ExternalToolError as exc:
-                task.error=str(exc); task.transition(TaskState.FAILED)
-                response=_external_tool_user_message(str(exc), wiki_arguments)
-                print(f"WIKIPEDIA_API_CALL_FINISHED=NO WIKIPEDIA_RESULT_COUNT=0 FINAL_RESPONSE_SOURCE=WIKIPEDIA_ERROR RAW_DIAGNOSTICS_EXPOSED=NO", file=__import__('sys').stderr, flush=True)
-            db.save_task(task,conversation_id)
-        def wikipedia_events():
+                task = Task(value.message); task.transition(TaskState.ROUTING); task.error = str(exc); task.transition(TaskState.FAILED)
+                response = _external_tool_user_message(str(exc), stream_arguments)
+            db.save_task(task, conversation_id)
+        def provider_events():
             yield "data: "+json.dumps({"type":"meta","task_id":task.id,"conversation_id":conversation_id})+"\n\n"
             yield "data: "+json.dumps({"type":"chunk","text":response})+"\n\n"
             db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id)
             yield "data: "+json.dumps({"type":"done","task":serialize_task(task)})+"\n\n"
-        return StreamingResponse(wikipedia_events(),media_type="text/event-stream")
+        return StreamingResponse(provider_events(),media_type="text/event-stream")
     direct=runtime._direct(value.message); retrieval_query=runtime._retrieval_query(value.message); synthesis=any(x in value.message.lower() for x in ("summarize","explain","synthesize"))
     if direct or (retrieval_query and not synthesis) or any(x in value.message.lower() for x in ("sudo ","rm -rf","write file")):
         task,response=runtime.execute(value.message,value.approved)
@@ -2820,7 +3719,7 @@ def stream_chat(value: ChatInput):
     db.save_task(task,conversation_id)
     event=threading.Event(); cancel_events[task.id]=event
     def events():
-        full=""; started=time.perf_counter(); prompt_tokens=None; completion_tokens=None
+        full=""; started=time.perf_counter(); prompt_tokens=None; completion_tokens=None; control_frame_seen=False
         yield "data: "+json.dumps({"type":"meta","task_id":task.id,"conversation_id":conversation_id})+"\n\n"
         try:
             stream=runtime.model.generate(messages,settings.main_model,stream=True)
@@ -2831,10 +3730,15 @@ def stream_chat(value: ChatInput):
                 text=part.get("text",""); full+=text
                 if part.get("prompt_tokens") is not None: prompt_tokens=part["prompt_tokens"]
                 if part.get("completion_tokens") is not None: completion_tokens=part["completion_tokens"]
-                if text: yield "data: "+json.dumps({"type":"chunk","text":text})+"\n\n"
+                if text:
+                    control_frame_seen = control_frame_seen or "[ACTIVE_CODING_TASK_STATE]" in full
+                    if not control_frame_seen:
+                        safe_chunk=_sanitize_user_visible_assistant_text(text)
+                        if safe_chunk: yield "data: "+json.dumps({"type":"chunk","text":safe_chunk})+"\n\n"
             if task.state is TaskState.GENERATING: task.transition(TaskState.COMPLETED)
             task.model_calls.append({"model":settings.main_model,"prompt_tokens":prompt_tokens,"completion_tokens":completion_tokens,"latency_ms":(time.perf_counter()-started)*1000,"status":"cancelled" if task.state is TaskState.CANCELLED else "success"})
             db.save_task(task)
+            full = _sanitize_user_visible_assistant_text(full)
             if full: db.add_message(conversation_id,"assistant",full,time.time(),str(uuid.uuid4()),task.id)
             yield "data: "+json.dumps({"type":"cancelled" if task.state is TaskState.CANCELLED else "done","task":serialize_task(task)})+"\n\n"
         except (ModelFailure,GeneratorExit) as exc:

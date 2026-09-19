@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MAIN_MODEL = "qwen3:14b"
+DEFAULT_MAIN_MODEL = "qwen3.5:9b"
+DEFAULT_ROUTER_MODEL = "LiquidAI/lfm2.5-350m"
 MODEL_REQUEST_TIMEOUT_SECONDS = 750
 MODEL_NAME_FIELDS = frozenset({"main_model", "router_model", "embedding_model", "semantic_judge_model"})
 
@@ -22,7 +23,7 @@ class Settings:
     vision_model: str = "qwen2.5vl:3b"
     vision_num_ctx: int = 4096
     vision_keep_alive: str = "10m"
-    router_model: str = "gemma3:1b"
+    router_model: str = DEFAULT_ROUTER_MODEL
     embedding_model: str = ""
     semantic_judge_model: str = ""
     reranker_enabled: bool = False
@@ -52,7 +53,7 @@ class Settings:
             vision_model=os.environ.get("OLCR_VISION_MODEL", "qwen2.5vl:3b"),
             vision_num_ctx=int(os.environ.get("OLCR_VISION_NUM_CTX", "4096")),
             vision_keep_alive=os.environ.get("OLCR_VISION_KEEP_ALIVE", "10m"),
-            router_model=os.environ.get("OLLAMA_ROUTER_MODEL", "gemma3:1b"),
+            router_model=os.environ.get("OLLAMA_ROUTER_MODEL", DEFAULT_ROUTER_MODEL),
             embedding_model=os.environ.get("OLLAMA_EMBEDDING_MODEL", ""),
             semantic_judge_model=os.environ.get("OLLAMA_SEMANTIC_JUDGE_MODEL", ""),
             reranker_enabled=os.environ.get("OLCR_RERANKER_ENABLED", "false").lower() == "true",
@@ -87,6 +88,13 @@ class Settings:
         return value
 
     def with_overrides(self, values: dict[str, Any]) -> "Settings":
+        # ``coding_model`` was briefly persisted by an intermediate build that
+        # split the primary Qwen role. Keep accepting that legacy key so old
+        # databases boot cleanly, but make the single primary model authoritative.
+        values = dict(values)
+        values.pop("coding_model", None)
+        if values.get("main_model") == "qwen3:14b":
+            values["main_model"] = DEFAULT_MAIN_MODEL
         allowed=set(self.__dataclass_fields__); unknown=set(values)-allowed
         # Project-scoped core context is persisted in the same local settings
         # table, but is not a process Settings field. Keep it out of startup

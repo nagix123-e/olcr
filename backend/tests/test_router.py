@@ -165,15 +165,40 @@ class RouterTests(unittest.TestCase):
         self.assertIn("$x^{4} - 1$", response)
         self.assertIn("x^{2} + 1", response)
 
+    def test_currency_renderer_uses_provider_amount_without_brain_replacement(self):
+        result = {
+            "tool_id": "currency.frankfurter", "provider": "Frankfurter",
+            "fetched_at": "2026-09-18T00:00:00+00:00",
+            "sources": [{"provider": "Frankfurter"}],
+            "data": {"base": "USD", "quote": "EUR", "amount": "100", "rate": "0.8721",
+                     "converted_amount": "87.21", "rate_date": "2026-09-18"},
+        }
+        with patch.object(app.runtime, "compose_tool_result", side_effect=AssertionError("currency must use deterministic rendering")):
+            _, response = app.compose_external_result("100ドルはユーロでいくら？", result)
+        self.assertIn("87.21", response)
+        self.assertNotIn("92.50", response)
+
+    def test_currency_renderer_rejects_inconsistent_provider_amount(self):
+        result = {
+            "tool_id": "currency.frankfurter", "provider": "Frankfurter",
+            "fetched_at": "2026-09-18T00:00:00+00:00",
+            "sources": [{"provider": "Frankfurter"}],
+            "data": {"base": "USD", "quote": "EUR", "amount": "100", "rate": "0.8721",
+                     "converted_amount": "92.50", "rate_date": "2026-09-18"},
+        }
+        _, response = app.compose_external_result("100ドルはユーロでいくら？", result)
+        self.assertIn("整合性のある通貨換算結果", response)
+        self.assertNotIn("92.50", response)
+
     def test_valid_decision_is_allowlisted(self):
         fake=FakeRouter(['{"decision":"tool","tool_id":"currency.frankfurter","arguments":{"base":"USD","quote":"JPY","amount":100}}'])
-        with patch.object(app.settings, "router_model", "gemma3:1b"), patch.object(app.runtime, "model", fake):
+        with patch.object(app.settings, "router_model", "LiquidAI/lfm2.5-350m"), patch.object(app.runtime, "model", fake):
             decision=app.router_decision("100 USD in JPY")
         self.assertEqual("currency.frankfurter", decision[0]); self.assertEqual(1, fake.calls)
 
     def test_invalid_output_retries_once_then_does_not_guess(self):
         fake=FakeRouter(["not json", "still not json"])
-        with patch.object(app.settings, "router_model", "gemma3:1b"), patch.object(app.runtime, "model", fake):
+        with patch.object(app.settings, "router_model", "LiquidAI/lfm2.5-350m"), patch.object(app.runtime, "model", fake):
             decision=app.router_decision("today's weather")
         self.assertIsNone(decision); self.assertEqual(2, fake.calls)
 

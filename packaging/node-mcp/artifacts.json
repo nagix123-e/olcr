@@ -22,7 +22,7 @@
     "artifact": "chrome-headless-shell-mac-arm64.zip",
     "source": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip",
     "path": "browser/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell",
-    "tree_sha256": "25143aee1bab08d03e1da21eed7773a8116bfc319f8e8fdc3a2d879905d4baa6",
+    "tree_sha256": "5a501cc19ba5f8c3553b44048a311428a1f5058ca658e7817b956fee44d3544e",
     "license": "browser/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/LICENSE.headless_shell"
   }
 }

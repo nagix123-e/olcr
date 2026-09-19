@@ -3,10 +3,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import olcr_api.app as api
 from olcr_api.db import Database
-from olcr_api.ollama import ModelFailure
+from fastapi.testclient import TestClient
 
 
 def one_phase_plan(goal: str) -> dict:
@@ -70,42 +71,37 @@ class FinalizationTests(unittest.TestCase):
         task = api.db.coding_task("current-revision")
         self.assertEqual("Coding Task completed.", result)
         self.assertEqual("COMPLETED", task["status"])
-        self.assertEqual(["You are OLCR Qwen final report mode. Read-only: do not execute tools or edit files."], runtime.model.calls)
+        self.assertEqual([], runtime.model.calls)
+        self.assertEqual("PASS", task["final_report_status"])
+        self.assertIn("Implemented", task["final_report"]["text"])
+        self.assertIn("Status: COMPLETED", task["final_report"]["text"])
+        payload = TestClient(api.app).get("/api/coding-tasks/current-revision").json()
+        self.assertIsInstance(payload["final_report"]["text"], str)
 
-    def test_final_report_failure_is_resumable_and_resume_skips_phases_and_completion_check(self):
+    def test_formatter_failure_is_resumable_and_resume_skips_phases_and_completion_check(self):
         task_plan = self.create_task("final-retry", "QUEUED")
         api._save_report("final-retry", "p1", 0, pass_report(0), "PASS")
-
-        class Model:
-            def __init__(self): self.calls = []; self.fail_final = True
-            def generate(self, messages, model, think=False, format=None):
-                system = messages[0]["content"]; self.calls.append(system)
-                if "completion check" in system:
-                    return {"text": '{"decision":"PASS"}'}
-                if "final report" in system:
-                    if self.fail_final:
-                        self.fail_final = False
-                        raise ModelFailure("unavailable", "temporary final report failure")
-                    return {"text": "final report"}
-                raise AssertionError("phase execution must not run")
-
-        class Runtime: pass
-        runtime = Runtime(); runtime.model = Model()
-        api.runtime = runtime
-        api._complete_task("final-retry", api.db.coding_task("final-retry"))
-        failed = api.db.coding_task("final-retry")
-        self.assertEqual("RESUMABLE", failed["status"])
-        self.assertEqual("FINAL_REPORT", failed["recovery_action"])
-        self.assertEqual("MODEL_CALL", failed["recovery_reason"])
-        report_count = len(api.db.coding_phase_reports("final-retry"))
-        api.db.enqueue_coding_task("final-retry")
-        api._run_managed_task("final-retry", self.tmp.name)
+        original = api.deterministic_final_report
+        calls = {"count": 0}
+        def fail_once(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("temporary formatter failure")
+            return original(*args, **kwargs)
+        with patch.object(api, "deterministic_final_report", side_effect=fail_once):
+            api._complete_task("final-retry", api.db.coding_task("final-retry"))
+            failed = api.db.coding_task("final-retry")
+            self.assertEqual("RESUMABLE", failed["status"])
+            self.assertEqual("FINAL_REPORT", failed["recovery_action"])
+            self.assertEqual("FORMATTER", failed["recovery_reason"])
+            report_count = len(api.db.coding_phase_reports("final-retry"))
+            api.db.enqueue_coding_task("final-retry")
+            api._run_managed_task("final-retry", self.tmp.name)
         done = api.db.coding_task("final-retry")
         self.assertEqual("COMPLETED", done["status"])
         self.assertEqual(report_count, len(api.db.coding_phase_reports("final-retry")))
-        self.assertEqual(2, len(runtime.model.calls))
-        self.assertEqual(0, sum("completion check" in call for call in runtime.model.calls))
-        self.assertEqual(2, sum("final report" in call for call in runtime.model.calls))
+        self.assertEqual(2, calls["count"])
+        self.assertIn("Implemented", done["final_report"]["text"])
 
     def test_invalid_completion_check_is_recoverable_without_starting_final_report(self):
         self.create_task("invalid-completion")
@@ -124,7 +120,7 @@ class FinalizationTests(unittest.TestCase):
         task = api.db.coding_task("invalid-completion")
         self.assertEqual("Coding Task completed.", result)
         self.assertEqual("COMPLETED", task["status"])
-        self.assertEqual(1, len(runtime.model.calls))
+        self.assertEqual(0, len(runtime.model.calls))
 
     def test_completed_task_final_report_lists_all_artifact_paths(self):
         task_plan = self.create_task("artifact-paths")
@@ -137,13 +133,10 @@ class FinalizationTests(unittest.TestCase):
                                "input": {"path": str(second_path)}, "output": {"path": str(second_path)}}]}},
                          "PASS")
 
-        class Model:
-            def generate(self, messages, model, think=False, format=None):
-                if "completion check" in messages[0]["content"]:
-                    return {"text": '{"decision":"PASS"}'}
-                return {"text": "final report"}
-
         class Runtime: pass
+        class Model:
+            def __init__(self): self.calls = []
+            def generate(self, messages, model, think=False, format=None): self.calls.append(messages)
         runtime = Runtime(); runtime.model = Model()
         old_runtime = api.runtime; api.runtime = runtime
         try:

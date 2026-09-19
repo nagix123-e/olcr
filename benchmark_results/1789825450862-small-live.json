@@ -1,0 +1,707 @@
+{
+  "benchmark_version": "coding-v2",
+  "case": "small",
+  "task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+  "benchmark_execution_mode": "LIVE_ORCHESTRATOR",
+  "benchmark_execution": "LIVE",
+  "benchmark_result": "PASS",
+  "fixture_hash": "dbac23ed5634b61e6d8f00883c4e6f5651731fec173ee1aeff252d8d5cf05eda",
+  "request_hash": "6a09a4f983716066c39d13867eeee45782555a309a58b339a1ab22a3a468afa4",
+  "initial_verify_status": "FAIL",
+  "task_final_status": "COMPLETED",
+  "verify_status": "PASS",
+  "baseline_ineligible_reasons": [],
+  "telemetry": {
+    "task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+    "task_started_at": 1789825418.576761,
+    "task_finished_at": 1789825450.6693141,
+    "total_task_ms": 32092.55313873291,
+    "model_runtime": "ollama",
+    "model_engine": "UNKNOWN",
+    "model_name": "qwen3.5:9b",
+    "model_quantization": "UNKNOWN",
+    "model_call_count": 3,
+    "planner_call_count": 1,
+    "implementer_call_count": 2,
+    "replan_call_count": 0,
+    "verification_model_call_count": 0,
+    "semantic_verification_model_call_count": 0,
+    "final_report_model_call_count": 0,
+    "input_tokens_total": 2514,
+    "output_tokens_total": 490,
+    "input_tokens_known": true,
+    "output_tokens_known": true,
+    "model_active_ms": 31946.967363357544,
+    "tool_active_ms": 0.0,
+    "verification_ms": 0.0,
+    "planner_model_ms": 19899.027109146118,
+    "implementer_model_ms": 12047.940254211426,
+    "replan_model_ms": 0.0,
+    "plan_repair_model_ms": 0.0,
+    "semantic_verification_model_ms": 0.0,
+    "final_report_model_ms": 0.0,
+    "final_report_total_model_ms": 0.0,
+    "final_report_input_tokens": 0,
+    "final_report_output_tokens": 0,
+    "final_report_load_ms": 0.0,
+    "final_report_prompt_eval_ms": 0.0,
+    "final_report_decode_ms": 0.0,
+    "final_report_generation_mode": "DETERMINISTIC",
+    "final_report_format_ms": 2.615083009004593,
+    "verification_mode": "DETERMINISTIC_COMMAND",
+    "verify_evidence_source": "READ_ONLY_COMMAND",
+    "deterministic_verify_ms": 64.94995625689626,
+    "model_load_count": 3,
+    "model_reuse_count": 0,
+    "load_ms": 2881.310958,
+    "peak_memory_bytes": 56475648,
+    "process_rss_start": 54214656,
+    "process_rss_peak": 56475648,
+    "process_rss_end": 56590336,
+    "swap_used_start": 46098609602,
+    "swap_used_end": 46073443778,
+    "swap_delta_bytes": -25165824,
+    "calls": [
+      {
+        "call_id": "35a7e95bc5ce43da",
+        "task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+        "phase_id": "UNKNOWN",
+        "role": "PLANNER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789825418.583826,
+        "finished_at": 1789825438.4828532,
+        "elapsed_ms": 19899.027109146118,
+        "input_tokens": 507,
+        "output_tokens": 325,
+        "prompt_fingerprint": "f82a0b6d7d6b0041",
+        "stable_prefix_fingerprint": "3d2b0a828da5a806",
+        "stable_prefix_sections": [
+          "system_context"
+        ],
+        "stable_prefix_bytes": 78,
+        "dynamic_suffix_bytes": 1998,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 19889283583,
+          "load_duration": 2879724916,
+          "prompt_eval_duration": 1002276000,
+          "eval_duration": 16004010000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 78,
+            "fingerprint": "0e44b6434050781b"
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1998,
+            "fingerprint": "836365bf13bdf4e3"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 505.8486883852352,
+        "decode_tokens_per_sec": 20.30741045525465
+      },
+      {
+        "call_id": "5cfb0444705d5c0b",
+        "task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+        "phase_id": "p1",
+        "role": "IMPLEMENTER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789825438.504243,
+        "finished_at": 1789825444.639068,
+        "elapsed_ms": 6134.824991226196,
+        "input_tokens": 1022,
+        "output_tokens": 85,
+        "prompt_fingerprint": "ad54af13dd12b905",
+        "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+        "stable_prefix_sections": [],
+        "stable_prefix_bytes": 0,
+        "dynamic_suffix_bytes": 1486,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 6134209916,
+          "load_duration": 839583,
+          "prompt_eval_duration": 2210893000,
+          "eval_duration": 3907595000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1486,
+            "fingerprint": "bb812d38c98e701d"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 462.2566537593633,
+        "decode_tokens_per_sec": 21.752510175696305
+      },
+      {
+        "call_id": "afc87bb30f56f7c5",
+        "task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+        "phase_id": "p2",
+        "role": "IMPLEMENTER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789825444.6827447,
+        "finished_at": 1789825450.59586,
+        "elapsed_ms": 5913.1152629852295,
+        "input_tokens": 985,
+        "output_tokens": 80,
+        "prompt_fingerprint": "da6c94eebfa52256",
+        "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+        "stable_prefix_sections": [],
+        "stable_prefix_bytes": 0,
+        "dynamic_suffix_bytes": 1391,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 5912480292,
+          "load_duration": 746459,
+          "prompt_eval_duration": 2169803000,
+          "eval_duration": 3738267000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1391,
+            "fingerprint": "60f7f37aba40f4be"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 453.95826257038084,
+        "decode_tokens_per_sec": 21.40029056244511
+      }
+    ],
+    "phases": [
+      {
+        "phase_id": "UNKNOWN",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 507,
+        "phase_output_tokens": 325,
+        "phase_model_ms": 19899.027109146118,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 19899.027109146118,
+        "phase_retry_count": 0
+      },
+      {
+        "phase_id": "p1",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 1022,
+        "phase_output_tokens": 85,
+        "phase_model_ms": 6134.824991226196,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 6134.824991226196,
+        "phase_retry_count": 0
+      },
+      {
+        "phase_id": "p2",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 985,
+        "phase_output_tokens": 80,
+        "phase_model_ms": 5913.1152629852295,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 5913.1152629852295,
+        "phase_retry_count": 0
+      }
+    ],
+    "prefix_cache_eligible": true,
+    "prefix_cache_observed": "UNKNOWN",
+    "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+    "stable_prefix_reuse_bytes": 0,
+    "tool_categories": {
+      "filesystem": 0.0,
+      "other": 0.0
+    },
+    "verify_status": "PASS",
+    "prefill_tokens_per_sec": 474.0212015716598,
+    "decode_tokens_per_sec": 21.15340373113202
+  },
+  "success": true,
+  "baseline_eligible": true,
+  "live_model": true,
+  "final_report_present": true,
+  "final_report_generation_mode": "DETERMINISTIC",
+  "changed_files": [
+    "src/math.py"
+  ],
+  "phase_summary": [
+    {
+      "id": "be58c607-f828-4448-88bd-5d4afa50b538",
+      "coding_task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+      "phase_id": "p1",
+      "attempt": 0,
+      "validation_status": "PASS",
+      "created_at": 1789825444.662345,
+      "structured_report": {
+        "phase_id": "p1",
+        "attempt": 0,
+        "status": "PASS",
+        "implemented": [
+          "Updated: /Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py. Write: PASS; read-back: PASS; structural validation: PASS. Runtime behavior: NOT_RUN.",
+          "Read-only verification command executed"
+        ],
+        "changed_files": [
+          "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py"
+        ],
+        "test_executed": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math"
+        ],
+        "test_pass": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math (exit_code=0)"
+        ],
+        "test_fail": [],
+        "build_executed": "NOT_RUN",
+        "build_pass": "NOT_RUN",
+        "errors": [],
+        "blockers": [],
+        "risks": [],
+        "typed_execution_summary": {
+          "state": "completed",
+          "error": null,
+          "operations": [
+            {
+              "tool": "workspace_list",
+              "status": "success",
+              "output": {
+                "files": [
+                  ".benchmark_metadata.json",
+                  "src/math.py",
+                  "tests/test_math.py"
+                ]
+              },
+              "error": null
+            },
+            {
+              "tool": "operation_preflight",
+              "status": "pass",
+              "output": {
+                "target_canonical": "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py",
+                "authorized": true,
+                "pathguard_allowed": true,
+                "pre_apply_hash": "e1a894022d1a082987b87adecb623438c9e386d86b2b621cff4a5fe7fdf7edc8"
+              },
+              "error": null
+            },
+            {
+              "tool": "workspace_write",
+              "status": "success",
+              "output": {
+                "path": "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py",
+                "bytes": 32
+              },
+              "error": null
+            },
+            {
+              "tool": "workspace_read",
+              "status": "success",
+              "output": {
+                "bytes": 32
+              },
+              "error": null
+            }
+          ],
+          "failure_class": "UNKNOWN",
+          "worktree_state": "UNKNOWN"
+        },
+        "execution_expectations": {
+          "requires_repo_mutation": true,
+          "requires_tool_execution": true,
+          "requires_verification": true,
+          "read_only_allowed": false
+        },
+        "implementation_result_kind": "EXECUTED",
+        "criteria_evidence": {
+          "],": true,
+          "echo 'Checking src/math.py'": true,
+          "run: npx ts-node -e \"import { add } from './src/math'; console.log(add(2, 3)); assert.equal(add(2, 3), 5);\"": true
+        },
+        "verification_read_only": true,
+        "verification_targets": [
+          "tests/test_math.py"
+        ],
+        "mcp_evidence": [],
+        "plan_revision": 0,
+        "phase_evaluation": {
+          "done_total": 1,
+          "done_satisfied": 1,
+          "done_unmet": [],
+          "verify_total": 2,
+          "verify_satisfied": 2,
+          "verify_unmet": [],
+          "authoritative_failure_present": false,
+          "required_not_run_present": false,
+          "external_blocker_present": false,
+          "authorization_blocker_present": false,
+          "phase_complete": true,
+          "structural_replan_needed": false,
+          "allowed_decisions": [
+            "PASS"
+          ],
+          "successful_typed_operation_count": 3,
+          "required_mcp": [],
+          "used_mcp": [],
+          "missing_mcp": [],
+          "acceptance": {
+            "FRONTEND_STACK": false,
+            "MARKETING_STRUCTURE": false
+          },
+          "missing_acceptance": []
+        },
+        "manager_decision": {
+          "decision": "PASS",
+          "reason": "typed phase evidence is complete"
+        },
+        "manager_diagnostics": {
+          "raw_decision": null,
+          "decision_valid": true,
+          "effective_decision": "PASS",
+          "phase_complete": true,
+          "execution_binding_diagnosis": null
+        }
+      }
+    },
+    {
+      "id": "8426c968-6450-4353-96d9-a01d7f058e47",
+      "coding_task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+      "phase_id": "p2",
+      "attempt": 0,
+      "validation_status": "PASS",
+      "created_at": 1789825450.6177568,
+      "structured_report": {
+        "phase_id": "p2",
+        "attempt": 0,
+        "status": "PASS",
+        "implemented": [
+          "Updated: /Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py. Write: PASS; read-back: PASS; structural validation: PASS. Runtime behavior: NOT_RUN.",
+          "Read-only verification command executed"
+        ],
+        "changed_files": [
+          "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py"
+        ],
+        "test_executed": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math"
+        ],
+        "test_pass": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math (exit_code=0)"
+        ],
+        "test_fail": [],
+        "build_executed": "NOT_RUN",
+        "build_pass": "NOT_RUN",
+        "errors": [],
+        "blockers": [],
+        "risks": [],
+        "typed_execution_summary": {
+          "state": "completed",
+          "error": null,
+          "operations": [
+            {
+              "tool": "workspace_list",
+              "status": "success",
+              "output": {
+                "files": [
+                  ".benchmark_metadata.json",
+                  "src/math.py",
+                  "tests/test_math.py"
+                ]
+              },
+              "error": null
+            },
+            {
+              "tool": "operation_preflight",
+              "status": "pass",
+              "output": {
+                "target_canonical": "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py",
+                "authorized": true,
+                "pathguard_allowed": true,
+                "pre_apply_hash": "ba1a531f581d2e6094e978ed6f7aca7a8d92eeb62c6e7ad73ee692f7f18bc772"
+              },
+              "error": null
+            },
+            {
+              "tool": "workspace_write",
+              "status": "success",
+              "output": {
+                "path": "/Users/nagimachino/Documents/ChatGPT/lightweight local llm/olcr/.olcr-benchmark/small-1789825418515/olcr-bench-small-1v8k0bc4/src/math.py",
+                "bytes": 102
+              },
+              "error": null
+            },
+            {
+              "tool": "workspace_read",
+              "status": "success",
+              "output": {
+                "bytes": 102
+              },
+              "error": null
+            }
+          ],
+          "failure_class": "UNKNOWN",
+          "worktree_state": "UNKNOWN"
+        },
+        "execution_expectations": {
+          "requires_repo_mutation": true,
+          "requires_tool_execution": true,
+          "requires_verification": true,
+          "read_only_allowed": false
+        },
+        "implementation_result_kind": "EXECUTED",
+        "criteria_evidence": {
+          "],": true,
+          "run: npm run test -- tests/test_math.ts --testNamePattern='add'": true
+        },
+        "verification_read_only": true,
+        "verification_targets": [
+          "tests/test_math.py"
+        ],
+        "mcp_evidence": [],
+        "plan_revision": 0,
+        "phase_evaluation": {
+          "done_total": 1,
+          "done_satisfied": 1,
+          "done_unmet": [],
+          "verify_total": 1,
+          "verify_satisfied": 1,
+          "verify_unmet": [],
+          "authoritative_failure_present": false,
+          "required_not_run_present": false,
+          "external_blocker_present": false,
+          "authorization_blocker_present": false,
+          "phase_complete": true,
+          "structural_replan_needed": false,
+          "allowed_decisions": [
+            "PASS"
+          ],
+          "successful_typed_operation_count": 3,
+          "required_mcp": [],
+          "used_mcp": [],
+          "missing_mcp": [],
+          "acceptance": {
+            "FRONTEND_STACK": false,
+            "MARKETING_STRUCTURE": false
+          },
+          "missing_acceptance": []
+        },
+        "manager_decision": {
+          "decision": "PASS",
+          "reason": "typed phase evidence is complete"
+        },
+        "manager_diagnostics": {
+          "raw_decision": null,
+          "decision_valid": true,
+          "effective_decision": "PASS",
+          "phase_complete": true,
+          "execution_binding_diagnosis": null
+        }
+      }
+    },
+    {
+      "id": "a2066c10-53c7-4ddf-aa96-fc9b9c3b99de",
+      "coding_task_id": "649a0c11-c543-4ea9-9e34-acd02515bfd0",
+      "phase_id": "p3",
+      "attempt": 0,
+      "validation_status": "PASS",
+      "created_at": 1789825450.653446,
+      "structured_report": {
+        "phase_id": "p3",
+        "attempt": 0,
+        "status": "PASS",
+        "implemented": [
+          "{\"verification\": \"PASS\", \"command\": [\"/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10\", \"-m\", \"unittest\", \"tests.test_math\"]}",
+          "Read-only verification command executed"
+        ],
+        "changed_files": [],
+        "test_executed": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math"
+        ],
+        "test_pass": [
+          "/Users/nagimachino/Library/Application Support/OLCR/runtime/0.4.6/runtime/python/bin/python3.10 -m unittest tests.test_math (exit_code=0)"
+        ],
+        "test_fail": [],
+        "build_executed": "NOT_RUN",
+        "build_pass": "NOT_RUN",
+        "errors": [],
+        "blockers": [],
+        "risks": [],
+        "typed_execution_summary": {
+          "state": "completed",
+          "error": null,
+          "operations": [
+            {
+              "tool": "verification_command",
+              "status": "success",
+              "output": {
+                "returncode": 0,
+                "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+                "read_only_targets": [
+                  "tests/test_math.py"
+                ],
+                "changed_targets": []
+              },
+              "error": null
+            }
+          ],
+          "failure_class": "UNKNOWN",
+          "worktree_state": "UNKNOWN"
+        },
+        "execution_expectations": {
+          "requires_repo_mutation": false,
+          "requires_tool_execution": false,
+          "requires_verification": true,
+          "read_only_allowed": true
+        },
+        "implementation_result_kind": "READ_ONLY_COMPLETED",
+        "criteria_evidence": {
+          "],": true,
+          "run: npm run test": true,
+          "echo 'All tests pass'": true
+        },
+        "verification_read_only": true,
+        "verification_targets": [
+          "tests/test_math.py"
+        ],
+        "mcp_evidence": [],
+        "plan_revision": 0,
+        "phase_evaluation": {
+          "done_total": 1,
+          "done_satisfied": 1,
+          "done_unmet": [],
+          "verify_total": 2,
+          "verify_satisfied": 2,
+          "verify_unmet": [],
+          "authoritative_failure_present": false,
+          "required_not_run_present": false,
+          "external_blocker_present": false,
+          "authorization_blocker_present": false,
+          "phase_complete": true,
+          "structural_replan_needed": false,
+          "allowed_decisions": [
+            "PASS"
+          ],
+          "successful_typed_operation_count": 1,
+          "required_mcp": [],
+          "used_mcp": [],
+          "missing_mcp": [],
+          "acceptance": {
+            "FRONTEND_STACK": false,
+            "MARKETING_STRUCTURE": false
+          },
+          "missing_acceptance": []
+        },
+        "manager_decision": {
+          "decision": "PASS",
+          "reason": "typed phase evidence is complete"
+        },
+        "manager_diagnostics": {
+          "raw_decision": null,
+          "decision_valid": true,
+          "effective_decision": "PASS",
+          "phase_complete": true,
+          "execution_binding_diagnosis": null
+        }
+      }
+    }
+  ]
+}

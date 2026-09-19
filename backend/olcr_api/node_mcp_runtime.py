@@ -18,9 +18,9 @@ def _resource_roots(resource_root: str | Path | None = None) -> list[Path]:
     """Return only OLCR-owned resource roots, in deterministic priority order."""
     roots: list[Path] = []
     if resource_root:
-        roots.append(Path(resource_root))
+        return [Path(resource_root).expanduser()]
     if override := os.environ.get("OLCR_NODE_MCP_RUNTIME_ROOT"):
-        roots.append(Path(override))
+        return [Path(override).expanduser()]
     support = Path(os.environ.get("OLCR_APP_SUPPORT", Path.home() / "Library" / "Application Support" / "OLCR"))
     roots.append(support / "runtime" / "current")
     roots.append(Path(__file__).resolve().parents[2])
@@ -34,7 +34,7 @@ def _resource_roots(resource_root: str | Path | None = None) -> list[Path]:
 
 def _runtime_candidate(root: Path) -> Path | None:
     candidate = root / "mcp-runtime" / "node"
-    if (candidate / "runtime-manifest.json").is_file() and (candidate / "node" / "bin" / "node").is_file():
+    if (candidate / "runtime-manifest.json").is_file() and (candidate / "node" / "bin" / "node").is_file() and os.access(candidate / "node" / "bin" / "node", os.X_OK):
         return candidate
     return None
 
@@ -44,6 +44,21 @@ def runtime_root(resource_root: str | Path | None = None) -> Path | None:
         if candidate := _runtime_candidate(root):
             return candidate
     return None
+
+
+def runtime_diagnostics() -> dict[str, object]:
+    roots = _resource_roots()
+    selected = runtime_root()
+    node = (selected or roots[0] / "mcp-runtime" / "node") / "node" / "bin" / "node"
+    return {
+        "BACKEND_NODE_MCP_ROOT": os.environ.get("OLCR_NODE_MCP_RUNTIME_ROOT", ""),
+        "NODE_MCP_RUNTIME_ROOT_CANDIDATES": [str(root) for root in roots],
+        "SELECTED_NODE_MCP_RUNTIME_ROOT": str(selected) if selected else "NONE",
+        "NODE_EXECUTABLE_CANDIDATE": str(node),
+        "NODE_EXECUTABLE_EXISTS": node.is_file(),
+        "NODE_EXECUTABLE_EXECUTABLE": os.access(node, os.X_OK),
+        "NODE_RUNTIME_RESOLUTION_SOURCE": "PREPARED_OLCR_RUNTIME" if selected else "NONE",
+    }
 
 
 def _source_repo_root(source_root: str | Path | None = None) -> Path | None:

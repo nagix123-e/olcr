@@ -1,0 +1,18 @@
+{
+  "benchmark_version": "coding-v2",
+  "case": "small",
+  "task_id": "UNKNOWN",
+  "benchmark_execution": "LIVE",
+  "benchmark_result": "INCOMPLETE",
+  "partial_metrics_available": false,
+  "fixture_hash": "dbac23ed5634b61e6d8f00883c4e6f5651731fec173ee1aeff252d8d5cf05eda",
+  "request_hash": "6a09a4f983716066c39d13867eeee45782555a309a58b339a1ab22a3a468afa4",
+  "initial_verify_status": "FAIL",
+  "failure_reason": "RuntimeError:production Coding entrypoint did not return coding_task_id",
+  "baseline_eligible": false,
+  "diagnostics": {},
+  "telemetry": {
+    "task_id": "UNKNOWN",
+    "status": "NOT_AVAILABLE"
+  }
+}

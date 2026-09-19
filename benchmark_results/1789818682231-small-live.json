@@ -1,0 +1,297 @@
+{
+  "benchmark_version": "coding-v2",
+  "case": "small",
+  "task_id": "0712bca2-bab7-46f8-9667-0c1ce38f68b2",
+  "benchmark_execution_mode": "LIVE_ORCHESTRATOR",
+  "benchmark_execution": "LIVE",
+  "benchmark_result": "INCOMPLETE",
+  "fixture_hash": "dbac23ed5634b61e6d8f00883c4e6f5651731fec173ee1aeff252d8d5cf05eda",
+  "request_hash": "6a09a4f983716066c39d13867eeee45782555a309a58b339a1ab22a3a468afa4",
+  "initial_verify_status": "FAIL",
+  "task_final_status": "COMPLETED",
+  "verify_status": null,
+  "telemetry": {
+    "task_id": "0712bca2-bab7-46f8-9667-0c1ce38f68b2",
+    "task_started_at": 1789818644.852531,
+    "task_finished_at": 1789818681.2779899,
+    "total_task_ms": 36425.458908081055,
+    "model_runtime": "ollama",
+    "model_engine": "UNKNOWN",
+    "model_name": "qwen3.5:9b",
+    "model_quantization": "UNKNOWN",
+    "model_call_count": 3,
+    "planner_call_count": 1,
+    "implementer_call_count": 1,
+    "replan_call_count": 0,
+    "verification_model_call_count": 1,
+    "input_tokens_total": 3071,
+    "output_tokens_total": 615,
+    "input_tokens_known": true,
+    "output_tokens_known": true,
+    "model_active_ms": 36308.677196502686,
+    "tool_active_ms": 0.0,
+    "verification_ms": 0.0,
+    "model_load_count": 3,
+    "model_reuse_count": 0,
+    "load_ms": 6.194499,
+    "peak_memory_bytes": 55377920,
+    "process_rss_start": 53919744,
+    "process_rss_peak": 55377920,
+    "process_rss_end": 55377920,
+    "swap_used_start": 49004612157,
+    "swap_used_end": 48996223549,
+    "swap_delta_bytes": -8388608,
+    "calls": [
+      {
+        "call_id": "8f1bac17ee18fb63",
+        "task_id": "0712bca2-bab7-46f8-9667-0c1ce38f68b2",
+        "phase_id": "UNKNOWN",
+        "role": "PLANNER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789818644.860462,
+        "finished_at": 1789818657.994364,
+        "elapsed_ms": 13133.902072906494,
+        "input_tokens": 507,
+        "output_tokens": 256,
+        "prompt_fingerprint": "f82a0b6d7d6b0041",
+        "stable_prefix_fingerprint": "3d2b0a828da5a806",
+        "stable_prefix_sections": [
+          "system_context"
+        ],
+        "stable_prefix_bytes": 78,
+        "dynamic_suffix_bytes": 1998,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 13114695583,
+          "load_duration": 2895708,
+          "prompt_eval_duration": 360757000,
+          "eval_duration": 12738919000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 78,
+            "fingerprint": "0e44b6434050781b"
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1998,
+            "fingerprint": "836365bf13bdf4e3"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 1405.3781354207958,
+        "decode_tokens_per_sec": 20.095896676947238
+      },
+      {
+        "call_id": "cad6d95e84f7c84a",
+        "task_id": "0712bca2-bab7-46f8-9667-0c1ce38f68b2",
+        "phase_id": "p1",
+        "role": "IMPLEMENTER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789818658.0356889,
+        "finished_at": 1789818666.5679958,
+        "elapsed_ms": 8532.306909561157,
+        "input_tokens": 1028,
+        "output_tokens": 130,
+        "prompt_fingerprint": "b9c84334ddd90c6f",
+        "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+        "stable_prefix_sections": [],
+        "stable_prefix_bytes": 0,
+        "dynamic_suffix_bytes": 1722,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 8530925000,
+          "load_duration": 2232666,
+          "prompt_eval_duration": 1972981000,
+          "eval_duration": 6437666000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1722,
+            "fingerprint": "98763e21bee7b0ec"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 521.0389760469056,
+        "decode_tokens_per_sec": 20.19365403548429
+      },
+      {
+        "call_id": "3848049cc26d7eff",
+        "task_id": "0712bca2-bab7-46f8-9667-0c1ce38f68b2",
+        "phase_id": "p1",
+        "role": "VERIFICATION",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789818666.6269157,
+        "finished_at": 1789818681.269384,
+        "elapsed_ms": 14642.468214035034,
+        "input_tokens": 1536,
+        "output_tokens": 229,
+        "prompt_fingerprint": "7bc74ff7744864f9",
+        "stable_prefix_fingerprint": "9af996127251dcd1",
+        "stable_prefix_sections": [
+          "system_context"
+        ],
+        "stable_prefix_bytes": 83,
+        "dynamic_suffix_bytes": 5498,
+        "structured_output_requested": false,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 14632094166,
+          "load_duration": 1066125,
+          "prompt_eval_duration": 3293766000,
+          "eval_duration": 11293827000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 83,
+            "fingerprint": "dd5eeb1531262b8c"
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 5498,
+            "fingerprint": "313f70a37c537d70"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 466.33549559986955,
+        "decode_tokens_per_sec": 20.27656347135475
+      }
+    ],
+    "phases": [
+      {
+        "phase_id": "UNKNOWN",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 507,
+        "phase_output_tokens": 256,
+        "phase_model_ms": 13133.902072906494,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 13133.902072906494,
+        "phase_retry_count": 0
+      },
+      {
+        "phase_id": "p1",
+        "phase_model_calls": 2,
+        "phase_input_tokens": 2564,
+        "phase_output_tokens": 359,
+        "phase_model_ms": 23174.77512359619,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 23174.77512359619,
+        "phase_retry_count": 0
+      }
+    ],
+    "prefix_cache_eligible": true,
+    "prefix_cache_observed": "UNKNOWN",
+    "stable_prefix_fingerprint": "9af996127251dcd1",
+    "stable_prefix_reuse_bytes": 0,
+    "tool_categories": {
+      "filesystem": 0.0,
+      "other": 0.0
+    },
+    "verify_status": "PASS",
+    "prefill_tokens_per_sec": 797.5842023558571,
+    "decode_tokens_per_sec": 20.18870472792876
+  },
+  "success": false,
+  "baseline_eligible": false,
+  "live_model": true
+}

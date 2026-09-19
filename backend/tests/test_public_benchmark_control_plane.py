@@ -326,7 +326,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         with patch.object(api, "node_mcp_launch_command", return_value=["bundled-node"]), \
              patch.object(api, "_run_required_mcp", return_value=({"mcp_name": "shadcn", "status": "PASS"}, None)), \
              patch.object(api, "_generate_plan", return_value=(plan(), [])) as planner, \
-             patch.object(api.db, "enqueue_coding_task"), \
+             patch.object(api.db, "enqueue_coding_task", wraps=api.db.enqueue_coding_task), \
              patch.object(api._coding_scheduler_wake, "set"):
             api._run_coding_planning(task)
         saved = api.db.coding_task("fresh-preflight-plan")

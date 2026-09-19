@@ -17,9 +17,9 @@ class ExtendedProviderTests(unittest.TestCase):
 
     def test_registry_contains_all_structured_and_local_tools(self):
         self.assertTrue(self.IDS.issubset(tools.REGISTRY))
-        self.assertEqual("LOCAL_TOOL", tools.status(True)[-2]["execution_type"])
-        self.assertEqual("LOCAL_TOOL", tools.status(True)[-1]["execution_type"])
         rows = {row["tool_id"]: row for row in tools.status(True)}
+        self.assertEqual("LOCAL_TOOL", rows["math.symbolic"]["execution_type"])
+        self.assertEqual("LOCAL_TOOL", rows["math.numeric"]["execution_type"])
         self.assertEqual("knowledge.structured_query", rows["knowledge.wikidata"]["capabilities"])
         self.assertEqual("HTTP_GET", rows["news.hacker_news"]["execution_type"])
         self.assertIn("provider_id", rows["country.profile"])

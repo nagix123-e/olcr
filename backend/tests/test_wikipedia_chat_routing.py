@@ -18,10 +18,16 @@ from olcr_api.config import Settings
 
 
 def wikipedia_result(title="Anthropic"):
-    return {"tool_id":"knowledge.wikimedia", "provider":"Wikipedia", "fetched_at":"2026-09-16T00:00:00Z",
+    return {"tool_id":"knowledge.wikimedia", "provider":"Wikimedia", "fetched_at":"2026-09-16T00:00:00Z",
             "data":{"title":title, "description":"AI safety company", "extract":"Anthropic is an artificial intelligence company.",
                     "page_url":"https://en.wikipedia.org/wiki/Anthropic", "language":"en"},
             "sources":[{"title":title,"provider":"Wikipedia","canonical_url":"https://en.wikipedia.org/wiki/Anthropic"}]}
+
+
+def wikipedia_malformed_result():
+    return {"tool_id":"knowledge.wikimedia", "provider":"Wikimedia", "fetched_at":"2026-09-16T00:00:00Z",
+            "data":{"title":"", "extract":"", "page_url":"", "language":"en"},
+            "sources":[]}
 
 
 class WikipediaChatRoutingTests(unittest.TestCase):
@@ -59,7 +65,8 @@ class WikipediaChatRoutingTests(unittest.TestCase):
                 self.assertEqual(query.casefold(), arguments["query"].casefold())
 
     def test_exact_gui_path_executes_wikipedia_and_persists_user_facing_response(self):
-        with patch.object(api, "execute_external_tool", return_value=wikipedia_result()) as execute:
+        with patch.object(api, "execute_external_tool", return_value=wikipedia_result()) as execute, \
+             patch.object(api, "router_decision", side_effect=AssertionError("explicit Wikipedia must bypass API Router")):
             response = self._chat("search on wikipedia about anthropic")
         self.assertEqual(200, response.status_code)
         body=response.json()
@@ -97,6 +104,13 @@ class WikipediaChatRoutingTests(unittest.TestCase):
         self.assertIn("外部データ", response.json()["response"])
         self.assertNotIn("PROVIDER_UNAVAILABLE", response.json()["response"])
         self.assertNotIn("retrieval", response.json()["response"].lower())
+
+    def test_wikipedia_malformed_payload_is_not_reported_as_success(self):
+        with patch.object(api, "execute_external_tool", return_value=wikipedia_malformed_result()):
+            response=self._chat("search wikipedia for anthropic")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("構造化データ源から取得できませんでした。", response.json()["response"])
+        self.assertNotIn("retrieval_method", response.json()["response"])
 
     def test_wikipedia_failure_does_not_persist_diagnostics(self):
         with patch.object(api, "execute_external_tool", side_effect=api.ExternalToolError("WIKIMEDIA_NOT_FOUND")):

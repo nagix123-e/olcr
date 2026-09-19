@@ -1,0 +1,395 @@
+{
+  "benchmark_version": "coding-v2",
+  "case": "small",
+  "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+  "benchmark_execution_mode": "LIVE_ORCHESTRATOR",
+  "benchmark_execution": "LIVE",
+  "benchmark_result": "PASS",
+  "fixture_hash": "dbac23ed5634b61e6d8f00883c4e6f5651731fec173ee1aeff252d8d5cf05eda",
+  "request_hash": "6a09a4f983716066c39d13867eeee45782555a309a58b339a1ab22a3a468afa4",
+  "initial_verify_status": "FAIL",
+  "task_final_status": "COMPLETED",
+  "verify_status": "PASS",
+  "baseline_ineligible_reasons": [],
+  "telemetry": {
+    "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+    "task_started_at": 1789823209.965989,
+    "task_finished_at": 1789823256.742718,
+    "total_task_ms": 46776.7288684845,
+    "model_runtime": "ollama",
+    "model_engine": "UNKNOWN",
+    "model_name": "qwen3.5:9b",
+    "model_quantization": "UNKNOWN",
+    "model_call_count": 4,
+    "planner_call_count": 1,
+    "implementer_call_count": 2,
+    "replan_call_count": 0,
+    "verification_model_call_count": 0,
+    "semantic_verification_model_call_count": 0,
+    "final_report_model_call_count": 1,
+    "input_tokens_total": 5386,
+    "output_tokens_total": 683,
+    "input_tokens_known": true,
+    "output_tokens_known": true,
+    "model_active_ms": 46584.99526977539,
+    "tool_active_ms": 0.0,
+    "verification_ms": 0.0,
+    "planner_model_ms": 15415.25673866272,
+    "implementer_model_ms": 13504.175662994385,
+    "replan_model_ms": 0.0,
+    "plan_repair_model_ms": 0.0,
+    "semantic_verification_model_ms": 0.0,
+    "final_report_model_ms": 17665.562868118286,
+    "final_report_total_model_ms": 17665.562868118286,
+    "final_report_input_tokens": 2720,
+    "final_report_output_tokens": 216,
+    "final_report_load_ms": 0.892084,
+    "final_report_prompt_eval_ms": 6028.655,
+    "final_report_decode_ms": 10748.657,
+    "verification_mode": "DETERMINISTIC_COMMAND",
+    "verify_evidence_source": "READ_ONLY_COMMAND",
+    "deterministic_verify_ms": 88.63829169422388,
+    "model_load_count": 4,
+    "model_reuse_count": 0,
+    "load_ms": 7.374335,
+    "peak_memory_bytes": 74383360,
+    "process_rss_start": 71811072,
+    "process_rss_peak": 74383360,
+    "process_rss_end": 74432512,
+    "swap_used_start": 52321971077,
+    "swap_used_end": 46190884290,
+    "swap_delta_bytes": -6131086787,
+    "calls": [
+      {
+        "call_id": "bb72187ff1608973",
+        "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+        "phase_id": "UNKNOWN",
+        "role": "PLANNER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789823209.9747052,
+        "finished_at": 1789823225.389962,
+        "elapsed_ms": 15415.25673866272,
+        "input_tokens": 507,
+        "output_tokens": 293,
+        "prompt_fingerprint": "f82a0b6d7d6b0041",
+        "stable_prefix_fingerprint": "3d2b0a828da5a806",
+        "stable_prefix_sections": [
+          "system_context"
+        ],
+        "stable_prefix_bytes": 78,
+        "dynamic_suffix_bytes": 1998,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 15400456084,
+          "load_duration": 3906709,
+          "prompt_eval_duration": 927382000,
+          "eval_duration": 14377092000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 78,
+            "fingerprint": "0e44b6434050781b"
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1998,
+            "fingerprint": "836365bf13bdf4e3"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 546.700281006101,
+        "decode_tokens_per_sec": 20.37964283736934
+      },
+      {
+        "call_id": "b526837ce8a92292",
+        "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+        "phase_id": "p1",
+        "role": "IMPLEMENTER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789823225.4295657,
+        "finished_at": 1789823232.709707,
+        "elapsed_ms": 7280.141353607178,
+        "input_tokens": 1102,
+        "output_tokens": 89,
+        "prompt_fingerprint": "fe75539317014fe0",
+        "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+        "stable_prefix_sections": [],
+        "stable_prefix_bytes": 0,
+        "dynamic_suffix_bytes": 1775,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 7279241083,
+          "load_duration": 1536042,
+          "prompt_eval_duration": 2571311000,
+          "eval_duration": 4358728000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1775,
+            "fingerprint": "532b1ff15be050b9"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 428.57515096384685,
+        "decode_tokens_per_sec": 20.41880108141641
+      },
+      {
+        "call_id": "8b3a58c22be5ba99",
+        "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+        "phase_id": "p2",
+        "role": "IMPLEMENTER",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789823232.7838907,
+        "finished_at": 1789823239.007925,
+        "elapsed_ms": 6224.034309387207,
+        "input_tokens": 1057,
+        "output_tokens": 85,
+        "prompt_fingerprint": "41e391b243a5efc7",
+        "stable_prefix_fingerprint": "e3b0c44298fc1c14",
+        "stable_prefix_sections": [],
+        "stable_prefix_bytes": 0,
+        "dynamic_suffix_bytes": 1561,
+        "structured_output_requested": true,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 6223239917,
+          "load_duration": 1039500,
+          "prompt_eval_duration": 1855308000,
+          "eval_duration": 4192044000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 1561,
+            "fingerprint": "1773fcedd934cbee"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 569.7167262794102,
+        "decode_tokens_per_sec": 20.27650473134347
+      },
+      {
+        "call_id": "2be5221ba5bb090c",
+        "task_id": "7d12adc1-25a5-4e9b-a3f7-2c549b5f5eaf",
+        "phase_id": "p2",
+        "role": "FINAL_REPORT",
+        "model_name": "qwen3.5:9b",
+        "runtime": "ollama",
+        "started_at": 1789823239.066693,
+        "finished_at": 1789823256.732256,
+        "elapsed_ms": 17665.562868118286,
+        "input_tokens": 2720,
+        "output_tokens": 216,
+        "prompt_fingerprint": "229b29a05134c8b4",
+        "stable_prefix_fingerprint": "9af996127251dcd1",
+        "stable_prefix_sections": [
+          "system_context"
+        ],
+        "stable_prefix_bytes": 83,
+        "dynamic_suffix_bytes": 9522,
+        "structured_output_requested": false,
+        "thinking_requested": false,
+        "success": true,
+        "failure_class": "NONE",
+        "provider_metadata": {
+          "total_duration": 17650804084,
+          "load_duration": 892084,
+          "prompt_eval_duration": 6028655000,
+          "eval_duration": 10748657000
+        },
+        "prefix_fingerprint_match": false,
+        "prompt_sections": {
+          "system_context": {
+            "bytes": 83,
+            "fingerprint": "dd5eeb1531262b8c"
+          },
+          "tool_schema": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "coding_protocol": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "canonical_requirements": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "blueprint": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "file_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "knowledge_context": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "handoff": {
+            "bytes": 0,
+            "fingerprint": ""
+          },
+          "dynamic_context": {
+            "bytes": 9522,
+            "fingerprint": "bc36e54164aed7cd"
+          }
+        },
+        "ttft_ms": "NOT_AVAILABLE",
+        "prefill_tokens_per_sec": 451.178579633434,
+        "decode_tokens_per_sec": 20.09553379552441
+      }
+    ],
+    "phases": [
+      {
+        "phase_id": "UNKNOWN",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 507,
+        "phase_output_tokens": 293,
+        "phase_model_ms": 15415.25673866272,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 15415.25673866272,
+        "phase_retry_count": 0
+      },
+      {
+        "phase_id": "p1",
+        "phase_model_calls": 1,
+        "phase_input_tokens": 1102,
+        "phase_output_tokens": 89,
+        "phase_model_ms": 7280.141353607178,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 7280.141353607178,
+        "phase_retry_count": 0
+      },
+      {
+        "phase_id": "p2",
+        "phase_model_calls": 2,
+        "phase_input_tokens": 3777,
+        "phase_output_tokens": 301,
+        "phase_model_ms": 23889.597177505493,
+        "phase_tool_ms": 0.0,
+        "phase_total_ms": 23889.597177505493,
+        "phase_retry_count": 0
+      }
+    ],
+    "prefix_cache_eligible": true,
+    "prefix_cache_observed": "UNKNOWN",
+    "stable_prefix_fingerprint": "9af996127251dcd1",
+    "stable_prefix_reuse_bytes": 0,
+    "tool_categories": {
+      "filesystem": 0.0,
+      "other": 0.0
+    },
+    "verify_status": "PASS",
+    "prefill_tokens_per_sec": 499.042684470698,
+    "decode_tokens_per_sec": 20.292620611413405
+  },
+  "success": true,
+  "baseline_eligible": true,
+  "live_model": true
+}

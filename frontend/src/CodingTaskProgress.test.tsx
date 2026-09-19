@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodingTask, CodingTaskProgress, shouldAcceptPlanRevision, taskIsActivelyRunning } from "./CodingTaskProgress";
 
@@ -22,6 +22,22 @@ function renderProgress(value: CodingTask){return render(<CodingTaskProgress tas
 afterEach(cleanup);
 
 describe("CodingTaskProgress",()=>{
+  it("shows a NORMAL-mode continuation checkpoint with its handoff and Continue action",()=>{
+    const onResume=vi.fn();
+    const value=task({status:"RESUMABLE",activity:"NONE",execution_mode:"NORMAL",recovery_reason:"RESOURCE_CHECKPOINT",batch_cursor:1,
+      batch_handoff:{completed_phase_id:"p1",next_phase_id:"p2",next_constraints:["Implement API"],changed_files:["schema.ts"],verification:[{phase_id:"p1",status:"PASS"}]}});
+    render(<CodingTaskProgress task={value} reports={[]} loading={false} error="" pausePending={false} onPause={vi.fn()} onResume={onResume} onArchive={vi.fn()}/>);
+    expect(screen.getByLabelText("Coding Orchestrator: 続行待ち")).toBeTruthy();
+    expect(screen.getByText("ここまで完了しました。続行すると次の工程を開始します。")).toBeTruthy();
+    expect(screen.getByText("完了した工程: Define schema")).toBeTruthy();
+    expect(screen.getByText("次の工程: Implement API")).toBeTruthy();
+    expect(screen.getByText("変更ファイル数: 1")).toBeTruthy();
+    expect(screen.getByText("検証状態: PASS")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:"続行"}));
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Authorization required")).toBeNull();
+    expect(screen.queryByText("FAILED")).toBeNull();
+  });
   it("renders persisted subtask progress and an identifiable current task",()=>{
     renderProgress(task());
     expect(screen.getByText("1 / 3 tasks completed")).toBeInTheDocument();

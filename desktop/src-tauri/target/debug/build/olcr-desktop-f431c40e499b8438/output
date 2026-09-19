@@ -1,3 +1,5 @@
+cargo:rerun-if-changed=../../frontend/dist/index.html
+cargo:rerun-if-changed=tauri.conf.json
 cargo:rerun-if-env-changed=TAURI_CONFIG
 cargo:rustc-check-cfg=cfg(desktop)
 cargo:rustc-cfg=desktop

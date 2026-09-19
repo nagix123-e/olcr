@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_path TEXT, archived INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL);
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS vector_embeddings(id INTEGER PRIMARY KEY, document_id
 CREATE TABLE IF NOT EXISTS coding_tasks(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, source_message_id TEXT UNIQUE, original_goal TEXT NOT NULL, status TEXT NOT NULL, activity TEXT NOT NULL, plan_json TEXT, active_plan_json TEXT, plan_revision INTEGER NOT NULL DEFAULT 0, pending_plan_json TEXT, subtask_progress_json TEXT, current_phase_id TEXT, retry_count INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 2, replan_count INTEGER NOT NULL DEFAULT 0, replan_count_in_epoch INTEGER NOT NULL DEFAULT 0, recovery_epoch INTEGER NOT NULL DEFAULT 0, approved_scopes_json TEXT NOT NULL DEFAULT '[]', pending_authorization_json TEXT, pending_user_confirmation INTEGER NOT NULL DEFAULT 0, pause_requested INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, queue_order INTEGER, recovery_action TEXT NOT NULL DEFAULT 'NONE', recovery_reason TEXT NOT NULL DEFAULT 'NONE', final_report_json TEXT, final_report_status TEXT NOT NULL DEFAULT 'NOT_RUN', execution_mode TEXT NOT NULL DEFAULT 'NORMAL', task_profile TEXT NOT NULL DEFAULT 'GENERAL_CODING', requirements_json TEXT NOT NULL DEFAULT '{}', required_mcp_json TEXT NOT NULL DEFAULT '[]', mcp_evidence_json TEXT NOT NULL DEFAULT '[]', batch_cursor INTEGER NOT NULL DEFAULT 0, batch_handoff_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_phase_reports(id TEXT PRIMARY KEY, coding_task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE, phase_id TEXT NOT NULL, attempt INTEGER NOT NULL, structured_report_json TEXT NOT NULL, validation_status TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS interactive_planning_sessions(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, planning_mode TEXT NOT NULL, status TEXT NOT NULL, planning_revision INTEGER NOT NULL, pending_questions_json TEXT NOT NULL, answered_questions_json TEXT NOT NULL, assumptions_json TEXT NOT NULL, decisions_json TEXT NOT NULL, format_state_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 """
 
 
@@ -172,6 +173,10 @@ class Database:
                 db.execute("CREATE TABLE IF NOT EXISTS conversation_project_contexts(conversation_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_path TEXT, active_subject TEXT, context_json TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL)")
                 db.execute("UPDATE schema_version SET version=21")
                 rows=[(21,)]
+            if rows and rows[0][0] == 21:
+                db.execute("CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL)")
+                db.execute("UPDATE schema_version SET version=22")
+                rows=[(22,)]
             if rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.commit()
         finally: db.close()
@@ -264,6 +269,15 @@ class Database:
     def coding_tasks(self, conversation_id: str) -> list[dict[str, Any]]:
         with self.connect() as db: ids=[x[0] for x in db.execute("SELECT id FROM coding_tasks WHERE conversation_id=? ORDER BY updated_at DESC",(conversation_id,))]
         return [x for task_id in ids if (x:=self.coding_task(task_id))]
+    def save_coding_telemetry(self, task_id: str, record: dict[str, Any]) -> None:
+        now=__import__("time").time()
+        with self.connect() as db:
+            db.execute("INSERT INTO coding_task_telemetry(task_id,record_json,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET record_json=excluded.record_json,updated_at=excluded.updated_at", (task_id, json.dumps(record, ensure_ascii=False), now, now))
+            db.execute("DELETE FROM coding_task_telemetry WHERE task_id NOT IN (SELECT task_id FROM coding_task_telemetry ORDER BY updated_at DESC LIMIT 1000)")
+    def coding_telemetry(self, task_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row=db.execute("SELECT record_json FROM coding_task_telemetry WHERE task_id=?", (task_id,)).fetchone()
+        return json.loads(row[0]) if row else None
     def update_coding_task(self, task_id: str, **values: Any) -> dict[str, Any] | None:
         current=self.coding_task(task_id)
         if not current:return None
@@ -285,6 +299,33 @@ class Database:
         values["updated_at"]=__import__("time").time()
         with self.connect() as db: db.execute("UPDATE coding_tasks SET "+",".join(f"{k}=?" for k in values)+" WHERE id=?",(*values.values(),task_id))
         return self.coding_task(task_id)
+    def save_coding_checkpoint(self, task_id: str, plan: dict, handoff: dict, cursor: int,
+                               revision: int, blueprint_report: dict | None = None,
+                               await_continuation: bool = True,
+                               recovery_reason: str | None = None) -> dict:
+        """Atomically publish a stable checkpoint with its optional planning report."""
+        now = __import__('time').time()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM coding_tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None or row["plan_revision"] != revision:
+                raise RuntimeError("checkpoint task or plan revision changed")
+            if json.loads(row["pending_authorization_json"] or "null"):
+                raise RuntimeError("checkpoint cannot replace pending authorization")
+            if row["pause_requested"] or row["archived"]:
+                raise RuntimeError("checkpoint interrupted by user pause or archive")
+            progress = json.loads(row["subtask_progress_json"] or "null")
+            if blueprint_report is not None:
+                connection.execute("INSERT INTO coding_phase_reports(id,coding_task_id,phase_id,attempt,structured_report_json,validation_status,created_at) VALUES(?,?,?,?,?,'PASS',?)",
+                                   (str(__import__('uuid').uuid4()), task_id, blueprint_report["phase_id"], 0, json.dumps(blueprint_report), now))
+                for entry in progress or []:
+                    if entry.get("phase_id") == blueprint_report["phase_id"]:
+                        entry.update(status="DONE", verification_status="PASS", finished_at=now, attempt=0)
+            serialized = json.dumps(plan)
+            connection.execute("UPDATE coding_tasks SET status=?, activity='NONE', queue_order=NULL, plan_json=?, active_plan_json=?, batch_cursor=?, batch_handoff_json=?, current_phase_id=?, subtask_progress_json=?, recovery_action='NONE', recovery_reason=?, updated_at=? WHERE id=?",
+                               ("RESUMABLE" if await_continuation else "RUNNING", serialized, serialized, cursor, json.dumps(handoff), handoff["next_phase_id"], json.dumps(progress), recovery_reason or ("RESOURCE_CHECKPOINT" if await_continuation else "NONE"), now, task_id))
+        return self.coding_task(task_id)
+
     def add_coding_phase_report(self, task_id: str, phase_id: str, attempt: int, report: dict[str, Any], validation_status: str, now: float) -> None:
         with self.connect() as db:
             db.execute("INSERT INTO coding_phase_reports(id,coding_task_id,phase_id,attempt,structured_report_json,validation_status,created_at) VALUES(?,?,?,?,?,?,?)",(str(__import__('uuid').uuid4()),task_id,phase_id,attempt,json.dumps(report),validation_status,now))

@@ -18,6 +18,16 @@ MAX_SUBSTANTIAL_REPLANS_PER_TASK = 2
 MAX_TASKS_PER_PHASE = 15
 MAX_CORRECTIVE_RETRIES = 3
 
+# Phase execution intent is deliberately separate from the task-level
+# execution_mode (NORMAL/HEAVY_BATCHED).  It is optional in the persisted
+# schema so plans written before this contract continue through the legacy
+# safe path; when present it is the only source used for scheduler dispatch.
+PHASE_EXECUTION_MODES = (
+    "IMPLEMENTATION",
+    "VERIFICATION_ONLY",
+    "IMPLEMENTATION_AND_VERIFICATION",
+)
+
 _STRUCTURAL_SIGNALS = {
     "new_application": r"(?:新しい|new).{0,24}(?:アプリ|application|feature)",
     "database": r"(?<![a-z0-9_])(?:crud|database|sqlite|db)(?![a-z0-9_])|認証|データベース",
@@ -160,48 +170,87 @@ def animejs_auto_selected(text: str) -> bool:
 
 
 def animejs_project_version(workspace_root: str | None) -> dict[str, str]:
-    """Return deterministic local dependency evidence; never infer a major."""
-    unknown = {"ANIMEJS_PROJECT_DEPENDENCY_PRESENT": "UNKNOWN", "ANIMEJS_PROJECT_DECLARED_VERSION": "UNKNOWN",
-               "ANIMEJS_PROJECT_VERSION": "UNKNOWN", "ANIMEJS_PROJECT_MAJOR_VERSION": "UNKNOWN"}
-    if not workspace_root:
-        return unknown
-    root = Path(workspace_root)
-    package = root / "package.json"
-    declared = None
-    try:
-        value = json.loads(package.read_text(encoding="utf-8"))
+    """Inspect local metadata without installing dependencies or guessing versions."""
+    observations: list[tuple[str, str]] = []
+    unreadable: list[str] = []
+    ambiguous: list[str] = []
+    root = Path(workspace_root) if workspace_root else None
+
+    def read(relative: str):
+        if root is None:
+            return None
+        path = root / relative
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("expected object")
+            return value
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError):
+            unreadable.append(relative)
+            return None
+
+    def observe(source: str, value):
+        if isinstance(value, str):
+            observations.append((source, value))
+        else:
+            ambiguous.append(source)
+
+    package = read("package.json")
+    if package is not None:
         for section in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
-            candidate = value.get(section, {}).get("animejs") if isinstance(value.get(section), dict) else None
-            if isinstance(candidate, str):
-                declared = candidate
-                break
-    except (OSError, ValueError):
-        return unknown
-    if declared is None:
-        # A lockfile or installed package is authoritative only when the
-        # manifest is unavailable/indirect; never synthesize a version.
-        observed = None
-        for lock_name in ("package-lock.json", "npm-shrinkwrap.json"):
-            try:
-                lock = json.loads((root / lock_name).read_text(encoding="utf-8"))
-                observed = ((lock.get("packages") or {}).get("node_modules/animejs") or {}).get("version")
-                observed = observed or ((lock.get("dependencies") or {}).get("animejs") or {}).get("version")
-                if isinstance(observed, str):
-                    break
-            except (OSError, ValueError):
-                pass
-        if not isinstance(observed, str):
-            try:
-                observed = json.loads((root / "node_modules" / "animejs" / "package.json").read_text(encoding="utf-8")).get("version")
-            except (OSError, ValueError):
-                observed = None
-        if not isinstance(observed, str):
-            return {"ANIMEJS_PROJECT_DEPENDENCY_PRESENT": "NO", "ANIMEJS_PROJECT_DECLARED_VERSION": "NONE",
-                    "ANIMEJS_PROJECT_VERSION": "NONE", "ANIMEJS_PROJECT_MAJOR_VERSION": "NONE"}
-        declared = observed
-    major = re.search(r"(?:^|[^0-9])([0-9]+)\.", declared)
-    return {"ANIMEJS_PROJECT_DEPENDENCY_PRESENT": "YES", "ANIMEJS_PROJECT_DECLARED_VERSION": declared,
-            "ANIMEJS_PROJECT_VERSION": declared, "ANIMEJS_PROJECT_MAJOR_VERSION": major.group(1) if major else "UNKNOWN"}
+            deps = package.get(section, {})
+            if not isinstance(deps, dict):
+                unreadable.append("package.json:" + section)
+            elif "animejs" in deps:
+                observe("package.json:" + section, deps["animejs"])
+    for name in ("package-lock.json", "npm-shrinkwrap.json"):
+        lock = read(name)
+        if lock is None:
+            continue
+        if not isinstance(lock.get("packages", {}), dict) or not isinstance(lock.get("dependencies", {}), dict):
+            unreadable.append(name)
+            continue
+        for path, entry in (lock.get("packages") or {}).items():
+            if path == "node_modules/animejs" or path.endswith("/node_modules/animejs"):
+                observe(name + ":" + path, entry.get("version") if isinstance(entry, dict) else None)
+        entry = (lock.get("dependencies") or {}).get("animejs")
+        if entry is not None:
+            observe(name, entry.get("version") if isinstance(entry, dict) else None)
+    local = read("node_modules/animejs/package.json")
+    if local is not None:
+        observe("node_modules/animejs/package.json", local.get("version"))
+    # Unparsed alternative lockfiles may contain contradictory evidence.
+    if root:
+        for name in ("yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb"):
+            path = root / name
+            if path.is_file():
+                try:
+                    if b"animejs" in path.read_bytes():
+                        ambiguous.append(name)
+                except OSError:
+                    unreadable.append(name)
+    majors = set()
+    for source, version in observations:
+        match = re.fullmatch(r"[~^]?([34])\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?", version.strip())
+        if match:
+            majors.add(match.group(1))
+        else:
+            ambiguous.append(source)
+    if root is None or not root.is_dir():
+        unreadable.append("workspace")
+    state = ("UNREADABLE" if unreadable else "AMBIGUOUS" if ambiguous or len(majors) > 1
+             else "V" + next(iter(majors)) if majors else "NOT_DECLARED")
+    version = observations[0][1] if observations else "NONE" if state == "NOT_DECLARED" else "UNKNOWN"
+    return {
+        "ANIMEJS_PROJECT_VERSION_STATE": state,
+        "ANIMEJS_PROJECT_VERSION_SOURCE": ",".join(dict.fromkeys([s for s, _ in observations] + unreadable + ambiguous)) or "NO_METADATA",
+        "ANIMEJS_PROJECT_DEPENDENCY_PRESENT": "YES" if observations else "NO" if state == "NOT_DECLARED" else "UNKNOWN",
+        "ANIMEJS_PROJECT_DECLARED_VERSION": version,
+        "ANIMEJS_PROJECT_VERSION": version,
+        "ANIMEJS_PROJECT_MAJOR_VERSION": state[1:] if state in {"V3", "V4"} else "NONE" if state == "NOT_DECLARED" else "UNKNOWN",
+    }
 
 
 def animejs_version_compatibility(evidence: dict[str, str], goal: str = "") -> str:
@@ -212,11 +261,37 @@ def animejs_version_compatibility(evidence: dict[str, str], goal: str = "") -> s
     if major == "3":
         return "MIGRATION_REQUESTED" if re.search(r"Anime\.js\s*v?4\s*(?:へ|に)?移行|migrat(?:e|ion).{0,30}anime", goal or "", re.I) else "CONFLICT_V3_V4"
     if major == "NONE":
-        return "NO_DEPENDENCY"
+        return "PASS_FOR_INSTALL"
     return "UNKNOWN"
 
 
-def required_verification_contract(text: str, required_mcps: list[str] | None = None) -> list[str]:
+def attachment_repair_evidence(attachment: Mapping[str, Any] | None, text: str = "", *, project_scoped: bool = False) -> dict[str, Any]:
+    """Build typed evidence for a visual repair without feeding bytes into text normalization.
+
+    Presence of an image is evidence of the user's observed UI state, not a
+    diagnosis.  The repository inspection phase remains responsible for the
+    actual target file and root cause.
+    """
+    if not isinstance(attachment, Mapping):
+        return {"available": False, "kind": "NONE", "supports_existing_behavior_repair": False,
+                "target_source": "NONE", "observations": []}
+    mime = str(attachment.get("mime_type") or attachment.get("mimeType") or "").lower()
+    is_image = mime.startswith("image/") or bool(attachment.get("data_url"))
+    repair_language = bool(re.search(r"修正|直して|直す|解決|fix|repair|こうなってる|この状態|開始しない|動かない|不具合|バグ|エラー", text or "", re.I))
+    supported = bool(project_scoped and is_image and repair_language)
+    return {
+        "available": is_image,
+        "kind": "IMAGE" if is_image else "FILE",
+        "supports_existing_behavior_repair": supported,
+        "target_source": "ATTACHMENT_PLUS_REPOSITORY_INSPECTION" if supported else "ATTACHMENT_ONLY",
+        "observations": ["USER_PROVIDED_SCREENSHOT"] if is_image else [],
+        "confidence": "MEDIUM" if supported else "LOW",
+        "name": str(attachment.get("name") or "attachment")[:200],
+        "mime_type": mime[:120],
+    }
+
+
+def required_verification_contract(text: str, required_mcps: list[str] | None = None, attachment_evidence: Mapping[str, Any] | None = None) -> list[str]:
     """Persist only verification commands explicitly named by the request."""
     value = text or ""
     required: list[str] = []
@@ -226,14 +301,20 @@ def required_verification_contract(text: str, required_mcps: list[str] | None = 
         required.append("build")
     if "playwright" in (required_mcps or []) or re.search(r"(?:browser|ブラウザ).{0,40}(?:verify|verification|検証|確認)", value, re.I):
         required.append("browser")
+    if isinstance(attachment_evidence, Mapping) and attachment_evidence.get("supports_existing_behavior_repair"):
+        if "browser" not in required:
+            required.append("browser")
     return required
 
 
-def canonical_coding_requirements(text: str) -> dict[str, Any]:
+def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Produce the single persisted control-plane interpretation of a request."""
     profile = task_profile(text)
+    evidence = attachment_evidence if isinstance(attachment_evidence, Mapping) else {}
     required_mcps = required_mcp_contract(text)
-    mutation_mode, fix_reason = classify_mutation_mode(text)
+    if evidence.get("supports_existing_behavior_repair") and "playwright" not in required_mcps:
+        required_mcps.append("playwright")
+    mutation_mode, fix_reason = classify_mutation_mode(text, evidence)
     scoped_text = _current_task_text(text)
     dependency_policy = ("MINIMAL" if re.search(
         r"(?:unnecessary|unrelated|不要(?:な)?|関係ない|無関係).{0,32}(?:dependenc|依存)",
@@ -247,12 +328,14 @@ def canonical_coding_requirements(text: str) -> dict[str, Any]:
             "required_mcp": required_mcps,
             "required_mcps": required_mcps,
             "selected_mcps": (["animejs"] if "animejs" not in required_mcps and animejs_auto_selected(text) else []),
-            "required_verification": required_verification_contract(text, required_mcps),
+            "required_verification": required_verification_contract(text, required_mcps, evidence),
             "dependency_policy": dependency_policy,
             "forbidden_technologies": sorted({item["capability"] for item in capability_evidence(text, _STRUCTURAL_SIGNALS)
                 if item["category"] == "technology" and item["active_for_control"] and item["polarity"] == "forbidden"}),
             "mutation_mode": mutation_mode,
             "fix_reason": fix_reason,
+            "attachment_evidence": dict(evidence),
+            "visual_repair": bool(evidence.get("supports_existing_behavior_repair")),
             "preflight": {}}
 
 
@@ -276,6 +359,7 @@ def normalize_coding_requirements(raw_request: str | Mapping[str, Any], context:
         model_context = request_object.get("model_context") or {}
     else:
         raw = str(raw_request or "")
+        request_object = {}
         typed_context = {}
         model_context = {}
     if context:
@@ -284,9 +368,13 @@ def normalize_coding_requirements(raw_request: str | Mapping[str, Any], context:
         typed_context = {**(typed_context if isinstance(typed_context, Mapping) else {}), **context}
         if isinstance(context.get("model_context"), Mapping):
             model_context = context["model_context"]
-    result = canonical_coding_requirements(raw)
+    attachment_evidence = request_object.get("attachment_evidence") if isinstance(request_object, Mapping) else None
+    result = canonical_coding_requirements(raw, attachment_evidence)
     scoped = _current_task_text(raw)
-    canonical = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    # The canonical hash remains a function of current-user text only. Typed
+    # attachment evidence is persisted separately and must not change the
+    # normalizer identity used by existing control-plane callers.
+    canonical = json.dumps(canonical_coding_requirements(raw), ensure_ascii=False, sort_keys=True)
     raw_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     model_context_json = json.dumps(model_context, ensure_ascii=False, sort_keys=True, default=str)
     provenance = _capability_provenance(raw, result)
@@ -404,6 +492,23 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
     return {**plan, "phases": normalized, "tasks": tasks}
 
 
+def derive_task_graph(plan: dict[str, Any], required_mcp: list[str] | None = None) -> dict[str, Any]:
+    """Derive the advisory task graph from the authoritative phase list.
+
+    Planner task rows are advisory and may become stale when scope binding or
+    phase normalization removes rows.  The executable contract is the phase
+    list, so rebuilding one bounded task per phase is deterministic for every
+    task profile (including the small general-coding benchmark).
+    """
+    phases = [phase for phase in (plan.get("phases") or []) if isinstance(phase, dict)]
+    required = set(required_mcp or [])
+    tasks: list[dict[str, Any]] = []
+    for index, phase in enumerate(phases):
+        phase_mcp = sorted(required & set(phase.get("required_mcp") or []))
+        tasks.append(_phase_task(phase, f"{phase.get('id')}-task", [tasks[-1]["task_id"]] if tasks else [], phase_mcp))
+    return {**plan, "tasks": tasks}
+
+
 def frontend_stack_acceptance(workspace_root: str | None) -> bool:
     """Check requested React/TS/Vite/Tailwind/shadcn artifacts, not prose."""
     if not workspace_root:
@@ -467,9 +572,23 @@ def zero_mutation_retry_instruction(phase: dict[str, Any], report: dict[str, Any
                        "Do not only explain the change. Perform the required edits in the authorized repository scope "
                        "and then verify the observable result.")
         typed = report.get("typed_execution_summary") or {}
+        failure_class = str(typed.get("failure_class") or "UNKNOWN")
+        worktree_state = str(typed.get("worktree_state") or "UNKNOWN")
+        if failure_class not in {"UNKNOWN", ""}:
+            instruction += (f" Deterministic application failure class: {failure_class}. "
+                            f"The worktree state after the failed application is {worktree_state}; "
+                            "re-read the current target before generating the next operation.")
         if "patch precondition failed" in str(typed.get("error") or "").lower():
             instruction += (" The previous patch precondition failed. Re-read existing targets before patching; "
                             "for missing files use a write operation with complete content.")
+        if failure_class == "WRITE_CONTENT_INVALID" or "minor edit cannot replace" in str(typed.get("error") or "").lower():
+            instruction += (" The previous full-file write was too short for the existing file. "
+                            "Use an exact patch with the current expected_old_fragment, or provide the complete current file content; "
+                            "do not send a partial replacement.")
+        if "authorized mutation scope" in str(typed.get("error") or "").lower():
+            instruction += (" The previous operation targeted a file outside the approved mutation scope. "
+                            "Modify only the paths listed in approved_scope; verification targets are read-only "
+                            "unless they are explicitly approved.")
         return instruction
     return ""
 
@@ -486,7 +605,7 @@ def _merge_texts(values: list[Any]) -> list[str]:
 
 def _merge_static_phases(phases: list[dict[str, Any]]) -> dict[str, Any]:
     first = phases[0]
-    return {
+    merged = {
         **first,
         "goal": " / ".join(str(phase.get("goal") or "").strip() for phase in phases if str(phase.get("goal") or "").strip()),
         "status": "pending",
@@ -495,6 +614,14 @@ def _merge_static_phases(phases: list[dict[str, Any]]) -> dict[str, Any]:
         "dependencies": [],
         "risks": _merge_texts([phase.get("risks") for phase in phases]),
     }
+    modes = {phase.get("execution_mode") for phase in phases if phase.get("execution_mode") is not None}
+    if len(modes) == 1 and all(phase.get("execution_mode") is not None for phase in phases):
+        merged["execution_mode"] = next(iter(modes))
+    else:
+        # A merge of unlike typed intents must fall back to the legacy
+        # mutation-capable path until a planner supplies a fresh contract.
+        merged.pop("execution_mode", None)
+    return merged
 
 
 def compact_normal_plan(plan: dict[str, Any], goal: str) -> dict[str, Any]:
@@ -588,12 +715,15 @@ def _mutation_intent(text: str, planning_intent: bool) -> bool:
 
 
 def coding_classification_diagnostics(text: str, *, project_scoped: bool = False,
-                                      attachment_present: bool = False) -> dict[str, str | bool]:
+                                      attachment_present: bool = False,
+                                      attachment_evidence: Mapping[str, Any] | None = None,
+                                      execution_intent: str | None = None) -> dict[str, str | bool]:
     """Return concise, deterministic routing facts without model inference."""
     value = (text or "").strip()
     planning = bool(_PLANNING_INTENT.search(value))
     explicit_non_coding = bool(_EXPLICIT_NON_CODING.search(value))
     mutation = _mutation_intent(value, planning)
+    explicit_execution_intent = execution_intent == "coding_mutation"
     # A screenshot/report tied to an existing workspace can express a repair
     # request without naming a file or verb such as 「修正して」.  Treat this
     # as execution only when the request is project-scoped; generic support
@@ -602,7 +732,16 @@ def coding_classification_diagnostics(text: str, *, project_scoped: bool = False
         project_scoped and attachment_present and not planning and
         re.search(r"(?:問題|不具合|バグ|エラー).{0,48}(?:解決|直(?:して|す)|修正(?:して|する)|fix|resolve)|(?:解決|直(?:して|す)|修正(?:して|する)|fix|resolve).{0,48}(?:問題|不具合|バグ|エラー)", value, re.I)
     )
-    mutation = mutation or contextual_repair
+    screenshot_repair = bool(isinstance(attachment_evidence, Mapping) and attachment_evidence.get("supports_existing_behavior_repair"))
+    # Backward-compatible callers only provide attachment_present.  An image
+    # plus the short Japanese repair imperative is still concrete evidence.
+    screenshot_repair = screenshot_repair or bool(
+        project_scoped and attachment_present and not planning and
+        (attachment_evidence is None or bool(attachment_evidence.get("available"))) and
+        re.search(r"(?:修正して|直して|fix|repair|こうなってる|この状態)", value, re.I)
+    )
+    contextual_repair = contextual_repair or screenshot_repair
+    mutation = mutation or contextual_repair or explicit_execution_intent
     if not value:
         classification, reason = "NON_CODING", "EMPTY_REQUEST"
     elif explicit_non_coding and mutation:
@@ -612,14 +751,15 @@ def coding_classification_diagnostics(text: str, *, project_scoped: bool = False
     elif planning and not mutation:
         classification, reason = "NON_CODING", "DESIGN_PLANNING"
     elif mutation:
-        classification, reason = ("CODING", "PROJECT_SCOPED_REPAIR_REQUEST") if contextual_repair else ("CODING", "EXPLICIT_REPOSITORY_MUTATION")
+        classification, reason = ("CODING", "PROJECT_SCOPED_REPAIR_REQUEST") if contextual_repair else ("CODING", "EXPLICIT_EXECUTION_INTENT") if explicit_execution_intent else ("CODING", "EXPLICIT_REPOSITORY_MUTATION")
     elif _TECHNICAL_NOUNS.search(value):
         classification, reason = "AMBIGUOUS", "TECHNICAL_CONTEXT_WITHOUT_MUTATION"
     else:
         classification, reason = "NON_CODING", "NO_MUTATION_INTENT"
     return {"classification": classification, "mutation_intent": mutation,
             "planning_intent": planning, "explicit_non_coding": explicit_non_coding,
-            "reason": reason}
+            "reason": reason, "attachment_repair_evidence": screenshot_repair,
+            "execution_intent": execution_intent or "NONE"}
 
 
 def classify_coding_request(text: str) -> str:
@@ -627,7 +767,7 @@ def classify_coding_request(text: str) -> str:
     return str(coding_classification_diagnostics(text)["classification"])
 
 
-def classify_mutation_mode(text: str) -> tuple[str, str]:
+def classify_mutation_mode(text: str, attachment_evidence: Mapping[str, Any] | None = None) -> tuple[str, str]:
     """Classify the shape of an already-authorized repository mutation."""
     value=_current_task_text(text).strip()
     explicit_new=bool(re.search(r"(?:新機能|新しい).{0,32}(?:追加|実装|作成)|(?:追加|実装|作成).{0,32}(?:新機能|新しい)|修正ではなく.*(?:新機能|実装)|(?:initial|current).{0,32}(?:implementation|implement).{0,32}(?:not|rather than).{0,16}fix", value, re.I))
@@ -635,6 +775,8 @@ def classify_mutation_mode(text: str) -> tuple[str, str]:
     existing=bool(re.search(r"既存|現在|今実装中|この|ボタン|画面|ゲーム|アニメーション|機能|挙動", value, re.I))
     if explicit_new:
         return "IMPLEMENTATION", "EXPLICIT_NEW_BEHAVIOR"
+    if isinstance(attachment_evidence, Mapping) and attachment_evidence.get("supports_existing_behavior_repair"):
+        return "FIX", "ATTACHMENT_SUPPORTED_EXISTING_BEHAVIOR_REPAIR"
     if repair and existing:
         return "FIX", "EXISTING_BEHAVIOR_REPAIR"
     if repair:
@@ -713,9 +855,10 @@ def classify_waiting_input(text: str) -> str:
 
 def plan_schema() -> dict[str, Any]:
     """Canonical JSON Schema shared by validation prompts and Ollama format mode."""
-    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"},"minItems":1},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"},"minItems":1}},"required":["id","goal","status","done","verify","dependencies","risks"],"additionalProperties":False}
+    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"},"minItems":1},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"execution_mode":{"type":"string","enum":list(PHASE_EXECUTION_MODES)}},"required":["id","goal","status","done","verify","dependencies","risks"],"additionalProperties":False}
     task = {"type":"object", "properties":{"task_id":{"type":"string"},"phase_id":{"type":"string"},"goal":{"type":"string"},"domain":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}},"required_context":{"type":"array","items":{"type":"string"}},"required_mcp":{"type":"array","items":{"type":"string"}},"change_scope":{"type":"array","items":{"type":"string"}},"verification":{"type":"array","items":{"type":"string"}},"done_condition":{"type":"array","items":{"type":"string"}},"retry_state":{"type":"object"}}, "required":["task_id","phase_id","goal","domain","depends_on","required_context","required_mcp","change_scope","verification","done_condition","retry_state"], "additionalProperties":False}
-    return {"type":"object","properties":{"schema_version":{"type":"integer","const":1},"original_goal":{"type":"string"},"scope":{"type":"object","properties":{"allowed":{"type":"array","items":{"type":"string"}},"forbidden":{"type":"array","items":{"type":"string"}}},"required":["allowed","forbidden"],"additionalProperties":False},"assumptions":{"type":"array","items":{"type":"string"}},"phases":{"type":"array","items":phase,"minItems":1,"maxItems":8},"tasks":{"type":"array","items":task,"maxItems":15},"max_retries_per_phase":{"type":"integer","const":2},"requires_user_approval":{"type":"boolean","const":True}},"required":["schema_version","original_goal","scope","assumptions","phases","max_retries_per_phase","requires_user_approval"],"additionalProperties":False}
+    manifest_entry={"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["create","modify","delete"]},"role":{"type":"string"},"required":{"type":"boolean"},"owner_phase":{"type":"string"}},"required":["path","action"],"additionalProperties":False}
+    return {"type":"object","properties":{"schema_version":{"type":"integer","const":1},"original_goal":{"type":"string"},"scope":{"type":"object","properties":{"allowed":{"type":"array","items":{"type":"string"}},"forbidden":{"type":"array","items":{"type":"string"}}},"required":["allowed","forbidden"],"additionalProperties":False},"assumptions":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":manifest_entry,"maxItems":100},"phases":{"type":"array","items":phase,"minItems":1,"maxItems":8},"tasks":{"type":"array","items":task,"maxItems":15},"max_retries_per_phase":{"type":"integer","const":2},"requires_user_approval":{"type":"boolean","const":True}},"required":["schema_version","original_goal","scope","assumptions","phases","max_retries_per_phase","requires_user_approval"],"additionalProperties":False}
 
 
 def coding_candidate(text: str) -> bool:
@@ -755,6 +898,9 @@ def validate_plan(value: Any, goal: str) -> list[str]:
         if phase.get("status") not in {"pending","pass","blocked","waiting"}: return ["invalid phase status"]
         if not isinstance(phase.get("done"),list) or not phase["done"] or not isinstance(phase.get("verify"),list): return ["phase done must be non-empty and verify must be an array"]
         if not isinstance(phase["dependencies"],list) or any(not isinstance(dep,str) for dep in phase["dependencies"]): return ["invalid dependencies"]
+        contract_errors = phase_execution_contract_errors(phase)
+        if contract_errors:
+            return contract_errors
     if any(dep not in ids for phase in value["phases"] for dep in phase["dependencies"]): return ["unknown phase dependency"]
     if "tasks" in value:
         task_phase_ids=[task.get("phase_id") for task in value["tasks"]]
@@ -763,6 +909,60 @@ def validate_plan(value: Any, goal: str) -> list[str]:
         if len(task_phase_ids) != len(set(task_phase_ids)) or set(task_phase_ids) != set(ids):
             return ["task graph must contain exactly one task for each plan phase"]
     return []
+
+
+def phase_execution_contract_errors(phase: Mapping[str, Any]) -> list[str]:
+    """Validate only explicit, typed phase execution metadata.
+
+    Missing ``execution_mode`` is intentionally valid for old persisted plans;
+    the scheduler then uses its existing fail-safe legacy path.  This function
+    never examines goal, Done, Verify, or command text.
+    """
+    if not isinstance(phase, Mapping) or "execution_mode" not in phase:
+        return []
+    mode = phase.get("execution_mode")
+    if mode not in PHASE_EXECUTION_MODES:
+        return ["invalid phase execution_mode"]
+    if mode == "VERIFICATION_ONLY":
+        if not isinstance(phase.get("verify"), list) or not phase.get("verify"):
+            return ["verification-only phase requires verification criteria"]
+        # These are optional typed facts used by newer producers.  If any
+        # producer supplies a contradictory fact, fail closed instead of
+        # allowing a skip based on an optimistic enum value.
+        contradictory = (
+            "requires_repo_mutation", "requires_write_operation",
+            "requires_created_artifact", "requires_dependency_installation",
+            "requires_migration", "requires_mcp_mutation",
+            "requires_external_mutation", "requires_authorization_sensitive_side_effect",
+        )
+        if any(phase.get(key) is True for key in contradictory):
+            return ["verification-only phase contradicts mutation metadata"]
+        for entry in phase.get("file_manifest") or []:
+            if isinstance(entry, Mapping) and entry.get("action") in {"create", "modify", "delete"}:
+                return ["verification-only phase contains a mutation manifest entry"]
+    if mode == "IMPLEMENTATION_AND_VERIFICATION" and not phase.get("verify"):
+        return ["implementation-and-verification phase requires verification criteria"]
+    return []
+
+
+def validate_fix_plan_quality(value: Any, requirements: Mapping[str, Any] | None = None) -> list[str]:
+    """Require an attachment-backed fix plan to inspect, patch, and verify narrowly."""
+    if not isinstance(requirements, Mapping) or not requirements.get("visual_repair"):
+        return []
+    phases = value.get("phases") if isinstance(value, Mapping) else None
+    text = " ".join(
+        str(item.get(key) or "")
+        for item in (phases or []) if isinstance(item, Mapping)
+        for key in ("goal", "done", "verify")
+    ).lower()
+    errors: list[str] = []
+    if not re.search(r"inspect|read|existing|repository|source|調査|確認|読み|既存", text, re.I):
+        errors.append("visual fix plan must inspect the existing repository before writing")
+    if not re.search(r"verify|browser|playwright|runtime|screenshot|検証|ブラウザ|実行", text, re.I):
+        errors.append("visual fix plan must include runtime/browser verification")
+    if re.search(r"rewrite the app|rewrite .*all|replace the entire|implement required changes in src|src directory", text, re.I):
+        errors.append("visual fix plan is too broad; identify the observed target before patching")
+    return errors
 
 
 def extract_plan_json(raw: str) -> tuple[Any | None, str]:
@@ -1087,18 +1287,22 @@ def normalize_manager_decision(value: Any, phase: dict[str, Any], report: dict[s
     return {"decision": decision, "reason": reason, "diagnosis": diagnosis}
 
 
-def plan_prompt(goal: str, execution_mode: str = "NORMAL", mutation_mode: str = "IMPLEMENTATION") -> str:
+def plan_prompt(goal: str, execution_mode: str = "NORMAL", mutation_mode: str = "IMPLEMENTATION", task_size: str = "SMALL") -> str:
     mode_instruction=("This is a FIX task: first obtain a concrete repo/runtime/test clue, then make the smallest patch using existing patterns and run focused verification. Use exactly one phase unless independently observable work requires 2-3; do not add inspection, planning, review, or final-report-only phases. Avoid refactors and new architecture. "
                       if mutation_mode == "FIX" else
+                      "Use 2-4 coherent deliverable phases, including one consolidated final verification phase. Keep focused checks inside each implementation phase. Repository context and MCP preflight are supplied separately; OLCR persists the validated blueprint as the first major boundary. Do not combine inspection, preflight, implementation and final verification in one phase. "
+                      if task_size == "LARGE" else
                       "Use 3-5 coherent batches for this substantial task. "
                       if execution_mode == "HEAVY_BATCHED" else
                       "For a simple static site or small fix, use 1-3 coherent phases. Repo inspection is context, not a phase; combine scaffold, related pages, styling, accessibility and responsiveness into one implementation phase. Include at most one final verification phase. ")
     return ("Return JSON only for a read-only coding plan. Do not edit files. "
             "Output exactly one JSON object: no markdown fences, preamble, or trailing explanation. Canonical skeleton: "
-            '{"schema_version":1,"original_goal":"<goal>","scope":{"allowed":["..."],"forbidden":["..."]},"assumptions":[],"phases":[{"id":"p1","goal":"...","status":"pending","done":["..."],"verify":["..."],"dependencies":[],"risks":[]}],"max_retries_per_phase":2,"requires_user_approval":true}. '
+            '{"schema_version":1,"original_goal":"<goal>","scope":{"allowed":["..."],"forbidden":["..."]},"assumptions":[],"phases":[{"id":"p1","goal":"...","status":"pending","done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],"max_retries_per_phase":2,"requires_user_approval":true}. '
             "Schema: {schema_version:1,original_goal:string,scope:{allowed:[string],forbidden:[string]},assumptions:[string],"
-            "phases:[{id:string,goal:string,status:'pending',done:[string],verify:[string],dependencies:[string],risks:[string]}],"
-            "max_retries_per_phase:2,requires_user_approval:true}. " + mode_instruction + "Include a tasks array with exactly one task per phase. "
+            "phases:[{id:string,goal:string,status:'pending',done:[string],verify:[string],dependencies:[string],risks:[string],execution_mode:'IMPLEMENTATION|VERIFICATION_ONLY|IMPLEMENTATION_AND_VERIFICATION'}],"
+            "file_manifest:[{path:string,action:'create|modify|delete',role:string,required:boolean,owner_phase:string}] when concrete files are known,"
+            "max_retries_per_phase:2,requires_user_approval:true}. " + mode_instruction + (" For LARGE tasks, file_manifest is required: list every intended file with a relative path and action before implementation; do not use broad directory globs." if task_size == "LARGE" else "") + " Include a tasks array with exactly one task per phase. "
+            "Set execution_mode explicitly for every new phase. Use IMPLEMENTATION when repository mutation is required; VERIFICATION_ONLY only when no mutation, artifact creation, installation, migration, MCP mutation, external side effect, authorization-sensitive side effect, or write operation is required and deterministic verification is available; use IMPLEMENTATION_AND_VERIFICATION when both mutation and deterministic verification are required. Never infer this field from verification command tokens."
             "Every task must have a unique task_id and phase_id exactly matching its phase id; task dependencies must mirror the phase dependencies. Goal: "+goal)
 
 
@@ -1108,8 +1312,9 @@ def plan_repair_prompt(goal: str, invalid: str, errors: list[str] | None = None)
             "preamble, or trailing explanation. Required schema is exactly: "
             '{"schema_version":1,"original_goal":"<same goal>","scope":{"allowed":["..."],"forbidden":["..."]},'
             '"assumptions":["..."],"phases":[{"id":"p1","goal":"...","status":"pending",'
-            '"done":["..."],"verify":["..."],"dependencies":[],"risks":[]}],'
+            '"done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],'
             '"max_retries_per_phase":2,"requires_user_approval":true}. If tasks are present, include exactly one task per phase and set each task.phase_id to its phase id. '
+            "Preserve or repair each phase execution_mode explicitly; do not infer it from goal or verification command text. "
             "Keep 1-8 unique phases, preserve intended scope and phase meaning. Original goal: " + goal +
             "\nValidator errors: " + json.dumps(errors or [], ensure_ascii=False) +
             "\nInvalid draft: " + invalid[:12000])
@@ -1153,10 +1358,277 @@ def completion_prompt(goal: str, plan: dict[str, Any], reports: list[dict[str, A
                           "reports":reports[-16:],"pending_authorization":pending_authorization}, ensure_ascii=False))
 
 
-def final_report_prompt(goal: str, plan: dict[str, Any], reports: list[dict[str, Any]]) -> str:
-    return ("Produce a concise read-only final report. Do not execute tools, edit files, change dependencies, or publish. "
-            "Use exactly these headings: Implemented, Changed files, Tests, Build, Not run, Risks, TODO. "
-            + json.dumps({"original_goal":goal,"plan":plan,"reports":reports[-16:]}, ensure_ascii=False))
+_REPORT_SUCCESSFUL_OPERATION_STATUSES = {"success", "completed", "ok", "normalized"}
+_REPORT_MUTATION_TOOLS = {
+    "workspace_write", "workspace_write_normalized", "workspace_patch",
+    "workspace_delete", "workspace_remove", "write_text",
+}
+_REPORT_RUNTIME_STATUS_RE = re.compile(
+    r"\bruntime(?:\s+behavior)?\s*[:：]\s*(PASS|FAIL|NOT_RUN|UNKNOWN|UNVERIFIED|PARTIAL)\b",
+    re.I,
+)
+
+
+def _report_unique(values: list[Any]) -> list[str]:
+    """Return stable, trimmed, de-duplicated strings for report rendering."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
+def _report_test_is_accounted(executed: str, outcomes: list[str]) -> bool:
+    """Match a bare executed command to its PASS/FAIL line deterministically."""
+    candidate = " ".join(str(executed).split())
+    if not candidate:
+        return False
+    for outcome in outcomes:
+        normalized = " ".join(str(outcome).split())
+        if candidate == normalized or normalized.startswith(candidate + " ") or candidate.startswith(normalized + " "):
+            return True
+    return False
+
+
+def _report_task_value(task: Mapping[str, Any], key: str, default: Any = None) -> Any:
+    value = task.get(key, default)
+    if isinstance(value, str) and key.endswith("_json"):
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return default
+    return value
+
+
+def _report_operation_path(operation: Mapping[str, Any]) -> str:
+    output = operation.get("output") if isinstance(operation.get("output"), Mapping) else {}
+    input_value = operation.get("input") if isinstance(operation.get("input"), Mapping) else {}
+    value = output.get("path") or input_value.get("path")
+    return str(value).strip() if isinstance(value, str) and value.strip() else ""
+
+
+def deterministic_final_report(task: Mapping[str, Any] | None,
+                               plan: Mapping[str, Any] | None,
+                               reports: list[Mapping[str, Any]] | None,
+                               *, handoff: Mapping[str, Any] | None = None) -> str:
+    """Render a Coding Task report from persisted evidence without a model.
+
+    This function deliberately treats typed operations and verification fields
+    as authoritative.  Free-form model prose in ``implemented`` is used only
+    to preserve explicit status markers such as ``Runtime behavior: NOT_RUN``;
+    it is never promoted to a success claim.
+    """
+    task = task if isinstance(task, Mapping) else {}
+    plan = plan if isinstance(plan, Mapping) else {}
+    report_rows = [item for item in (reports or []) if isinstance(item, Mapping)]
+    handoff = handoff if isinstance(handoff, Mapping) else _report_task_value(task, "batch_handoff", {}) or {}
+    status = str(task.get("status") or "UNKNOWN").upper()
+    diagnostics: list[str] = []
+
+    successful_operations: list[dict[str, Any]] = []
+    failed_operations: list[dict[str, Any]] = []
+    declared_changed: list[str] = []
+    test_executed: list[Any] = []
+    test_pass: list[Any] = []
+    test_fail: list[Any] = []
+    risks: list[Any] = []
+    errors: list[Any] = []
+    blockers: list[Any] = []
+    phase_statuses: list[tuple[str, str]] = []
+    runtime_statuses: list[str] = []
+    build_statuses: list[str] = []
+    not_run_items: list[str] = []
+
+    for report in report_rows:
+        phase_id = str(report.get("phase_id") or "UNKNOWN")
+        phase_status = str(report.get("status") or "UNKNOWN").upper()
+        phase_statuses.append((phase_id, phase_status))
+        declared_changed.extend(report.get("changed_files") or [])
+        test_executed.extend(report.get("test_executed") or [])
+        test_pass.extend(report.get("test_pass") or [])
+        test_fail.extend(report.get("test_fail") or [])
+        risks.extend(report.get("risks") or [])
+        errors.extend(report.get("errors") or [])
+        blockers.extend(report.get("blockers") or [])
+        for key in ("build_executed", "build_pass"):
+            value = str(report.get(key) or "UNKNOWN").upper()
+            if value in {"PASS", "FAIL", "NOT_RUN", "UNKNOWN", "UNVERIFIED", "PARTIAL"}:
+                build_statuses.append(value)
+                if value == "NOT_RUN":
+                    not_run_items.append("Build")
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), Mapping) else {}
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, Mapping):
+                continue
+            normalized = dict(operation)
+            operation_status = str(operation.get("status") or "").lower()
+            if operation_status in _REPORT_SUCCESSFUL_OPERATION_STATUSES:
+                successful_operations.append(normalized)
+            elif operation_status in {"failed", "error", "rolled_back", "rollback", "denied", "forbidden_by_user", "permission_denied"}:
+                failed_operations.append(normalized)
+        for value in (report.get("implemented") or [], report.get("test_executed") or [],
+                      report.get("test_pass") or [], report.get("test_fail") or [],
+                      report.get("errors") or [], report.get("blockers") or [],
+                      report.get("risks") or []):
+            for item in value:
+                match = _REPORT_RUNTIME_STATUS_RE.search(str(item))
+                if match:
+                    runtime_statuses.append(match.group(1).upper())
+        if phase_status in {"NOT_RUN", "UNKNOWN", "UNVERIFIED", "PARTIAL"}:
+            not_run_items.append(f"Phase {phase_id} verification: {phase_status}")
+
+    mutation_paths: list[str] = []
+    applied_lines: list[str] = []
+    seen_operations: set[tuple[str, str]] = set()
+    for operation in successful_operations:
+        tool = str(operation.get("tool") or "operation")
+        path = _report_operation_path(operation)
+        key = (tool, path)
+        if key in seen_operations:
+            continue
+        seen_operations.add(key)
+        if tool in _REPORT_MUTATION_TOOLS:
+            if path:
+                mutation_paths.append(path)
+                applied_lines.append(f"Applied {tool}: {path}")
+            else:
+                applied_lines.append(f"Applied {tool}")
+        elif tool in {"workspace_read", "workspace_read_normalized"}:
+            applied_lines.append(f"Read-only operation completed: {path}" if path else "Read-only operation completed")
+
+    declared_changed_clean = _report_unique(declared_changed)
+    applied_paths = _report_unique(mutation_paths)
+    if declared_changed_clean and applied_paths and set(declared_changed_clean) != set(applied_paths):
+        missing_from_operations = sorted(set(declared_changed_clean) - set(applied_paths))
+        missing_from_report = sorted(set(applied_paths) - set(declared_changed_clean))
+        details = []
+        if missing_from_operations:
+            details.append("declared changed file without successful mutation: " + ", ".join(missing_from_operations))
+        if missing_from_report:
+            details.append("successful mutation absent from changed_files: " + ", ".join(missing_from_report))
+        diagnostics.append("Evidence conflict: " + "; ".join(details))
+    changed_files = applied_paths or declared_changed_clean
+
+    if not applied_lines:
+        criteria_verified: list[str] = []
+        for report in report_rows:
+            criteria = report.get("criteria_evidence")
+            if isinstance(criteria, Mapping):
+                criteria_verified.extend(str(key) for key, value in criteria.items() if value is True)
+        if criteria_verified:
+            applied_lines.extend(f"Verified criterion: {item}" for item in _report_unique(criteria_verified))
+        elif any(status_value == "PASS" for _, status_value in phase_statuses):
+            applied_lines.append("Completed phase has persisted PASS evidence")
+    if not applied_lines:
+        applied_lines.append("No successful workspace operation recorded")
+
+    tests_passed = _report_unique(test_pass)
+    tests_failed = _report_unique(test_fail)
+    tests_executed = _report_unique(test_executed)
+    test_lines: list[str] = []
+    test_lines.extend(f"PASS: {item}" for item in tests_passed)
+    test_lines.extend(f"FAIL: {item}" for item in tests_failed)
+    accounted_tests = tests_passed + tests_failed
+    test_lines.extend(f"UNVERIFIED: {item}" for item in tests_executed
+                      if not _report_test_is_accounted(item, accounted_tests))
+    if not test_lines:
+        test_lines.append("NOT_RUN")
+
+    distinct_build = _report_unique(build_statuses)
+    if "FAIL" in distinct_build:
+        build_status = "FAIL"
+    elif "PASS" in distinct_build and not set(distinct_build) - {"PASS"}:
+        build_status = "PASS"
+    elif "NOT_RUN" in distinct_build and not set(distinct_build) - {"NOT_RUN"}:
+        build_status = "NOT_RUN"
+    elif len(set(distinct_build)) == 1:
+        build_status = distinct_build[0]
+    elif distinct_build:
+        build_status = "UNKNOWN"
+        diagnostics.append("Evidence conflict: build status values were " + ", ".join(distinct_build))
+    else:
+        build_status = "UNKNOWN"
+
+    runtime_status = "UNKNOWN"
+    distinct_runtime = _report_unique(runtime_statuses)
+    if len(set(distinct_runtime)) == 1:
+        runtime_status = distinct_runtime[0]
+    elif len(set(distinct_runtime)) > 1:
+        diagnostics.append("Evidence conflict: runtime behavior status values were " + ", ".join(distinct_runtime))
+    if runtime_status == "NOT_RUN":
+        not_run_items.append("Runtime behavior: NOT_RUN")
+    elif runtime_status in {"UNKNOWN", "UNVERIFIED", "PARTIAL"}:
+        not_run_items.append(f"Runtime behavior: {runtime_status}")
+    not_run_items = _report_unique(not_run_items)
+
+    risk_lines = [f"Risk: {item}" for item in _report_unique(risks)]
+    risk_lines.extend(f"Error: {item}" for item in _report_unique(errors))
+    risk_lines.extend(f"Blocker: {item}" for item in _report_unique(blockers))
+    risk_lines.extend(f"Diagnostic: {item}" for item in _report_unique(diagnostics))
+    if not risk_lines:
+        risk_lines.append("None")
+
+    pending_authorization = _report_task_value(task, "pending_authorization", None)
+    if not isinstance(pending_authorization, Mapping):
+        pending_authorization = {}
+    todo_items: list[str] = []
+    todo_items.extend(f"Failed verification: {item}" for item in tests_failed)
+    todo_items.extend(f"Unresolved error: {item}" for item in _report_unique(errors))
+    todo_items.extend(f"Unresolved blocker: {item}" for item in _report_unique(blockers))
+    for operation in failed_operations:
+        tool = str(operation.get("tool") or "operation")
+        path = _report_operation_path(operation)
+        todo_items.append(f"Unapplied operation: {tool}{' (' + path + ')' if path else ''}")
+    requested_scope = _report_unique(pending_authorization.get("requested_scope") or [])
+    unmet = _report_unique(pending_authorization.get("unmet_criteria") or [])
+    if requested_scope:
+        todo_items.append("Authorization required for: " + ", ".join(requested_scope))
+    if unmet:
+        todo_items.extend(f"Authorization unmet criterion: {item}" for item in unmet)
+    if pending_authorization.get("reason") and not requested_scope and not unmet:
+        todo_items.append("Authorization required: " + str(pending_authorization["reason"]))
+    recovery_action = str(task.get("recovery_action") or "NONE").upper()
+    recovery_reason = str(task.get("recovery_reason") or "NONE").upper()
+    if status != "COMPLETED" and (recovery_action != "NONE" or recovery_reason != "NONE"):
+        todo_items.append("Recovery: " + "/".join(item for item in (recovery_action, recovery_reason) if item != "NONE"))
+    todo_items.extend(f"Unresolved handoff: {item}" for item in _report_unique(handoff.get("unresolved") or []))
+    if status != "COMPLETED":
+        remaining = [str(phase.get("goal") or phase.get("id") or "") for phase in (plan.get("phases") or [])
+                     if isinstance(phase, Mapping) and str(phase.get("status") or "").lower() not in {"pass", "completed"}]
+        todo_items.extend(f"Remaining phase: {item}" for item in _report_unique(remaining))
+    todo_items = _report_unique(todo_items)
+
+    next_items: list[str] = []
+    next_items.extend(f"Constraint: {item}" for item in _report_unique(handoff.get("next_constraints") or []))
+    if pending_authorization and not requested_scope and not unmet and pending_authorization.get("reason"):
+        next_items.append("Provide the requested authorization or input")
+    elif requested_scope:
+        next_items.append("Authorize the requested scope to continue")
+    elif status == "RESUMABLE":
+        next_items.append("Resume the Coding Task after reviewing the recorded recovery state")
+    elif status in {"FAILED", "BLOCKED"}:
+        next_items.append("Resolve the recorded failure before retrying or replanning")
+    next_items = _report_unique(next_items)
+
+    lines = ["# Final Report", "", "Result", f"- Status: {status}", "", "Implemented"]
+    lines.extend(f"- {item}" for item in _report_unique(applied_lines))
+    lines.extend(["", "Changed files"])
+    lines.extend(f"- {item}" for item in changed_files) if changed_files else lines.append("- None")
+    lines.extend(["", "Tests"])
+    lines.extend(f"- {item}" for item in test_lines)
+    lines.extend(["", "Build", f"- {build_status}", "", "Not run"])
+    lines.extend(f"- {item}" for item in not_run_items) if not_run_items else lines.append("- None")
+    lines.extend(["", "Risks"])
+    lines.extend(f"- {item}" for item in risk_lines)
+    lines.extend(["", "TODO"])
+    lines.extend(f"- {item}" for item in todo_items) if todo_items else lines.append("- None")
+    if next_items:
+        lines.extend(["", "Next"])
+        lines.extend(f"- {item}" for item in next_items)
+    return "\n".join(lines).rstrip()
 
 
 def new_id() -> str: return str(uuid.uuid4())

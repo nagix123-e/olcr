@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import time
 import uuid
-import hashlib
 import base64
 import sys
 from pathlib import Path
@@ -16,7 +16,7 @@ from .db import Database
 from .models import Risk, Route, Task, TaskState
 from .ollama import ModelFailure, ModelProvider
 from .procedures import LOWERCASE_PROCEDURE, ProcedureRunner
-from .retrieval import RetrievalRouter
+from .retrieval import RetrievalRouter, PathGuard
 from .web import search as web_search, brave_search, brave_news_search, tavily_search, fetch as web_fetch, setup_guidance
 from .tools import ToolValidationError, registry
 
@@ -24,6 +24,28 @@ VISION_SCHEMA_KEYS = ("elements", "text", "relationships", "anomalies", "confide
 VISION_SCHEMA_INSTRUCTION = "Allowed top-level keys are exactly: " + ", ".join(VISION_SCHEMA_KEYS) + ". Use elements for visible UI items, text for visible text, and relationships for spatial relations. bbox_normalized belongs inside an elements[] entry, never at top level."
 RELATION_VOCABULARY = ("left_of","right_of","above","below","inside","contains","overlaps","aligned_left","aligned_right","aligned_top","aligned_bottom","centered_in","near","far","larger_than","smaller_than")
 RELATION_SCHEMA_INSTRUCTION = "Each relationships[] entry must be an object with keys from, to, relation; from and to must reference IDs emitted in elements[]. relation must be one of: " + ", ".join(RELATION_VOCABULARY) + ". If no confident valid relation exists, use relationships: []."
+
+
+def _operation_failure_class(error: BaseException | str | None) -> str:
+    """Map deterministic executor errors to the public operation diagnostics."""
+    value = str(error or "").lower()
+    if "target not found" in value:
+        return "TARGET_NOT_FOUND"
+    if "outside allowed roots" in value or "invalid path" in value:
+        return "TARGET_PATH_INVALID"
+    if "outside authorized mutation scope" in value:
+        return "OPERATION_SCHEMA_SEMANTIC_ERROR"
+    if "patch precondition" in value or "source changed" in value or "fragment is ambiguous" in value:
+        return "PREIMAGE_MISMATCH"
+    if "minor edit cannot replace" in value or "invalid full-file operation" in value:
+        return "WRITE_CONTENT_INVALID"
+    if "structural validation" in value:
+        return "WRITE_CONTENT_INVALID"
+    if "unsupported file operation" in value or "implementation plan" in value:
+        return "OPERATION_SCHEMA_SEMANTIC_ERROR"
+    if "encoding" in value or "unicode" in value:
+        return "ENCODING_ERROR"
+    return "EXECUTOR_ERROR" if value else "UNKNOWN"
 
 
 class ContextManager:
@@ -143,6 +165,21 @@ def _vision_diag(**values: Any) -> None:
 
 
 class Runtime:
+    @staticmethod
+    def _request_fingerprint(messages: list[dict], label: str = "PRODUCTION") -> None:
+        """Emit privacy-safe final-request diagnostics immediately before Ollama."""
+        parts = []
+        for index, message in enumerate(messages):
+            role = str(message.get("role") or "")
+            content = str(message.get("content") or "")
+            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+            parts.append(f"{index}:{role}:{digest}:{len(content)}:{len(content.encode('utf-8'))}")
+            print(f"{label}_MESSAGE_{index}_ROLE={role} {label}_MESSAGE_{index}_HASH={digest} {label}_MESSAGE_{index}_CHARS={len(content)} {label}_MESSAGE_{index}_BYTES={len(content.encode('utf-8'))}", file=sys.stderr, flush=True)
+        serialized = "\n".join(parts)
+        print(f"{label}_REQUEST_HASH={hashlib.sha256(serialized.encode()).hexdigest()} {label}_TOTAL_CHARS={sum(len(str(m.get('content') or '')) for m in messages)} {label}_MESSAGE_COUNT={len(messages)}", file=sys.stderr, flush=True)
+        joined = "\n".join(str(m.get("content") or "") for m in messages)
+        marker = joined.rfind("operations")
+        print(f"{label}_OPERATIONS_INSTRUCTION_LAST_INDEX={marker} {label}_CHARS_AFTER_OPERATIONS_INSTRUCTION={len(joined)-marker if marker >= 0 else 'UNKNOWN'}", file=sys.stderr, flush=True)
     @staticmethod
     def _suppress_brain_urls(text: str) -> tuple[str, bool]:
         value=text or ""
@@ -266,8 +303,8 @@ class Runtime:
         facts=(f"CURRENT version: 0.4.7\nCONFIGURED brain model: {self.settings.main_model}\nCONFIGURED vision model: {self.settings.vision_model}\nCONFIGURED embedding model: {self.settings.embedding_model or 'NOT_CONFIGURED'}\nCURRENT semantic vector enabled: {self.settings.vector_enabled}\nCURRENT model roles brain/router/vision: individually configurable through /option show, set, and reset.\nCURRENT MODEL_UNAVAILABLE_POLICY=CURRENT_REJECT_AND_PRESERVE: model presence is validated before committing /option set; an unavailable model is rejected and the previous configuration is preserved; no silent substitution or acquisition occurs.\nCURRENT settings API scope: /api/settings is a local OLCR backend settings API.\nCURRENT thinking: brain thinking choice is request-scoped.\nCURRENT tests: CLI, configuration, and semantic tests exist.\nUNKNOWN: settings API dependency topology and storage implementation, the internal plumbing for model validation, whether /option show performs model validation, authentication state, settings-history details, and any architecture or service not stated here.\n\nFor OLCR questions, make current claims only from CURRENT/CONFIGURED facts and do not broaden a fact beyond its stated trigger or scope. Do not infer implementation plumbing from a capability. If a detail is UNKNOWN, say '現在の提供情報からは確認できません'. Only call something absent when explicitly marked CONFIRMED_ABSENT. Clearly label recommendations as PROPOSED. Any individual proposal that replaces, weakens, bypasses, or materially changes a CURRENT policy must be labeled inline 'PROPOSED / POLICY_CHANGE' and state the policy it changes. Automatic fallback, model substitution, or model pull are POLICY_CHANGE proposals and must not be default recommendations; prefer improvements that preserve CURRENT_REJECT_AND_PRESERVE. Do not invent services, databases, APIs, URLs, or deployment components.")
         return facts
 
-    def _generate_brain(self, messages, text):
-        think=self._thinking_required(text)
+    def _generate_brain(self, messages, text, structured_schema=None, thinking_override: bool | None = None):
+        think=self._thinking_required(text) if thinking_override is None else bool(thinking_override)
         grounding=self._self_context(text)
         if grounding: messages=[{"role":"system","content":grounding}, *messages]
         print(f"BRAIN_SELF_GROUNDING={'YES' if grounding else 'NO'}", file=sys.stderr, flush=True)
@@ -276,15 +313,28 @@ class Runtime:
         print("BRAIN_SELF_CONTEXT_CONFIRMED_ABSENT_COUNT=0", file=sys.stderr, flush=True)
         print(f"BRAIN_SELF_CONTEXT_SOURCE={'mixed' if grounding else 'not_applicable'}", file=sys.stderr, flush=True)
         print(f"THINKING_DECISION={'YES' if think else 'NO'}", file=sys.stderr, flush=True)
-        print("THINKING_DECISION_SOURCE=fallback", file=sys.stderr, flush=True)
+        print(f"THINKING_DECISION_SOURCE={'IMPLEMENTER_EXECUTION_CONTRACT' if thinking_override is not None else 'fallback'}", file=sys.stderr, flush=True)
         print(f"BRAIN_MODEL={self.settings.main_model}", file=sys.stderr, flush=True)
         print(f"BRAIN_THINKING_REQUESTED={'YES' if think else 'NO'}", file=sys.stderr, flush=True)
         print("BRAIN_THINK_FIELD_SENT=YES", file=sys.stderr, flush=True)
         print(f"BRAIN_THINK_FIELD_VALUE={'TRUE' if think else 'FALSE'}", file=sys.stderr, flush=True)
         print("BRAIN_THINKING_SUPPORTED=UNKNOWN", file=sys.stderr, flush=True)
         print("BRAIN_THINKING_EFFECTIVE=UNKNOWN", file=sys.stderr, flush=True)
-        try: result=self.model.generate(messages, self.settings.main_model, think=think)
-        except TypeError: result=self.model.generate(messages, self.settings.main_model)
+        if structured_schema is not None:
+            print("IMPLEMENTATION_SCHEMA_REQUESTED=YES IMPLEMENTATION_SCHEMA_SENT_TO_PROVIDER=YES IMPLEMENTATION_SCHEMA_PROVIDER_FIELD=format MODEL_RESPONSE_FORMAT=JSON_SCHEMA", file=sys.stderr, flush=True)
+        try:
+            if structured_schema is not None:
+                result=self.model.generate(messages, self.settings.main_model, think=think, format=structured_schema)
+            else:
+                result=self.model.generate(messages, self.settings.main_model, think=think)
+        except TypeError:
+            # Older providers/test doubles may not expose ``format`` or
+            # ``think``. The prompt remains the same, while the host parser
+            # still rejects anything that is not a typed operation object.
+            try:
+                result=self.model.generate(messages, self.settings.main_model, think=think)
+            except TypeError:
+                result=self.model.generate(messages, self.settings.main_model)
         present=result.get("thinking_present") if isinstance(result,dict) else None
         chars=result.get("thinking_chars",0) if isinstance(result,dict) else 0
         effective="YES" if think and present is True else "NO" if not think and present is False else "UNKNOWN"
@@ -419,7 +469,7 @@ class Runtime:
             elif implementation_requested:
                 if coding_implementation and web_search_attempted:
                     print("CODING_WEB_SUPPORT_RETURNED_TO_IMPLEMENTATION=true", file=sys.stderr, flush=True)
-                return self._execute_implementation(task, text, core_context, started, workspace_root)
+                return self._execute_implementation(task, text, core_context, started, workspace_root, managed_context)
             retrieval_query = self._retrieval_query(text)
             evidence = []
             if retrieval_query:
@@ -718,12 +768,47 @@ class Runtime:
             if ids and html and any(f'id="{i}"' not in html and f"id='{i}'" not in html for i in ids): return False
         return True
 
-    def _execute_implementation(self, task: Task, text: str, core_context: str, started: float, workspace_root: str | None = None) -> tuple[Task, str]:
+    def _execute_implementation(self, task: Task, text: str, core_context: str, started: float,
+                                 workspace_root: str | None = None, managed_context: dict | None = None) -> tuple[Task, str]:
         """One bounded model→typed-file-tools→inspection loop for workspace mutations."""
+        print("EXECUTION_CHANNEL_AVAILABLE=YES MODEL_TOOL_BINDING=STRUCTURED_OPERATION_JSON OPERATION_PROTOCOL=operations_v1", file=sys.stderr, flush=True)
         task.route, task.reason_category, task.authorization_state = Route.IMPLEMENTATION, "authorized_workspace_mutation", "authorized"
         task.transition(TaskState.EXECUTING)
         root = Path(workspace_root).resolve() if workspace_root else Path(self.settings.allowed_roots[0]).resolve()
         if not root.is_dir(): raise PermissionError("an authorized workspace is required for implementation work")
+        # A project-selected workspace is the canonical authorization boundary
+        # for managed implementation.  The global retrieval roots may be
+        # narrower (and commonly are in tests), so do not reject a valid
+        # project path merely because it is absent from that unrelated list.
+        execution_guard = PathGuard([str(root)])
+        print(f"PATHGUARD_ALLOWED_ROOTS={str(root)} PATHGUARD_TARGET_ROOT_MATCH=YES", file=sys.stderr, flush=True)
+        artifact = managed_context.get("implementation_plan_artifact") if isinstance(managed_context, dict) else None
+        manifest_paths = {str(item.get("path")) for item in (artifact or {}).get("file_manifest", [])
+                          if isinstance(item, dict) and isinstance(item.get("path"), str)}
+        # Small managed tasks do not have a persisted file manifest.  Their
+        # original plan scope is still the authorization boundary and must be
+        # enforced by the same executor before any write occurs.
+        approved_scope_paths: set[str] = set()
+        for scope in (managed_context or {}).get("approved_scopes", []) if isinstance(managed_context, dict) else []:
+            values = scope.get("requested_scope", []) if isinstance(scope, dict) else scope
+            if isinstance(values, str):
+                values = [values]
+            if isinstance(values, list):
+                approved_scope_paths.update(str(value).strip().replace("\\", "/") for value in values if str(value).strip())
+        if manifest_paths:
+            authorized_paths = manifest_paths
+        else:
+            authorized_paths = approved_scope_paths
+        if authorized_paths:
+            print(f"IMPLEMENTATION_AUTHORIZED_SCOPE_COUNT={len(authorized_paths)} IMPLEMENTATION_SCOPE_SOURCE={'PLAN_MANIFEST' if manifest_paths else 'APPROVED_SCOPE'}", file=sys.stderr, flush=True)
+
+        def scope_allows(relative_path: str) -> bool:
+            normalized = relative_path.replace("\\", "/").lstrip("./")
+            return any(normalized == allowed.rstrip("/") or normalized.startswith(allowed.rstrip("/") + "/")
+                       for allowed in authorized_paths)
+
+        if manifest_paths:
+            print(f"IMPLEMENTATION_SCOPE_SOURCE=PLAN_MANIFEST FILE_MANIFEST_COUNT={len(manifest_paths)}", file=sys.stderr, flush=True)
         edit_request = bool(re.search(r"(?:編集|置き換え|置換|修正|変更|更新)\s*(?:して|しろ|ください|する)", text, re.I))
         target_match = re.search(r"(?:^|[\s「『])([\w./-]+\.(?:html?|css|js|mjs|ts|jsx|tsx|py))", text, re.I)
         if edit_request and target_match:
@@ -737,9 +822,22 @@ class Runtime:
         existing = {}
         for rel in files:
             p = root / rel
-            if p.suffix.lower() in {".html", ".css", ".js", ".mjs", ".ts", ".jsx", ".tsx"} and len(existing) < 8:
+            if p.suffix.lower() in {".html", ".css", ".js", ".mjs", ".ts", ".jsx", ".tsx", ".py"} and len(existing) < 8:
                 try: existing[rel] = p.read_text(encoding="utf-8")[:500_000]
                 except (OSError, UnicodeDecodeError): pass
+        source_snapshot_hashes = {
+            rel: hashlib.sha256(value.encode("utf-8")).hexdigest()
+            for rel, value in existing.items()
+        }
+        for rel in files:
+            if rel in source_snapshot_hashes:
+                continue
+            candidate = root / rel
+            try:
+                if candidate.is_file() and candidate.stat().st_size <= 500_000:
+                    source_snapshot_hashes[rel] = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            except OSError:
+                continue
         prompt = ("You have bounded filesystem tools inside the authorized workspace only. The following are actual current source contents. Diagnose from them. "
                   "For existing-file modifications, return a bounded patch using expected_old_fragment and replacement_fragment; do not regenerate a whole file. Return ONLY JSON: "
                   '{"change_required":true,"source_inspected":true,"condition_evaluated":true,"reason_code":"...","operations":[{"op":"patch","path":"relative/path","expected_old_fragment":"...","replacement_fragment":"..."}],"verification":"..."}. '
@@ -747,23 +845,86 @@ class Runtime:
                   f"Workspace files: {files}.\nSOURCE:\n{json.dumps(existing, ensure_ascii=False)}\nRequest: {text}")
         if core_context: prompt += "\nDevelopment plan: " + core_context[: self.settings.context_budget // 4]
         messages=[{"role":"system","content":"Use only the supplied workspace tool protocol."},{"role":"user","content":prompt}]
-        result = self._generate_brain(messages, text)
-        task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms")}, "status":"success"})
+        operation_schema={
+            "type":"object",
+            "properties":{
+                "change_required":{"type":"boolean"},
+                "source_inspected":{"type":"boolean"},
+                "condition_evaluated":{"type":"boolean"},
+                "reason_code":{"type":"string"},
+                "operations":{"type":"array","items":{"type":"object","properties":{
+                    "op":{"type":"string","enum":["patch","write"]},
+                    "path":{"type":"string"},
+                    "expected_old_fragment":{"type":"string"},
+                    "replacement_fragment":{"type":"string"},
+                    "content":{"type":"string"},
+                },"required":["op","path"]}},
+                "verification":{"type":"string"},
+            },
+            "required":["operations"],
+        }
+        self._request_fingerprint(messages, "PRODUCTION")
+        # Structured file operations are an execution contract.  Thinking is
+        # useful for open-ended prose, but qwen3.5 can emit its reasoning as a
+        # narrative instead of the requested operations when it is enabled.
+        # Keep this override local to the typed Implementer call; all other
+        # model roles retain their request-scoped thinking policy.
+        result = self._generate_brain(messages, text, structured_schema=operation_schema, thinking_override=False)
+        task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms","model_runtime","model_engine","model_quantization")}, "status":"success"})
         raw=result.get("text", "") if isinstance(result,dict) else ""
         # Qwen may wrap a single otherwise-valid JSON object in a Markdown fence.
         if raw.strip().startswith("```") and raw.strip().endswith("```"):
             raw=raw.strip().split("\n",1)[-1].rsplit("```",1)[0].strip()
-        try: payload=json.loads(raw); operations=payload.get("operations")
-        except (TypeError, ValueError, KeyError) as exc: raise RuntimeError("implementation model did not return a valid file-operation plan") from exc
-        if not isinstance(operations,list): raise RuntimeError("implementation model returned invalid operations")
+        try:
+            payload=json.loads(raw); operations=payload.get("operations")
+            raw_kind="STRUCTURED_OPERATIONS" if isinstance(operations,list) and bool(operations) else "EMPTY"
+            asked=bool(re.search(r"(?:続行しますか|継続しますか|ask user|next step|continue\??|次に進みますか)", raw or "", re.I))
+            print(f"MODEL_RAW_RESPONSE_KIND={raw_kind} MODEL_OPERATION_EMITTED={'YES' if isinstance(operations,list) and bool(operations) else 'NO'} MODEL_OPERATION_COUNT={len(operations) if isinstance(operations,list) else 0} OPERATION_PARSE_RESULT=PASS PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'}", file=sys.stderr, flush=True)
+            if asked:
+                raise RuntimeError("implementation model requested routine continuation")
+        except (TypeError, ValueError, KeyError) as exc:
+            asked=bool(re.search(r"(?:続行|継続|continue|next step|ask user|次に進|続行しますか)", raw or "", re.I))
+            print(f"MODEL_RAW_RESPONSE_KIND={'EMPTY' if not raw.strip() else 'INVALID_JSON'} MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=FAIL PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'} OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
+            raise RuntimeError("implementation model did not return a valid file-operation plan") from exc
+        if not isinstance(operations,list):
+            print("MODEL_RAW_RESPONSE_KIND=INVALID_JSON MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=FAIL PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION=NO OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
+            raise RuntimeError("implementation model returned invalid operations")
         if not operations:
+            asked=bool(re.search(r"(?:続行|継続|continue|next step|ask user|次に進|続行しますか)", raw or "", re.I))
+            print(f"MODEL_RAW_RESPONSE_KIND=EMPTY MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=PASS PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'} OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
             if payload.get("change_required") is False and payload.get("reason_code") == "already_satisfied" and payload.get("source_inspected") is True and payload.get("condition_evaluated") is True:
                 task.transition(TaskState.COMPLETED)
                 return self._finish(task, "No changes needed. Verified: source inspection PASS; requested condition already satisfied PASS; workspace writes: 0. Runtime behavior: NOT_RUN.", started)
             raise RuntimeError("invalid empty implementation result")
         if len(operations)>20: raise RuntimeError("implementation plan exceeds the 20-operation safety limit")
         changed=[]; snapshots: dict[Path, str | None] = {}; patch_attempted=False; write_attempted=False
+        # Validate every operation and path before the first write. This keeps
+        # authorization atomic: a later out-of-scope operation cannot follow a
+        # successful earlier mutation.
         try:
+            for candidate in operations:
+                if not isinstance(candidate,dict) or candidate.get("op") not in {"patch", "write"} or not isinstance(candidate.get("path"),str):
+                    raise RuntimeError("implementation plan contains an unsupported file operation")
+                requested=Path(candidate["path"])
+                target=(requested if requested.is_absolute() else root / requested).expanduser().resolve()
+                if root not in target.parents and target != root:
+                    raise PermissionError("target outside allowed roots: outside authorized project workspace")
+                execution_guard.resolve(str(target))
+                relative = target.relative_to(root).as_posix()
+                if authorized_paths and not scope_allows(relative):
+                    raise PermissionError("target outside authorized mutation scope")
+                pre_hash = hashlib.sha256(target.read_bytes()).hexdigest() if target.is_file() else None
+                task.tool_executions.append({"tool": "operation_preflight", "version": "operations_v1",
+                                             "risk": "SAFE", "input": {"op": candidate.get("op"), "path": relative},
+                                             "output": {"target_canonical": str(target), "authorized": True,
+                                                        "pathguard_allowed": True, "pre_apply_hash": pre_hash},
+                                             "status": "pass", "latency_ms": 0})
+        except Exception:
+            print(f"OPERATION_AUTHORIZED=NO OPERATION_COUNT={len(operations)}", file=sys.stderr, flush=True)
+            raise
+        print(f"OPERATION_AUTHORIZED=YES OPERATION_COUNT={len(operations)}", file=sys.stderr, flush=True)
+        try:
+          print("OPERATION_EXECUTION_STARTED=YES", file=sys.stderr, flush=True)
           for operation in operations:
             if not isinstance(operation,dict) or operation.get("op") not in {"patch", "write"} or not isinstance(operation.get("path"),str):
                 raise RuntimeError("implementation plan contains an unsupported file operation")
@@ -771,7 +932,17 @@ class Runtime:
             if not requested.is_absolute(): requested=root / requested
             target=requested.expanduser().resolve()
             if root not in target.parents and target != root: raise PermissionError("target outside allowed roots: outside authorized project workspace")
+            execution_guard.resolve(str(target))
+            relative = target.relative_to(root).as_posix()
+            if authorized_paths and not scope_allows(relative):
+                raise PermissionError("target outside authorized mutation scope")
             existed_before=target.exists()
+            pre_apply_bytes = target.read_bytes() if existed_before else b""
+            pre_apply_hash = hashlib.sha256(pre_apply_bytes).hexdigest() if existed_before else None
+            source_hash = source_snapshot_hashes.get(relative)
+            print(f"OPERATION_TARGET={relative} OPERATION_TARGET_CANONICAL={target} AUTHORIZED=YES PATHGUARD_ALLOWED=YES "
+                  f"IMPLEMENTER_SOURCE_HASH={source_hash or 'NONE'} EXECUTOR_PRE_APPLY_HASH={pre_apply_hash or 'NONE'} "
+                  f"SOURCE_HASH_MATCH={'YES' if source_hash == pre_apply_hash else 'UNKNOWN'}", file=sys.stderr, flush=True)
             current = target.read_text(encoding="utf-8") if existed_before else ""
             snapshots[target] = current if existed_before else None
             if operation["op"] == "patch":
@@ -800,7 +971,14 @@ class Runtime:
             target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content, encoding="utf-8")
             changed.append(str(target))
             task.tool_executions.append({"tool":"workspace_write","version":"1.0","risk":"SAFE","input":{"path":str(target),"content_length":len(content)},"output":{"path":str(target),"bytes":target.stat().st_size},"status":"success","latency_ms":0})
-        except Exception:
+        except Exception as exc:
+          failure_class = _operation_failure_class(exc)
+          task.tool_executions.append({"tool": "operation_application_failure", "version": "operations_v1",
+                                       "risk": "SAFE", "input": {"failure_class": failure_class},
+                                       "output": {"failure": str(exc), "worktree_state": "ROLLED_BACK"},
+                                       "status": "failure", "latency_ms": 0})
+          print(f"OPERATION_FAILURE_CLASS={failure_class} FAILED_APPLICATION_WORKTREE_STATE=ROLLED_BACK", file=sys.stderr, flush=True)
+          print("OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
           for path, original in snapshots.items():
             try:
                 if original is None:
@@ -814,6 +992,7 @@ class Runtime:
             value=Path(target).read_text(encoding="utf-8")
             inspected.append({"path":target,"bytes":len(value)})
             task.tool_executions.append({"tool":"workspace_read","version":"1.0","risk":"SAFE","input":{"path":target},"output":{"bytes":len(value)},"status":"success","latency_ms":0})
+        print(f"OPERATION_EXECUTION_RESULT=PASS OPERATION_EVIDENCE_COUNT={len(changed) + len(inspected)}", file=sys.stderr, flush=True)
         task.transition(TaskState.COMPLETED)
         print(f"FILE_EXECUTION_INTENT=true FILE_EXECUTION_NEGATED=false FILE_TARGET_EXISTS=true FILE_WRITE_ATTEMPTED={'true' if write_attempted else 'false'} FILE_PATCH_ATTEMPTED={'true' if patch_attempted else 'false'} FILE_OPERATION_SUCCEEDED=true FILE_READBACK_SUCCEEDED=true FILE_FINAL_STATUS=SUCCESS", file=sys.stderr, flush=True)
         return self._finish(task, "Updated: " + ", ".join(changed) + ". Write: PASS; read-back: PASS; structural validation: PASS. Runtime behavior: NOT_RUN.", started)

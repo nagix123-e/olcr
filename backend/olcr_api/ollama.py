@@ -27,7 +27,9 @@ class OllamaProvider(ModelProvider):
         if not model: raise ModelFailure("configuration", "No Ollama model configured")
         body={"model": model, "messages": messages, "stream": stream}
         if think is not None: body["think"] = think
-        if format is not None: body["format"] = format
+        if format is not None:
+            body["format"] = format
+            print("MODEL_STRUCTURED_FORMAT_SENT=YES PROVIDER_FORMAT_FIELD=format OLLAMA_STRUCTURED_OUTPUT_PATH=/api/chat", file=__import__("sys").stderr, flush=True)
         payload = json.dumps(body).encode()
         req = request.Request(self.endpoint + "/api/chat", data=payload, headers={"Content-Type": "application/json"})
         started = time.perf_counter()
@@ -37,7 +39,11 @@ class OllamaProvider(ModelProvider):
             data = json.load(response)
             thinking=data.get("message", {}).get("thinking")
             return {"text": data.get("message", {}).get("content", ""), "thinking_present": isinstance(thinking,str) and bool(thinking), "thinking_chars": len(thinking) if isinstance(thinking,str) else 0, "prompt_tokens": data.get("prompt_eval_count"),
-                    "completion_tokens": data.get("eval_count"), "latency_ms": (time.perf_counter()-started)*1000}
+                    "completion_tokens": data.get("eval_count"), "latency_ms": (time.perf_counter()-started)*1000,
+                    "total_duration": data.get("total_duration"), "load_duration": data.get("load_duration"),
+                    "prompt_eval_duration": data.get("prompt_eval_duration"), "eval_duration": data.get("eval_duration"),
+                    "load_duration_ms": data.get("load_duration", 0) / 1_000_000 if isinstance(data.get("load_duration"), (int,float)) else None,
+                    "model_runtime": "ollama", "model_engine": "UNKNOWN", "model_quantization": "UNKNOWN"}
 
         except error.URLError as exc: raise ModelFailure("unavailable", str(exc.reason)) from exc
         except TimeoutError as exc: raise ModelFailure("timeout", "Ollama request timed out") from exc

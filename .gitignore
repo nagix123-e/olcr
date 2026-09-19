@@ -36,3 +36,4 @@ hf-cache/
 
 # Generated distributable artifacts and staging trees
 release/
+mcp-runtime/

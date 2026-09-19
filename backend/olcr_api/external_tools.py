@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone, date, timedelta
 from decimal import Decimal, InvalidOperation
+from difflib import SequenceMatcher
 import os
 import re
 import unicodedata
@@ -118,10 +119,62 @@ def normalize_weather_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
 def normalize_research_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     raw = str(arguments.get("query") or "")
     recent = bool(re.search(r"(?:最近|latest|recent)", raw, re.I)) or arguments.get("recency") == "recent"
-    query = re.sub(r"(?:について|に関する)?(?:最近の)?論文(?:を)?(?:\d+件)?(?:探して|調べて|教えて)?[。！？!?]*$", "", raw).strip(" 、。！？!?")
+    # A title lookup is often phrased as 「<title>の論文情報を調べて」.  Keep
+    # the title itself, while removing only the request wrapper.  The previous
+    # expression stopped at 論文 and consequently sent the whole instruction
+    # (including 論文情報を調べて) to OpenAlex.
+    title_wrapper = re.search(
+        r"^(?P<title>.+?)\s*(?:の|について|に関する)?\s*論文(?:情報|内容)?"
+        r"(?:を|について|に関して)?(?:\s*\d+件)?\s*(?:探して|調べて|教えて|検索して|探す|検索|情報を教えて)?"
+        r"[。！？!?]*$",
+        raw,
+        re.I,
+    )
+    extracted_title = title_wrapper.group("title").strip() if title_wrapper else ""
+    # Recent/topic requests also match the broad wrapper shape; they are not a
+    # single work title and must retain the existing relevance-ranked behavior.
+    explicit_title_like = arguments.get("title_like")
+    title_like = (bool(explicit_title_like) if explicit_title_like is not None else
+                  bool(extracted_title and not re.search(r"(?:最近|latest|recent|について|に関する)\s*$", extracted_title, re.I)))
+    query = extracted_title if extracted_title and title_like else raw
+    if title_like:
+        query = re.sub(r"(?:について|に関する)?\s*最近(?:の)?$", "", query).strip()
+    query = re.sub(r"(?:について|に関する)?(?:最近の)?論文(?:情報|内容)?(?:を)?(?:\d+件)?(?:探して|調べて|教えて)?[。！？!?]*$", "", query).strip(" 、。！？!?")
     if query.casefold() == "rag": query = "retrieval augmented generation"
     limit_match = re.search(r"(\d+)件", raw)
-    return {"query": query[:500], "limit": min(int(limit_match.group(1)), MAX_RESULTS) if limit_match else 3, **({"recency": "recent"} if recent else {})}
+    # Keep this flag in the typed argument envelope so the provider can apply a
+    # strict title gate only when the user actually asked for a paper title.
+    return {"query": query[:500], "limit": min(int(limit_match.group(1)), MAX_RESULTS) if limit_match else 3,
+            "title_like": title_like, **({"recency": "recent"} if recent else {})}
+
+
+def _openalex_normalize_text(value: Any) -> str:
+    """Normalize Unicode, case, punctuation and whitespace for title matching."""
+    value = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    # Keep letters/numbers from all scripts, but make punctuation a separator.
+    value = re.sub(r"[^\w]+", " ", value, flags=re.UNICODE)
+    return " ".join(value.split())
+
+
+def _openalex_title_match(requested: str, candidate: str) -> tuple[str, float]:
+    requested_key = _openalex_normalize_text(requested)
+    candidate_key = _openalex_normalize_text(candidate)
+    if not requested_key or not candidate_key:
+        return "NONE", 0.0
+    if requested_key == candidate_key:
+        return "EXACT", 1.0
+    requested_tokens = requested_key.split()
+    candidate_tokens = candidate_key.split()
+    overlap = sum(1 for token in requested_tokens if token in candidate_tokens)
+    token_ratio = overlap / max(len(requested_tokens), 1)
+    if overlap == len(requested_tokens) and len(requested_tokens) >= 2:
+        return "STRONG", token_ratio
+    # For scripts without whitespace tokenization, substring evidence is still
+    # provider-observed title evidence; do not use model or external facts.
+    if len(requested_key) >= 8 and requested_key in candidate_key:
+        return "STRONG", len(requested_key) / max(len(candidate_key), len(requested_key))
+    fuzzy = SequenceMatcher(None, requested_key, candidate_key).ratio()
+    return ("STRONG", fuzzy) if fuzzy >= 0.86 and len(requested_tokens) >= 2 else ("NONE", fuzzy)
 
 def normalize_wiki_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     raw = str(arguments.get("query") or "")
@@ -202,6 +255,7 @@ def weather(location: str, date: str | None = None) -> dict[str, Any]:
 
 def currency(base: str, quote: str, amount: float | None = None, date: str | None = None) -> dict[str, Any]:
     base, quote = base.upper(), quote.upper()
+    print(f"CURRENCY_PROVIDER=Frankfurter CURRENCY_BASE={base} CURRENCY_QUOTE={quote} CURRENCY_INPUT_AMOUNT={amount if amount is not None else ''}", file=__import__('sys').stderr, flush=True)
     if not re.fullmatch(r"[A-Z]{3}", base) or not re.fullmatch(r"[A-Z]{3}", quote):
         raise ExternalToolError("INVALID_TOOL_ARGUMENTS")
     if amount is not None and (amount < 0 or amount > 1_000_000_000):
@@ -219,45 +273,103 @@ def currency(base: str, quote: str, amount: float | None = None, date: str | Non
     if not isinstance(payload, dict): raise ExternalToolError("PROVIDER_BAD_RESPONSE")
     try:
         rate = Decimal(str(payload["rate"]))
-        if rate <= 0: raise InvalidOperation
+        if not rate.is_finite() or rate <= 0: raise InvalidOperation
     except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
-        print("FRANKFURTER_PARSE_STAGE=rate_missing_or_invalid", file=__import__('sys').stderr, flush=True)
+        print("FRANKFURTER_PARSE_STAGE=rate_missing_or_invalid PROVIDER_SEMANTIC_STATUS=INVALID_DATA CURRENCY_VALUE_MATCH=NO", file=__import__('sys').stderr, flush=True)
         raise ExternalToolError("PROVIDER_BAD_RESPONSE") from exc
     if payload.get("base") not in (None, base) or payload.get("quote") not in (None, quote):
+        print("PROVIDER_SEMANTIC_STATUS=INVALID_DATA CURRENCY_VALUE_MATCH=NO", file=__import__('sys').stderr, flush=True)
         raise ExternalToolError("PROVIDER_BAD_RESPONSE")
-    decimal_amount = Decimal(str(amount)) if amount is not None else None
+    try:
+        decimal_amount = Decimal(str(amount)) if amount is not None else None
+    except (TypeError, ValueError, InvalidOperation) as exc:
+        print("PROVIDER_SEMANTIC_STATUS=INVALID_DATA CURRENCY_VALUE_MATCH=NO", file=__import__('sys').stderr, flush=True)
+        raise ExternalToolError("INVALID_TOOL_ARGUMENTS") from exc
+    if decimal_amount is not None and (not decimal_amount.is_finite() or decimal_amount < 0):
+        print("PROVIDER_SEMANTIC_STATUS=INVALID_DATA CURRENCY_VALUE_MATCH=NO", file=__import__('sys').stderr, flush=True)
+        raise ExternalToolError("INVALID_TOOL_ARGUMENTS")
     converted = decimal_amount * rate if decimal_amount is not None else None
     data = {"base": base, "quote": quote, "rate": str(rate), "amount": str(decimal_amount) if decimal_amount is not None else None,
             "converted_amount": format(converted.normalize(), "f") if converted is not None else None,
             "rate_date": payload.get("date"), "provider": "Frankfurter", "semantics": "daily reference rate"}
+    print(f"CURRENCY_PROVIDER_RATE={data['rate']} CURRENCY_PROVIDER_CONVERTED_AMOUNT={data.get('converted_amount','')} CURRENCY_VALUE_MATCH=YES", file=__import__('sys').stderr, flush=True)
     return _result("currency.frankfurter", f"{amount or 1:g} {base} to {quote}", data, [{"title": "Frankfurter", "provider": "Frankfurter", "canonical_url": "https://www.frankfurter.app/", "retrieved_at": _now()}])
 
 
-def research(query: str | None = None, doi: str | None = None, limit: int = 3, recency: str | None = None) -> dict[str, Any]:
+def research(query: str | None = None, doi: str | None = None, limit: int = 3,
+             recency: str | None = None, title_like: bool | None = None) -> dict[str, Any]:
     if bool(query) == bool(doi): raise ExternalToolError("INVALID_TOOL_ARGUMENTS")
     limit = max(1, min(int(limit), MAX_RESULTS))
     headers = {"User-Agent": "OLCR/0.6.0 (https://github.com/openai/olcr)"}
     key = os.environ.get("OLCR_OPENALEX_API_KEY", "").strip()
-    candidate_limit = min(max(limit * 4, 5), 20) if recency == "recent" else limit
-    params: dict[str, Any] = {"per-page": candidate_limit}
+    normalized_query = _openalex_normalize_text(query or "")
+    # ``title_like`` comes from the argument compiler.  Direct API callers keep
+    # the historical broad-search behavior unless they explicitly opt in.
+    title_lookup = bool(title_like) and not doi
+    candidate_limit = min(max(limit * (5 if title_lookup else 4), 5), 20) if (recency == "recent" or title_lookup) else limit
     reference_date = datetime.now(timezone.utc).date()
+    base_params: dict[str, Any] = {"per-page": candidate_limit}
     if recency == "recent":
-        # "Recent" is the preceding 24 months through today's UTC date. Fetch a
-        # small relevance-ranked pool, then validate and order candidates locally.
         cutoff = (reference_date - timedelta(days=730)).isoformat()
-        params["filter"] = f"from_publication_date:{cutoff},to_publication_date:{reference_date.isoformat()}"
-    if key: params["api_key"] = key
-    if doi: path, params = "/works/https://doi.org/" + quote(doi, safe=""), ({"api_key": key} if key else {})
-    else: path, params = "/works", params | {"search": " ".join(query.split())[:500]}
-    payload = _request("api.openalex.org", path, params, headers)
-    rows = [payload] if doi else payload.get("results", []) if isinstance(payload, dict) else []
+        base_params["filter"] = f"from_publication_date:{cutoff},to_publication_date:{reference_date.isoformat()}"
+    if key: base_params["api_key"] = key
+
+    # Title searches are deliberately bounded: exact phrase, normalized title,
+    # then one ordinary search.  Stop as soon as provider-observed title/DOI
+    # evidence produces a relevant result.
+    if doi:
+        attempts = [("DOI", None)]
+    elif title_lookup:
+        phrase = " ".join(str(query).split())[:500]
+        attempts = [("TITLE_EXACT", f'"{phrase}"'), ("TITLE_NORMALIZED", normalized_query[:500]), ("GENERAL", phrase)]
+    else:
+        attempts = [("GENERAL", " ".join(str(query).split())[:500])]
+
+    selected_rows: list[dict[str, Any]] = []
+    selection_meta: dict[str, Any] = {"title_match": "NONE", "selection_reason": "NO_RELEVANT_RESULT", "query_mode": attempts[0][0], "raw_result_count": 0}
+    for mode, search_value in attempts:
+        params = dict(base_params)
+        if doi:
+            path = "/works/https://doi.org/" + quote(doi, safe="")
+            params = {"api_key": key} if key else {}
+        else:
+            path = "/works"
+            params["search"] = search_value
+        payload = _request("api.openalex.org", path, params, headers)
+        rows = [payload] if doi and isinstance(payload, dict) else (payload.get("results", []) if isinstance(payload, dict) and isinstance(payload.get("results", []), list) else [])
+        selection_meta["raw_result_count"] += len(rows)
+        candidates: list[tuple[float, dict[str, Any], str, str]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "")
+            title_match, title_score = _openalex_title_match(str(query or ""), title)
+            row_doi = str(row.get("doi") or "").casefold().rstrip("/")
+            requested_doi = str(doi or "").casefold().rstrip("/")
+            doi_match = bool(doi and row_doi and (row_doi == requested_doi or requested_doi in row_doi or row_doi in requested_doi))
+            if title_lookup and title_match == "NONE":
+                continue
+            if doi and not doi_match and row.get("id") != doi:
+                continue
+            relevance = row.get("relevance_score")
+            try: relevance_score = float(relevance) if relevance is not None else 0.0
+            except (TypeError, ValueError): relevance_score = 0.0
+            reason = "DOI_MATCH" if doi_match else ("TITLE_EXACT_MATCH" if title_match == "EXACT" else "TITLE_STRONG_MATCH" if title_match == "STRONG" else "SEARCH_RELEVANCE")
+            score = (4.0 if doi_match else 0.0) + (3.0 if title_match == "EXACT" else 2.0 if title_match == "STRONG" else 0.0) + relevance_score
+            candidates.append((score, row, title_match, reason))
+        if candidates:
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            selected_rows = [item[1] for item in candidates]
+            best = candidates[0]
+            selection_meta.update({"query_mode": mode, "title_match": "DOI" if doi else best[2], "selection_reason": best[3]})
+            break
+
     works = []
     seen_titles: set[str] = set()
     query_terms = [term for term in re.findall(r"[a-z0-9]+", (query or "").casefold()) if len(term) > 2]
-    for row in rows:
-        if not isinstance(row, dict): continue
+    for row in selected_rows:
         title = str(row.get("title") or "")
-        title_key = re.sub(r"\W+", "", title.casefold())
+        title_key = _openalex_normalize_text(title)
         publication_date = str(row.get("publication_date") or "")
         work_type = str(row.get("type") or "").casefold()
         if recency == "recent":
@@ -265,19 +377,37 @@ def research(query: str | None = None, doi: str | None = None, limit: int = 3, r
             except ValueError: continue
             if not (reference_date - timedelta(days=730) <= candidate_date <= reference_date): continue
             if work_type in {"dataset", "software", "component", "other"}: continue
-            # OpenAlex search ranking is primary; require observable title-level
-            # topic evidence so unrelated acronym collisions cannot fill the quota.
             title_terms = set(re.findall(r"[a-z0-9]+", title.casefold()))
-            if not any(term in title_terms for term in query_terms) and "rag" not in title_terms: continue
+            if not title_lookup and not any(term in title_terms for term in query_terms) and "rag" not in title_terms: continue
         if not title_key or title_key in seen_titles: continue
         seen_titles.add(title_key)
         authors = [a.get("author", {}).get("display_name") for a in row.get("authorships", [])[:8] if isinstance(a, dict) and a.get("author", {}).get("display_name")]
         source = (row.get("primary_location") or {}).get("source") or {}
-        works.append({"openalex_id": row.get("id"), "title": title, "publication_year": row.get("publication_year"), "publication_date": publication_date or None, "authors": authors, "source": source.get("display_name"), "doi": row.get("doi"), "open_access": (row.get("open_access") or {}).get("is_oa"), "url": row.get("doi") or row.get("id")})
+        title_match, title_score = _openalex_title_match(str(query or ""), title)
+        works.append({"openalex_id": row.get("id"), "title": title, "publication_year": row.get("publication_year"), "publication_date": publication_date or None, "authors": authors, "source": source.get("display_name"), "doi": row.get("doi"), "open_access": (row.get("open_access") or {}).get("is_oa"), "url": row.get("doi") or row.get("id"), "title_match": "DOI" if doi else title_match, "title_match_score": round(title_score, 4), "relevance_score": row.get("relevance_score")})
     if recency == "recent": works.sort(key=lambda work: work.get("publication_date") or "", reverse=True)
     works = works[:limit]
-    if not works: raise ExternalToolError("RESEARCH_NOT_FOUND")
-    return _result("research.openalex", doi or query or "", {"works": works, "authentication": "key_configured" if key else "keyless", "recency": recency, "recency_policy": "previous_24_months_newest_first" if recency == "recent" else None}, [{"title": "OpenAlex", "provider": "OpenAlex", "canonical_url": "https://openalex.org/", "retrieved_at": _now()}])
+    selection_meta["relevant_result_count"] = len(works)
+    semantic_status = "DATA" if works else ("NO_RELEVANT_RESULT" if title_lookup else "EMPTY")
+    # Preserve the established exception contract for broad searches.  A title
+    # lookup is different: an HTTP-successful but unrelated pool is a typed
+    # semantic NO_RELEVANT_RESULT so the UI cannot display those titles.
+    if not works and not title_lookup:
+        raise ExternalToolError("RESEARCH_NOT_FOUND")
+    selection_meta["selected_title"] = works[0].get("title") if works else None
+    selection_meta["semantic_status"] = semantic_status
+    log_selection_meta = {**selection_meta, "selected_title": selection_meta.get("selected_title") or "NONE"}
+    print("OPENALEX_QUERY_MODE={query_mode} OPENALEX_NORMALIZED_QUERY={normalized_query} "
+          "OPENALEX_RAW_RESULT_COUNT={raw_result_count} OPENALEX_RELEVANT_RESULT_COUNT={relevant_result_count} "
+          "OPENALEX_SELECTED_TITLE={selected_title} OPENALEX_TITLE_MATCH={title_match} "
+          "OPENALEX_SELECTION_REASON={selection_reason} OPENALEX_SEMANTIC_STATUS={semantic_status}".format(
+              normalized_query=normalized_query or "NONE", **log_selection_meta),
+          file=__import__('sys').stderr, flush=True)
+    data = {"works": works, "authentication": "key_configured" if key else "keyless", "recency": recency,
+            "recency_policy": "previous_24_months_newest_first" if recency == "recent" else None,
+            "normalized_query": normalized_query, **selection_meta}
+    return _result("research.openalex", doi or query or "", data,
+                   [{"title": "OpenAlex", "provider": "OpenAlex", "canonical_url": "https://openalex.org/", "retrieved_at": _now()}])
 
 
 def wiki(query: str, language: str = "ja", limit: int = 3) -> dict[str, Any]:
@@ -355,6 +485,43 @@ _EXT = {
  "language.translation":("MyMemory","none","public"), "visualization.chart":("QuickChart","none","public"),
  "government.us_federal_register":("Federal Register","none","public"), "math.symbolic":("SymPy","none","local"), "math.numeric":("SciPy","none","local"),
 }
+
+# First-class providers added in the external-API expansion.  They all use the
+# same bounded HTTP/result envelope as the existing extended providers.
+_NEW_EXT = {
+ "calendar.public_holidays": ("Nager.Date", "none", "public"),
+ "space.launches": ("Launch Library 2", "none", "public"),
+ "space.space_weather": ("NOAA SWPC", "none", "public"),
+ "space.satellite_orbit": ("CelesTrak GP Data", "none", "public"),
+ "space.ephemeris": ("JPL Horizons", "none", "public"),
+ "space.iss_position": ("Where The ISS At", "none", "public"),
+ "space.exoplanets": ("NASA Exoplanet Archive", "none", "public"),
+ "news.global_search": ("GDELT DOC 2.0", "none", "public"),
+ "finance.sec_filings": ("SEC EDGAR", "required", "public"),
+ "japan.diet_transcript": ("国会会議録検索API", "none", "public"),
+ "japan.law": ("e-Gov 法令API", "none", "public"),
+ "geo.elevation": ("国土地理院", "none", "public"),
+ "earth.streamflow": ("USGS Water Data", "none", "public"),
+ "biology.occurrence": ("GBIF", "none", "public"),
+ "biology.phylogeny": ("Open Tree of Life", "none", "public"),
+ "biology.structure": ("RCSB PDB", "none", "public"),
+ "biology.protein": ("UniProt", "none", "public"),
+ "security.cve": ("CVE Services", "none", "public"),
+ "security.exploit_probability": ("FIRST EPSS", "none", "public"),
+ "crypto.bitcoin_network": ("mempool.space", "none", "public"),
+ "internet.domain_registration": ("RDAP", "none", "public"),
+ "internet.ip_info": ("ipwho.is", "none", "public"),
+ "media.tv": ("TVmaze", "none", "public"),
+ "games.pokemon": ("PokéAPI", "none", "public"),
+ "games.trivia": ("Open Trivia DB", "none", "public"),
+ "food.recipe": ("TheMealDB", "none", "public"),
+ "art.met_collection": ("Metropolitan Museum Collection API", "none", "public"),
+ "games.pc_deals": ("CheapShark", "none", "public"),
+ "games.chess": ("Chess.com PubAPI", "none", "public"),
+ "sports.formula1": ("Jolpica F1", "none", "public"),
+}
+_EXT.update(_NEW_EXT)
+NEW_TOOL_IDS = frozenset(_NEW_EXT)
 for _id, (_provider, _cred, _mode) in _EXT.items():
     REGISTRY[_id] = ToolDefinition(_id, _provider, "Structured read-only provider", _cred, _mode, TIMEOUT, _mode != "local")
 
@@ -372,6 +539,7 @@ _CAPABILITIES = {
     "visualization.chart": "visualization.chart", "government.us_federal_register": "government.us_federal_register",
     "math.symbolic": "math.symbolic", "math.numeric": "math.numeric",
 }
+_CAPABILITIES.update({tool_id: tool_id for tool_id in _NEW_EXT})
 
 # Provider argument compilation is intentionally deterministic.  The router may
 # suggest a tool, but it must never be allowed to hand an entire natural-language
@@ -430,6 +598,39 @@ def _extract_years(text: str) -> tuple[int | None, int | None]:
     return (int(match.group(1)), int(match.group(2))) if match else (None, None)
 
 
+def _extract_ip(text: str) -> str | None:
+    match = re.search(r"(?:\d{1,3}\.){3}\d{1,3}", text)
+    if not match:
+        return None
+    parts = match.group(0).split(".")
+    return match.group(0) if all(0 <= int(part) <= 255 for part in parts) else None
+
+
+def _extract_domain(text: str) -> str | None:
+    match = re.search(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", text, re.I)
+    return match.group(0).lower().rstrip(".") if match else None
+
+
+def _extract_cve(text: str) -> str | None:
+    match = re.search(r"(?<![A-Z0-9])CVE-\d{4}-\d{4,7}(?![A-Z0-9])", text, re.I)
+    return match.group(0).upper() if match else None
+
+
+def _extract_year(text: str, default: int | None = None) -> int | None:
+    match = re.search(r"(20\d{2})(?:年|\b)", text)
+    return int(match.group(1)) if match else default
+
+
+def _extract_coordinates(text: str) -> tuple[float, float] | None:
+    match = re.search(r"(-?\d+(?:\.\d+)?)\s*[,、 ]\s*(-?\d+(?:\.\d+)?)", text)
+    if not match:
+        return None
+    lat, lon = float(match.group(1)), float(match.group(2))
+    if -90 <= lat <= 90 and -180 <= lon <= 180:
+        return lat, lon
+    return None
+
+
 def _extract_countries(text: str) -> list[str]:
     names = {"日本": "JP", "ドイツ": "DE", "米国": "US", "アメリカ": "US", "カナダ": "CA", "フランス": "FR", "英国": "GB", "イギリス": "GB", "中国": "CN"}
     values = [code for name, code in names.items() if name in text]
@@ -457,7 +658,7 @@ def compile_provider_arguments(tool_id: str, user_text: str, arguments: dict[str
         if args.get("doi"):
             result = {"doi": _compact(args["doi"], 200)}
         else:
-            result = normalize_research_arguments({"query": args.get("query") if args.get("query") and args.get("query") != text else text, "recency": args.get("recency")})
+            result = normalize_research_arguments({"query": args.get("query") if args.get("query") and args.get("query") != text else text, "recency": args.get("recency"), "title_like": args.get("title_like")})
     elif tool_id == "knowledge.wikimedia":
         query = args.get("query") if args.get("query") and args.get("query") != text else text
         result = normalize_wiki_arguments({"query": query, "language": args.get("language")})
@@ -584,6 +785,92 @@ def compile_provider_arguments(tool_id: str, user_text: str, arguments: dict[str
         expression = re.sub(r"^(?:[問題式]+)\s*", "", expression).strip()
         if not expression or not re.search(r"[A-Za-z0-9]", expression): raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
         result = {"operation": operation, "expression": expression}
+    elif tool_id == "calendar.public_holidays":
+        country = str(args.get("country_code") or next(iter(_extract_countries(text)), "JP")).upper()
+        if not re.fullmatch(r"[A-Z]{2}", country): raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"country_code": country, "year": _extract_year(text, datetime.now(timezone.utc).year), "date": args.get("date"), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "space.launches":
+        result = {"limit": _limit_from_text(text, 3), "upcoming": True}
+    elif tool_id == "space.space_weather":
+        result = {"metric": "kp" if re.search(r"Kp|地磁気|geomagnetic", text, re.I) else "latest"}
+    elif tool_id == "space.satellite_orbit":
+        norad = re.search(r"\b\d{4,7}\b", text)
+        name = _compact(args.get("name")) if args.get("name") else re.sub(r"(?:衛星|satellite|TLE|軌道|を調べて|調べて)", "", text, flags=re.I).strip(" 、")
+        result = {"norad_id": norad.group(0) if norad else args.get("norad_id"), "name": name or "ISS"}
+    elif tool_id == "space.ephemeris":
+        result = {"target": _compact(args.get("target") or re.sub(r"(?:位置|天体|エフェメリス|を調べて|調べて)", "", text, flags=re.I), 80), "epoch": args.get("epoch") or datetime.now(timezone.utc).isoformat()}
+    elif tool_id == "space.iss_position":
+        result = {}
+    elif tool_id == "space.exoplanets":
+        target = _compact(args.get("target") or re.sub(r"(?:系外惑星|exoplanets?|を調べて|調べて)", "", text, flags=re.I), 120)
+        result = {"target": target or None, "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "news.global_search":
+        query = _compact(args.get("query")) if args.get("query") and args.get("query") != text else _compact(re.sub(r"(?:世界のニュース|ニュース|最近|最新|世界|の|を調べて|調べて|検索して)", " ", text, flags=re.I), 180)
+        if not query: query = "world news"
+        result = {"query": query, "timespan": args.get("timespan", "7d"), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "finance.sec_filings":
+        company = _compact(args.get("company") or re.sub(r"(?:最新|10-[KQ]|8-K|SEC|提出書類|を調べて|調べて|の)", " ", text, flags=re.I), 120)
+        known_cik = {"apple": "0000320193", "microsoft": "0000789019", "amazon": "0001018724", "alphabet": "0001652044"}
+        result = {"company": company or args.get("cik"), "cik": args.get("cik") or known_cik.get(company.casefold()), "form": args.get("form") or ("10-Q" if re.search(r"10-Q", text, re.I) else "10-K" if re.search(r"10-K", text, re.I) else None), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "japan.diet_transcript":
+        result = {"query": _compact(args.get("query") or re.sub(r"(?:国会会議録|発言|で|を調べて|調べて|検索して)", " ", text, flags=re.I), 200), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "japan.law":
+        result = {"query": _compact(args.get("query") or re.sub(r"(?:法令|法律|条文|の|を調べて|調べて|検索して)", " ", text, flags=re.I), 160), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "geo.elevation":
+        coords = _extract_coordinates(text) or (args.get("latitude"), args.get("longitude"))
+        if not coords or coords[0] is None or coords[1] is None: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"latitude": float(coords[0]), "longitude": float(coords[1])}
+    elif tool_id == "earth.streamflow":
+        result = {"station": _compact(args.get("station") or re.search(r"\b\d{8,15}\b", text).group(0) if re.search(r"\b\d{8,15}\b", text) else "", 20), "days": 1}
+        if not result["station"]: result["station"] = args.get("station") or ""
+    elif tool_id == "biology.occurrence":
+        result = {"scientificName": _compact(args.get("scientificName") or re.sub(r"(?:生物|標本|出現記録|を調べて|調べて|検索して)", "", text, flags=re.I), 120), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "biology.phylogeny":
+        taxa = args.get("taxa") if isinstance(args.get("taxa"), list) else re.findall(r"[A-Z][a-z]+", text)
+        result = {"taxa": list(dict.fromkeys(taxa))[:5]}
+    elif tool_id == "biology.structure":
+        pdb = re.search(r"\b[0-9][A-Za-z0-9]{3}\b", text)
+        result = {"pdb_id": (pdb.group(0).upper() if pdb else args.get("pdb_id"))}
+        if not result["pdb_id"]: result["query"] = _compact(args.get("query") or text, 120)
+    elif tool_id == "biology.protein":
+        accession = re.search(r"\b[A-Z][A-Z0-9]{5,9}\b", text)
+        result = {"accession": accession.group(0) if accession else args.get("accession"), "query": _compact(args.get("query") or text, 120)}
+    elif tool_id == "security.cve":
+        cve = _extract_cve(text) or args.get("cve")
+        if not cve: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"cve": cve}
+    elif tool_id == "security.exploit_probability":
+        cve = _extract_cve(text) or args.get("cve")
+        if not cve: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"cve": cve}
+    elif tool_id == "crypto.bitcoin_network":
+        result = {"metric": "fees" if re.search(r"fee|手数料", text, re.I) else "mempool"}
+    elif tool_id == "internet.domain_registration":
+        domain = _extract_domain(text) or args.get("domain")
+        if not domain: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"domain": domain}
+    elif tool_id == "internet.ip_info":
+        ip = _extract_ip(text) or args.get("ip")
+        if not ip: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"ip": ip}
+    elif tool_id == "media.tv":
+        result = {"query": _compact(args.get("query") or re.sub(r"(?:テレビ|番組|エピソード|スケジュール|を調べて|調べて)", "", text, flags=re.I), 120), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "games.pokemon":
+        name = _compact(args.get("name") or re.sub(r"(?:ポケモン|タイプ|能力値|を調べて|調べて)", "", text, flags=re.I), 80).strip(" のと")
+        if not name: raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
+        result = {"name": name}
+    elif tool_id == "games.trivia":
+        result = {"amount": _limit_from_text(text, 1), "difficulty": args.get("difficulty"), "category": args.get("category"), "type": args.get("type", "multiple")}
+    elif tool_id == "food.recipe":
+        result = {"query": _compact(args.get("query") or re.sub(r"(?:レシピ|料理|を使った|を探して|探して)", "", text, flags=re.I), 120), "limit": _limit_from_text(text, 3)}
+    elif tool_id == "art.met_collection":
+        result = {"query": _compact(args.get("query") or re.sub(r"(?:美術館|作品|アート|を調べて|調べて)", "", text, flags=re.I), 120), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "games.pc_deals":
+        result = {"title": _compact(args.get("title") or re.sub(r"(?:PCゲーム|価格|セール|最安値|を調べて|調べて)", "", text, flags=re.I), 120), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "games.chess":
+        result = {"username": _compact(args.get("username") or re.sub(r"(?:Chess\.com|チェス|レーティング|対局|を調べて|調べて)", "", text, flags=re.I), 80), "limit": _limit_from_text(text, MAX_RESULTS)}
+    elif tool_id == "sports.formula1":
+        result = {"season": _extract_year(text, "current"), "driver": args.get("driver"), "limit": _limit_from_text(text, MAX_RESULTS)}
     print(f"TOOL_ARGUMENT_COMPILER={tool_id} TOOL_ARGUMENTS_VALID=YES", file=sys.stderr, flush=True)
     return result
 
@@ -613,6 +900,12 @@ def _external_result(tool_id: str, query: str, payload: Any, url: str, warnings:
         items = payload.get(item_key) if item_key else None
         data = {"query": query, "items": items[:MAX_RESULTS] if isinstance(items, list) else None,
                 "raw_metadata": metadata(payload), "truncated": bool(isinstance(items, list) and len(items) > MAX_RESULTS)}
+        # Preserve bounded scalar provider evidence (coordinates, timestamps,
+        # scores, identifiers) for deterministic renderers without exposing the
+        # raw response envelope.
+        for key, value in list(payload.items())[:40]:
+            if key not in data and isinstance(value, (str, int, float, bool)):
+                data[str(key)] = value
     elif isinstance(payload, list): data = {"query": query, "items": payload[:MAX_RESULTS], "truncated": len(payload) > MAX_RESULTS}
     else: data = {"query": query, "value": payload}
     if isinstance(payload, dict):
@@ -630,6 +923,33 @@ def _external_result(tool_id: str, query: str, payload: Any, url: str, warnings:
 
 def _get(tool_id: str, host: str, path: str, params: dict[str, Any], query: str, url: str, headers: dict[str, str] | None = None, warnings: list[str] | None = None) -> dict[str, Any]:
     return _external_result(tool_id, query, _request(host, path, params, headers), url, warnings)
+
+
+def _new_relevance_result(tool_id: str, query: str, payload: Any, url: str) -> dict[str, Any]:
+    """Apply a conservative provider-field relevance gate to search APIs."""
+    if not isinstance(payload, dict):
+        return _external_result(tool_id, query, payload, url)
+    key = _openalex_normalize_text(query)
+    terms = [term for term in key.split() if len(term) > 2]
+    list_key = next((name for name in ("results", "data", "docs", "hits", "items", "meals", "response", "documents", "articles") if isinstance(payload.get(name), list)), None)
+    if not list_key or not terms:
+        return _external_result(tool_id, query, payload, url)
+    rows = payload.get(list_key) or []
+    relevant = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        evidence = _openalex_normalize_text(" ".join(str(row.get(field, "")) for field in ("title", "name", "localName", "scientificName", "species", "snippet", "description", "show", "game", "team", "driver")))
+        if any(term in evidence for term in terms) or key in evidence:
+            relevant.append(row)
+    normalized_payload = dict(payload)
+    normalized_payload[list_key] = relevant[:MAX_RESULTS]
+    result = _external_result(tool_id, query, normalized_payload, url)
+    result["data"]["raw_result_count"] = len(rows)
+    result["data"]["relevant_result_count"] = len(relevant)
+    if rows and not relevant:
+        result["data"]["semantic_status"] = "NO_RELEVANT_RESULT"
+    return result
 
 def _code(value: Any) -> str:
     value = _text(value, 80).upper()
@@ -852,8 +1172,47 @@ def _simple_http(tool_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
       "language.translation":("api.mymemory.translated.net","/get",{"q":q,"langpair":f"{arguments.get('source','en')}|{arguments.get('target','ja')}"},"https://mymemory.translated.net/"),
       "government.us_federal_register":("www.federalregister.gov","/api/v1/documents.json",{"per_page":n,"conditions[term]":q,"type":arguments.get("type")},"https://www.federalregister.gov/"),
     }
+    # Provider-specific bounded endpoints for the 30 first-class APIs.
+    specs.update({
+      "calendar.public_holidays": ("date.nager.at", f"/api/v3/PublicHolidays/{int(arguments.get('year') or datetime.now(timezone.utc).year)}/{_code(arguments.get('country_code','JP'))}", {}, "https://date.nager.at/"),
+      "space.launches": ("ll.thespacedevs.com", "/2.2.0/launch/upcoming/", {"limit": n, "mode": "detailed"}, "https://thespacedevs.com/llapi"),
+      "space.space_weather": ("services.swpc.noaa.gov", "/products/noaa-planetary-k-index.json", {}, "https://www.swpc.noaa.gov/"),
+      "space.satellite_orbit": ("celestrak.org", "/NORAD/elements/gp.php", {"NAME": arguments.get("name", "ISS"), "FORMAT": "json"}, "https://celestrak.org/"),
+      "space.ephemeris": ("ssd.jpl.nasa.gov", "/api/horizons.api", {"format": "json", "COMMAND": f"'{arguments.get('target','Sun')}'", "EPHEM_TYPE": "VECTORS", "CENTER": "500@399", "START_TIME": arguments.get("epoch"), "STOP_TIME": arguments.get("epoch"), "STEP_SIZE": "1 d"}, "https://ssd.jpl.nasa.gov/horizons/"),
+      "space.iss_position": ("api.wheretheiss.at", "/v1/satellites/25544", {}, "https://wheretheiss.at/"),
+      "space.exoplanets": ("exoplanetarchive.ipac.caltech.edu", "/TAP/sync", {"query": "select top 5 pl_name,hostname,pl_orbper,pl_rade from ps" + (f" where pl_name like '%{str(arguments.get('target')).replace(chr(39),'') }%'" if arguments.get("target") else ""), "format": "json"}, "https://exoplanetarchive.ipac.caltech.edu/"),
+      "news.global_search": ("api.gdeltproject.org", "/api/v2/doc/doc", {"query": q, "mode": "artlist", "maxrecords": n, "format": "json", "timespan": arguments.get("timespan", "7d")}, "https://www.gdeltproject.org/"),
+      "finance.sec_filings": ("data.sec.gov", "/submissions/CIK" + re.sub(r"\D", "", str(arguments.get("cik", ""))).zfill(10) + ".json", {"form": arguments.get("form")}, "https://www.sec.gov/edgar"),
+      "japan.diet_transcript": ("kokkai.ndl.go.jp", "/api/speech", {"any": q, "maximumRecords": n, "recordPacking": "json"}, "https://kokkai.ndl.go.jp/"),
+      "japan.law": ("laws.e-gov.go.jp", "/api/2/lawlists/1", {"limit": n}, "https://laws.e-gov.go.jp/"),
+      "geo.elevation": ("cyberjapandata.gsi.go.jp", "/cgi-bin/elevation/elevation.php", {"lon": float(arguments.get("longitude") or 0), "lat": float(arguments.get("latitude") or 0), "outtype": "JSON"}, "https://maps.gsi.go.jp/development/elevation_s.html"),
+      "earth.streamflow": ("waterservices.usgs.gov", "/nwis/iv/", {"format": "json", "sites": arguments.get("station"), "period": "P1D", "parameterCd": "00060"}, "https://waterdata.usgs.gov/"),
+      "biology.occurrence": ("api.gbif.org", "/v1/occurrence/search", {"scientificName": arguments.get("scientificName") or q, "limit": n}, "https://www.gbif.org/"),
+      "biology.phylogeny": ("api.opentreeoflife.org", "/v3/tnrs/match_names", {"names": json.dumps(arguments.get("taxa") or [q]), "do_approximate_matching": "true"}, "https://tree.opentreeoflife.org/"),
+      "biology.structure": ("data.rcsb.org", f"/rest/v1/core/entry/{str(arguments.get('pdb_id') or '1CRN').upper()}", {}, "https://www.rcsb.org/"),
+      "biology.protein": ("rest.uniprot.org", "/uniprotkb/search", {"query": "accession:" + str(arguments.get("accession")) if arguments.get("accession") else q, "format": "json", "size": n}, "https://www.uniprot.org/"),
+      "security.cve": ("cveawg.mitre.org", "/api/cve/" + str(arguments.get("cve", "")), {}, "https://www.cve.org/"),
+      "security.exploit_probability": ("api.first.org", "/data/v1/epss", {"cve": arguments.get("cve")}, "https://www.first.org/epss/"),
+      "crypto.bitcoin_network": ("mempool.space", "/api/v1/fees/recommended" if arguments.get("metric") == "fees" else "/api/mempool", {}, "https://mempool.space/"),
+      "internet.domain_registration": ("rdap.org", "/domain/" + str(arguments.get("domain", "")), {}, "https://rdap.org/"),
+      "internet.ip_info": ("ipwho.is", "/" + str(arguments.get("ip", "")), {}, "https://ipwho.is/"),
+      "media.tv": ("api.tvmaze.com", "/search/shows", {"q": q, "limit": n}, "https://www.tvmaze.com/api"),
+      "games.pokemon": ("pokeapi.co", "/api/v2/pokemon/" + quote(str(arguments.get("name", "pikachu")).lower(), safe=""), {}, "https://pokeapi.co/"),
+      "games.trivia": ("opentdb.com", "/api.php", {"amount": int(arguments.get("amount", 1)), "type": arguments.get("type", "multiple")}, "https://opentdb.com/"),
+      "food.recipe": ("www.themealdb.com", "/api/json/v1/1/search.php", {"s": q}, "https://www.themealdb.com/"),
+      "art.met_collection": ("collectionapi.metmuseum.org", "/public/collection/v1/search", {"q": q, "hasImages": "true"}, "https://metmuseum.github.io/"),
+      "games.pc_deals": ("www.cheapshark.com", "/api/1.0/deals", {"title": q, "pageSize": n}, "https://www.cheapshark.com/"),
+      "games.chess": ("api.chess.com", "/pub/player/" + quote(str(arguments.get("username", q)).lower(), safe="") + "/stats", {}, "https://www.chess.com/news/view/published-data-api"),
+      "sports.formula1": ("api.jolpi.ca", "/ergast/f1/current/driverstandings.json", {"limit": n}, "https://jolpi.ca/"),
+    })
     if tool_id not in specs: raise ExternalToolError("INVALID_TOOL_ARGUMENTS")
     host,path,params,url=specs[tool_id]
+    if tool_id == "finance.sec_filings":
+        identity = os.environ.get("OLCR_SEC_USER_AGENT", "").strip()
+        if not identity:
+            raise ExternalToolError("CONFIG_REQUIRED")
+        payload = _request(host, path, params, {"User-Agent": identity, "Accept-Encoding": "gzip, deflate"})
+        return _external_result(tool_id, q, payload, url, warnings=["sec_identity_configured"])
     if tool_id == "earth.earthquake" and str(arguments.get("query", "")).casefold() == "worldwide":
         # USGS treats a free-text ``q`` as a place/event search.  Worldwide
         # magnitude queries should omit it and rely on the typed time/window
@@ -970,7 +1329,10 @@ def _simple_http(tool_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
             normalized.update({"result_kind": "object", "has_payload": True, "item_count": 1, "evidence_field_count": len(evidence_fields), "semantic_status": "DATA"})
             return _result(tool_id, q, normalized, [{"title": REGISTRY[tool_id].provider, "provider": REGISTRY[tool_id].provider, "canonical_url": url, "retrieved_at": _now()}], warnings)
         return _external_result(tool_id, q, payload, url, warnings)
-    return _get(tool_id,host,path,params,q,url,warnings=warnings)
+    payload = _request(host, path, params)
+    if tool_id in {"news.global_search", "japan.diet_transcript", "japan.law", "biology.occurrence", "biology.protein", "media.tv", "food.recipe", "art.met_collection", "games.pc_deals", "games.chess", "sports.formula1"}:
+        return _new_relevance_result(tool_id, q, payload, url)
+    return _external_result(tool_id, q, payload, url, warnings)
 
 def _github(arguments):
     repo=_text(arguments.get("repo"),200).removeprefix("https://github.com/").strip("/")
@@ -1086,6 +1448,11 @@ def route(text: str) -> tuple[str, dict[str, Any]] | None:
         return "visualization.chart", {"config": {"type": "bar", "data": {"labels": [], "datasets": []}}}
     if re.search(r"(?:world bank|世界銀行|GDP|国内総生産)", value, re.I) and re.search(r"(?:比較|推移|年|country|国)", value, re.I):
         return "statistics.world_bank", {"indicator": "NY.GDP.MKTP.CD"}
+    # High-signal new providers must run before broad legacy keywords such as
+    # weather or the generic CVE route.
+    if re.search(r"(?:space weather|宇宙天気|Kp指数|太陽風|オーロラ)", value, re.I): return "space.space_weather", {"query": value}
+    if re.search(r"(?:EPSS|exploit probability|悪用確率)", value, re.I): return "security.exploit_probability", {"query": value}
+    if re.search(r"(?:PokéAPI|Pokemon|ポケモン|ピカチュウ|リザードン)", value, re.I): return "games.pokemon", {"query": value}
     # Preserve existing high-confidence routes first.
     if re.search(r"(?:天気|weather|気温|予報|雨|晴れ)", value, re.I): return "weather.open_meteo", normalize_weather_arguments({"location":value})
     cur=re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(ドル|ユーロ|円|ポンド)\s*(?:は|を)?(?:今)?\s*(?:何)?(円|ドル|ユーロ|ポンド)",value)
@@ -1097,6 +1464,41 @@ def route(text: str) -> tuple[str, dict[str, Any]] | None:
     if re.search(r"wikidata", lower) and re.search(r"(?:とは何|what is|意味|説明)", lower): return None
     if re.search(r"(?:oecd|経済協力開発機構)", lower):
         return "statistics.oecd", {"query": value}
+    new_rules = [
+      (r"(?:nager|祝日|休日|祝祭日)", "calendar.public_holidays"),
+      (r"(?:launch library|ロケット.*(?:打ち上げ|発射)|打ち上げ予定)", "space.launches"),
+      (r"(?:space weather|宇宙天気|Kp指数|太陽風|オーロラ)", "space.space_weather"),
+      (r"(?:celestrak|TLE|NORAD|衛星.*軌道)", "space.satellite_orbit"),
+      (r"(?:JPL Horizons|エフェメリス|天体.*位置)", "space.ephemeris"),
+      (r"(?:ISS|国際宇宙ステーション).*(?:位置|緯度|経度|高度)|where the iss", "space.iss_position"),
+      (r"(?:exoplanet|系外惑星|TESS)", "space.exoplanets"),
+      (r"(?:GDELT|世界のニュース|国際ニュース)", "news.global_search"),
+      (r"(?:SEC|EDGAR|10-[KQ]|8-K|有価証券報告書)", "finance.sec_filings"),
+      (r"(?:国会会議録|国会.*発言|diet transcript)", "japan.diet_transcript"),
+      (r"(?:e-Gov|法令|条文|法律)", "japan.law"),
+      (r"(?:標高|国土地理院|elevation)", "geo.elevation"),
+      (r"(?:USGS Water|河川.*流量|水位|streamflow)", "earth.streamflow"),
+      (r"(?:GBIF|生物.*出現|標本.*記録|occurrence)", "biology.occurrence"),
+      (r"(?:Open Tree|系統樹|共通祖先|phylogeny)", "biology.phylogeny"),
+      (r"(?:RCSB|PDB|タンパク質.*構造|structure)", "biology.structure"),
+      (r"(?:UniProt|protein|タンパク質.*機能)", "biology.protein"),
+      (r"(?:CVE-\d{4}-|CVE.*脆弱性|vulnerability)", "security.cve"),
+      (r"(?:EPSS|exploit probability|悪用確率)", "security.exploit_probability"),
+      (r"(?:mempool|Bitcoin.*(?:手数料|ネットワーク)|ビットコイン.*(?:手数料|メンプール))", "crypto.bitcoin_network"),
+      (r"(?:RDAP|ドメイン登録|domain registration)", "internet.domain_registration"),
+      (r"(?:ipwho|IP情報|IPアドレス.*(?:位置|地理))", "internet.ip_info"),
+      (r"(?:TVmaze|テレビ番組|TV show|エピソード)", "media.tv"),
+      (r"(?:PokéAPI|Pokemon|ポケモン)", "games.pokemon"),
+      (r"(?:Open Trivia|トリビア|クイズ)", "games.trivia"),
+      (r"(?:TheMealDB|レシピ|料理.*(?:作り方|材料))", "food.recipe"),
+      (r"(?:Metropolitan Museum|メトロポリタン美術館|美術作品)", "art.met_collection"),
+      (r"(?:CheapShark|PCゲーム.*(?:価格|セール)|ゲーム.*最安値)", "games.pc_deals"),
+      (r"(?:Chess\.com|チェス.*(?:レーティング|対局))", "games.chess"),
+      (r"(?:Jolpica|Formula 1|F1.*(?:順位|結果|スケジュール)|F1)", "sports.formula1"),
+    ]
+    for pattern, tool_id in new_rules:
+        if re.search(pattern, value, re.I):
+            return tool_id, {"query": value}
     rules=[
       (r"(?:wikidata|歴代.*(?:首相|大統領)|最年少.*(?:首相|大統領)|(?:EU|ＥＵ).*(?:加盟国|人口).*(?:1000|1,?000|人口の多い順))", "knowledge.wikidata", {"query":value}),
       (r"(?:pm\s*2\.?5|air quality|空気質|大気汚染)", "environment.air_quality", {"location":value}),
@@ -1156,11 +1558,12 @@ def status(enabled: bool) -> list[dict[str, Any]]:
     rows = []
     for item in REGISTRY.values():
         local_ready = item.tool_id != "math.numeric" or importlib.util.find_spec("scipy") is not None
-        available = local_ready and (enabled or not item.external)
+        config_required = item.tool_id == "finance.sec_filings" and not os.environ.get("OLCR_SEC_USER_AGENT", "").strip()
+        available = local_ready and not config_required and (enabled or not item.external)
         rows.append({"tool_id": item.tool_id, "provider_id": item.tool_id, "provider": item.provider,
-            "availability": "READY" if available else ("DISABLED" if item.external and not enabled else "UNAVAILABLE"),
+            "availability": "CONFIG_REQUIRED" if config_required else "READY" if available else ("DISABLED" if item.external and not enabled else "UNAVAILABLE"),
             "external_authorized": enabled if item.external else True,
-            "credential": ("Configured" if item.tool_id == "software.github" and os.environ.get("OLCR_GITHUB_TOKEN") else item.credential_requirement),
+            "credential": ("Configured" if item.tool_id == "software.github" and os.environ.get("OLCR_GITHUB_TOKEN") else "Configured" if item.tool_id == "finance.sec_filings" and os.environ.get("OLCR_SEC_USER_AGENT") else item.credential_requirement),
             "endpoint_mode": item.endpoint_mode, "capabilities": _CAPABILITIES.get(item.tool_id, item.tool_id),
             "execution_type": "HTTP_GET" if item.external else "LOCAL_TOOL", "requires_auth": item.credential_requirement != "none",
             "external_network": item.external, "data_externalization": "query_only" if item.external else "none",

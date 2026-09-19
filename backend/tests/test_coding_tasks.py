@@ -349,6 +349,18 @@ class CodingTaskApiTests(unittest.TestCase):
         self.assertTrue(facts["mutation_intent"])
         self.assertTrue(facts["explicit_non_coding"])
 
+    def test_explicit_execution_intent_preserves_fixed_benchmark_text(self):
+        request = "Fix the existing add function so tests/test_math.py passes. Change only src/math.py, then run the focused test command."
+        facts = coding_classification_diagnostics(request, project_scoped=True, execution_intent="coding_mutation")
+        self.assertEqual("CODING", facts["classification"])
+        self.assertTrue(facts["mutation_intent"])
+        self.assertEqual("EXPLICIT_EXECUTION_INTENT", facts["reason"])
+
+    def test_unknown_execution_intent_does_not_activate_coding(self):
+        request = "Explain the existing add function and its test."
+        facts = coding_classification_diagnostics(request, project_scoped=True, execution_intent="read_only")
+        self.assertNotEqual("CODING", facts["classification"])
+
     def test_planning_request_uses_normal_brain_without_task_or_scheduler(self):
         request = "テトリスの実装計画を、ボタン構成、操作対応、UIまで含めて細かく策定してください。\nこれはコーディングタスクではありません。"
         execution = Task(request, route=Route.DIRECT, state=TaskState.COMPLETED)
@@ -775,9 +787,10 @@ class CodingTaskApiTests(unittest.TestCase):
         task_id="heavy-batch"; task_plan=plan("React frontend + FastAPI backend + SQLite database CRUD")
         api.db.create_coding_task(task_id,conversation,"React frontend + FastAPI backend + SQLite database CRUD","RUNNING","NONE",task_plan,time.time())
         api.db.update_coding_task(task_id,execution_mode="HEAVY_BATCHED")
+        api.db.add_coding_phase_report(task_id,"p1",0,{"phase_id":"p1","status":"PASS","manager_decision":{"decision":"PASS"},"changed_files":[],"errors":[],"blockers":[],"test_fail":[]},"PASS",time.time())
         result=api._heavy_batch_checkpoint(task_id,task_plan,{"p1"})
         saved=api.db.coding_task(task_id)
-        self.assertEqual("Heavy batch completed; task is resumable.",result)
+        self.assertIn("続行",result)
         self.assertEqual("RESUMABLE",saved["status"])
         self.assertEqual("RESOURCE_CHECKPOINT",saved["recovery_reason"])
         self.assertIsNone(saved["pending_authorization"])

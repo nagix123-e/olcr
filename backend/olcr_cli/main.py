@@ -24,9 +24,10 @@ except ImportError:
     PromptSession = None
 
 from .state import State
-from olcr_api.config import DEFAULT_MAIN_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
+from olcr_api.config import DEFAULT_MAIN_MODEL, DEFAULT_ROUTER_MODEL, MODEL_REQUEST_TIMEOUT_SECONDS
 from olcr_api.web import setup_guidance
 from olcr_api.commands import catalog
+from olcr_api.coding_benchmark import run_case, run_live_case, compare_results
 
 VERSION="0.6.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
@@ -116,6 +117,7 @@ def configure_backend(state):
     except (error.URLError,error.HTTPError,TimeoutError): settings=api("GET","/settings")
     settings["allowed_roots"]=[str(state.workspace())]
     if not settings.get("main_model"): settings["main_model"]=os.environ.get("OLLAMA_MODEL") or DEFAULT_MAIN_MODEL
+    if not settings.get("router_model"): settings["router_model"]=os.environ.get("OLLAMA_ROUTER_MODEL") or DEFAULT_ROUTER_MODEL
     # Preserve explicitly supplied CLI environment configuration when syncing
     # persisted settings; absent variables continue to use persisted values.
     if "OLCR_VECTOR_ENABLED" in os.environ:
@@ -130,7 +132,7 @@ def configure_backend(state):
 def runtime_status(state):
     checks={"platform":"READY" if platform.system()=="Darwin" and platform.machine()=="arm64" else "UNSUPPORTED","workspace":"READY" if state.workspace() else "MISSING","ripgrep":"READY" if shutil.which("rg") else "DEGRADED (Python fallback)","ollama":"UNAVAILABLE","semantic":"Experimental / unchecked"}
     try:
-        tags=request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2); names={x["name"] for x in json.load(tags).get("models",[])}; checks["ollama"]="READY"; vision=os.environ.get("OLCR_VISION_MODEL","qwen2.5vl:3b"); brain=os.environ.get("OLLAMA_MODEL",DEFAULT_MAIN_MODEL); checks.update({name:("READY" if name in names else "MISSING") for name in ("embeddinggemma:latest",brain,vision)})
+        tags=request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2); names={x["name"] for x in json.load(tags).get("models",[])}; checks["ollama"]="READY"; vision=os.environ.get("OLCR_VISION_MODEL","qwen2.5vl:3b"); brain=os.environ.get("OLLAMA_MODEL",DEFAULT_MAIN_MODEL); router=os.environ.get("OLLAMA_ROUTER_MODEL",DEFAULT_ROUTER_MODEL); checks.update({name:("READY" if name in names else "MISSING") for name in ("embeddinggemma:latest",brain,router,vision)})
     except (error.URLError,TimeoutError): pass
     try:
         health=api("GET","/health"); checks["backend"]="READY"; checks["model configuration"]="READY" if health.get("model_configuration")=="ready" else "NOT READY (set a main Ollama model)"; checks["semantic"]="Experimental" if health.get("vector_enabled") else "DISABLED"
@@ -260,9 +262,38 @@ def command(state,parts,input_fn=input,output=print):
     head=parts[0] if parts else "help"; tail=parts[1:]
     if head=="help": output(" · ".join(x["command"] + (" <"+x["arguments"]+">" if x["arguments"] else "") for x in catalog())); return 0
     if head=="status": show_status(state); return 0
+    if head=="benchmark" and tail and tail[0]=="coding":
+        if "--compare" in tail:
+            index=tail.index("--compare")
+            if index+2 >= len(tail): output("Error: usage benchmark coding --compare baseline.json candidate.json"); return 2
+            try: output(json.dumps(compare_results(tail[index+1], tail[index+2]), ensure_ascii=False, indent=2)); return 0
+            except (OSError, ValueError, json.JSONDecodeError) as exc: output(f"Error: {exc}"); return 2
+        case="small"; output_dir="benchmark_results"
+        live="--live" in tail
+        if "--all" in tail:
+            cases=("small","medium","large")
+        else:
+            cases=(tail[tail.index("--case")+1],) if "--case" in tail and tail.index("--case")+1 < len(tail) else (case,)
+        try:
+            for selected in cases:
+                if live:
+                    if selected != "small": raise ValueError("live benchmark currently supports BENCH-SMALL only")
+                    health=backend(state)
+                    if health.get("model_configuration") not in {"ready", "unknown"}:
+                        raise RuntimeError("CODING_ORCHESTRATOR_UNAVAILABLE")
+                    result=run_live_case(selected, api_base=API, workspace=state.workspace(), output_dir=output_dir)
+                    telemetry=result.get("telemetry") or {}
+                    output(f"BENCHMARK_EXECUTION_MODE=LIVE_ORCHESTRATOR LIVE_TASK_ID={result.get('task_id')} TASK_FINAL_STATUS={result.get('task_final_status', 'INCOMPLETE')} VERIFY_STATUS={result.get('verify_status', 'NOT_RUN')} VERIFICATION_MODE={telemetry.get('verification_mode', 'UNKNOWN')} VERIFY_EVIDENCE_SOURCE={telemetry.get('verify_evidence_source', 'UNKNOWN')} SEMANTIC_VERIFICATION_MODEL_CALL_COUNT={telemetry.get('semantic_verification_model_call_count', 'UNKNOWN')} FINAL_REPORT_MODEL_CALL_COUNT={telemetry.get('final_report_model_call_count', 'UNKNOWN')} FINAL_REPORT_GENERATION_MODE={telemetry.get('final_report_generation_mode', 'UNKNOWN')} FINAL_REPORT_FORMAT_MS={telemetry.get('final_report_format_ms', 'UNKNOWN')} FINAL_REPORT_MODEL_MS={telemetry.get('final_report_model_ms', 'UNKNOWN')} DETERMINISTIC_VERIFY_MS={telemetry.get('deterministic_verify_ms', 'UNKNOWN')} FINAL_REPORT_PRESENT={'YES' if result.get('final_report_present') else 'NO'} BASELINE_ELIGIBLE={'YES' if result.get('baseline_eligible') else 'NO'} BENCHMARK_RESULT={result.get('result_path')}")
+                    continue
+                result=run_case(selected, output_dir)
+                telemetry=result["telemetry"]
+                output("\n".join([f"CASE={selected}", "RESULT=PASS", f"MODEL={telemetry['model_name']}", f"RUNTIME={telemetry['model_runtime']}", f"ENGINE={telemetry['model_engine']}", f"QUANTIZATION={telemetry['model_quantization']}", f"TOTAL_TASK_MS={telemetry['total_task_ms']}", f"MODEL_CALLS={telemetry['model_call_count']}", f"INPUT_TOKENS={telemetry['input_tokens_total']}", f"OUTPUT_TOKENS={telemetry['output_tokens_total']}", f"MODEL_ACTIVE_MS={telemetry['model_active_ms']}", f"TOOL_ACTIVE_MS={telemetry['tool_active_ms']}", f"MODEL_LOAD_COUNT={telemetry['model_load_count']}", f"MODEL_REUSE_COUNT={telemetry['model_reuse_count']}", f"VERIFICATION_MODE={telemetry.get('verification_mode', 'UNKNOWN')}", f"VERIFY_EVIDENCE_SOURCE={telemetry.get('verify_evidence_source', 'UNKNOWN')}", f"PLANNER_MODEL_MS={telemetry.get('planner_model_ms', 'UNKNOWN')}", f"IMPLEMENTER_MODEL_MS={telemetry.get('implementer_model_ms', 'UNKNOWN')}", f"FINAL_REPORT_MODEL_MS={telemetry.get('final_report_model_ms', 'UNKNOWN')}", f"DETERMINISTIC_VERIFY_MS={telemetry.get('deterministic_verify_ms', 'UNKNOWN')}", f"SEMANTIC_VERIFICATION_MODEL_CALL_COUNT={telemetry.get('semantic_verification_model_call_count', 'UNKNOWN')}", f"FINAL_REPORT_MODEL_CALL_COUNT={telemetry.get('final_report_model_call_count', 'UNKNOWN')}", f"VERIFY_STATUS={result.get('verify_status')}", f"BENCHMARK_RESULT={result['result_path']}"]))
+            return 0
+        except (OSError, ValueError) as exc:
+            output(f"Error: {exc}"); return 2
     if head=="models":
         for k,v in runtime_status(state).items():
-            if k in {"ollama","embeddinggemma:latest","semantic"} or k.startswith(("qwen3:","qwen2.5vl:")): output(f"{k}: {v}")
+            if k in {"ollama","embeddinggemma:latest","semantic"} or k.startswith(("qwen3:","qwen3.5:","LiquidAI/lfm2.5-","qwen2.5vl:")): output(f"{k}: {v}")
         return 0
     if head=="memory":
         action=tail[0] if tail else "show"
@@ -291,7 +322,7 @@ def command(state,parts,input_fn=input,output=print):
             if action not in {"set","reset"} or len(tail)<2 or tail[1] not in roles:
                 output("Error: usage /option show|set <brain|router|vision> \"model\" | /option reset <brain|router|vision>"); return 2
             role,key=tail[1],roles[tail[1]]
-            value=("qwen3:14b" if role=="brain" else "qwen2.5vl:3b" if role=="vision" else "") if action=="reset" else " ".join(tail[2:]).strip('"')
+            value=(DEFAULT_MAIN_MODEL if role=="brain" else "qwen2.5vl:3b" if role=="vision" else DEFAULT_ROUTER_MODEL) if action=="reset" else " ".join(tail[2:]).strip('"')
             if value:
                 tags=json.load(request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2)).get("models",[])
                 if value not in {item.get("name") for item in tags}: output(f"Error: model unavailable: {value}"); return 2
@@ -434,7 +465,12 @@ def repl(state,input_fn=input,output=print):
 def main(argv=None):
     global VERBOSE
     parser=argparse.ArgumentParser(prog="olcr",description="OLCR terminal-first local workspace")
-    parser.add_argument("--version",action="version",version=VERSION); parser.add_argument("--verbose",action="store_true",help="show lifecycle and backend diagnostics"); parser.add_argument("command",nargs="*"); args=parser.parse_args(argv); VERBOSE=args.verbose; state=State()
+    parser.add_argument("--version",action="version",version=VERSION); parser.add_argument("--verbose",action="store_true",help="show lifecycle and backend diagnostics"); parser.add_argument("--case",dest="benchmark_case"); parser.add_argument("--all",dest="benchmark_all",action="store_true"); parser.add_argument("--live",dest="benchmark_live",action="store_true"); parser.add_argument("--compare",dest="benchmark_compare",nargs=2); parser.add_argument("command",nargs="*"); args=parser.parse_args(argv); VERBOSE=args.verbose; state=State()
+    if args.command[:2] == ["benchmark", "coding"]:
+        if args.benchmark_all: args.command += ["--all"]
+        elif args.benchmark_case: args.command += ["--case", args.benchmark_case]
+        if args.benchmark_live: args.command += ["--live"]
+        if args.benchmark_compare: args.command += ["--compare", *args.benchmark_compare]
     if not args.command:return repl(state)
     if args.command[0]=="search":
         try: print(request_text(state,"search "+" ".join(args.command[1:]))); return 0

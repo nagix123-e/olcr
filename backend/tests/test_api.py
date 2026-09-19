@@ -152,5 +152,22 @@ class APITests(unittest.TestCase):
         self.assertIn("因数分解結果", body["response"])
         self.assertNotIn("from sympy import", body["response"])
 
+    def test_currency_chat_uses_current_provider_value_without_brain_rewrite(self):
+        import olcr_api.app as api_module
+        result = {"tool_id": "currency.frankfurter", "provider": "Frankfurter",
+                  "fetched_at": "2026-09-18T00:00:00+00:00",
+                  "sources": [{"provider": "Frankfurter"}],
+                  "data": {"base": "USD", "quote": "EUR", "amount": "100", "rate": "0.8721",
+                           "converted_amount": "87.21", "rate_date": "2026-09-18"}}
+        with patch.object(api_module.settings, "external_access_enabled", True), \
+             patch.object(api_module, "route_external_tool", return_value=("currency.frankfurter", {"base": "USD", "quote": "EUR", "amount": 100})), \
+             patch.object(api_module, "execute_external_tool", return_value=result), \
+             patch.object(api_module.runtime, "compose_tool_result", side_effect=AssertionError("currency must not use Brain composition")):
+            response = self.client.post("/api/chat", json={"message": "100ドルはユーロでいくら？", "project_id": api_module.db.default_project_id()})
+        body = response.json()
+        self.assertEqual(200, response.status_code)
+        self.assertIn("87.21", body["response"])
+        self.assertNotIn("92.50", body["response"])
+
 
 if __name__ == "__main__": unittest.main()

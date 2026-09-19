@@ -103,8 +103,15 @@ impl BackendProcessManager {
     eprintln!("backend_resolution_source={resolution_source}");
     eprintln!("backend_directory_valid=true");
     eprintln!("python_resolution_source=OLCR_PYTHON");
+    let node_root=env::var_os("OLCR_NODE_MCP_RUNTIME_ROOT").map(PathBuf::from)
+      .unwrap_or_else(|| backend_dir.parent().unwrap().to_path_buf());
+    let node_root=node_root.canonicalize().unwrap_or(node_root);
+    eprintln!("DESKTOP_NODE_MCP_ROOT={}", node_root.display());
     let mut child=Command::new(python).args(["-m","uvicorn","olcr_api.app:app","--host","127.0.0.1","--port",&self.port.to_string(),"--log-level","warning"])
-      .current_dir(&backend_dir).env("OLCR_GUI_SESSION_TOKEN",&self.token).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e|format!("Could not start OLCR backend: {e}"))?;
+      .current_dir(&backend_dir).env("OLCR_GUI_SESSION_TOKEN",&self.token)
+      .env("OLCR_NODE_MCP_RUNTIME_ROOT",&node_root)
+      .env("OLCR_BACKEND_DIR",&backend_dir)
+      .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e|format!("Could not start OLCR backend: {e}"))?;
     if let Some(stderr) = child.stderr.take() {
       std::thread::spawn(move || for line in BufReader::new(stderr).lines().flatten() {
         eprintln!("OLCR_BACKEND_STDERR {line}");
@@ -121,7 +128,11 @@ impl BackendProcessManager {
   fn stop(&self) { if let Ok(mut slot)=self.child.lock() { if let Some(mut child)=slot.take() { let _=child.kill(); let _=child.wait(); } } }
 }
 impl Drop for BackendProcessManager { fn drop(&mut self) { self.stop() } }
-#[tauri::command] fn backend_config(state: tauri::State<BackendProcessManager>) -> BackendConfig { BackendConfig{api_url:format!("http://127.0.0.1:{}/api",state.port),session_token:state.token.clone()} }
+#[tauri::command] fn backend_config(state: tauri::State<BackendProcessManager>) -> BackendConfig {
+  let api_url=format!("http://127.0.0.1:{}/api",state.port);
+  eprintln!("FRONTEND_BACKEND_CONFIG_REQUESTED=true BACKEND_HOST=127.0.0.1 BACKEND_PORT={} FRONTEND_BACKEND_BASE={}", state.port, api_url);
+  BackendConfig{api_url,session_token:state.token.clone()}
+}
 fn main(){restore_web_credentials();let token:String=rand::thread_rng().sample_iter(&Alphanumeric).take(48).map(char::from).collect();let listener=std::net::TcpListener::bind("127.0.0.1:0").expect("loopback allocation failed");let port=listener.local_addr().unwrap().port();drop(listener);let manager=BackendProcessManager{child:Mutex::new(None),token,port};if let Err(error)=manager.start(){eprintln!("OLCR_BACKEND_STARTUP_FAILED category=backend_process error={error}");}tauri::Builder::default().plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init()).manage(manager).invoke_handler(tauri::generate_handler![backend_config,set_web_credential,clear_web_credential,open_external_url,read_dropped_file]).run(tauri::generate_context!()).expect("error running OLCR desktop");}
 
 #[cfg(test)]
@@ -135,4 +146,9 @@ mod tests {
   #[test] fn manifest_resolves_repository_backend() { let (root,manifest)=fixture(); let (found,source)=resolve_backend_dir(&manifest,None).unwrap(); assert_eq!(found,root.join("backend")); assert_eq!(source,"manifest"); assert_ne!(found,root.join("desktop/backend")); let _=fs::remove_dir_all(root); }
   #[test] fn valid_override_wins() { let (root,manifest)=fixture(); let override_dir=root.join("custom-backend"); fs::create_dir_all(override_dir.join("olcr_api")).unwrap(); fs::create_dir_all(override_dir.join("olcr_cli")).unwrap(); let (found,source)=resolve_backend_dir(&manifest,Some(&override_dir)).unwrap(); assert_eq!(found,override_dir); assert_eq!(source,"override"); let _=fs::remove_dir_all(root); }
   #[test] fn invalid_override_fails_safely() { let (root,manifest)=fixture(); let result=resolve_backend_dir(&manifest,Some(&root.join("missing"))); assert_eq!(result.unwrap_err(),"backend_directory_invalid"); let _=fs::remove_dir_all(root); }
+  #[test] fn backend_config_uses_frontend_contract_keys() {
+    let value=serde_json::to_value(BackendConfig{api_url:"http://127.0.0.1:45678/api".into(),session_token:"token".into()}).unwrap();
+    assert_eq!(value["api_url"], "http://127.0.0.1:45678/api");
+    assert_eq!(value["session_token"], "token");
+  }
 }

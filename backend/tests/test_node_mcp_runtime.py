@@ -2,18 +2,37 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from olcr_api.node_mcp_runtime import launch_command, resolve_mcp_resources, runtime_root
 
 
 class NodeMcpRuntimeTests(unittest.TestCase):
+    def test_desktop_environment_rejects_non_executable_node_without_fallback(self):
+        with tempfile.TemporaryDirectory(prefix="OLCR Desktop ") as directory:
+            root = Path(directory)
+            node = root / "mcp-runtime/node/node/bin/node"
+            node.parent.mkdir(parents=True)
+            node.touch()
+            node.parents[2].joinpath("runtime-manifest.json").write_text('{}')
+            with patch.dict(os.environ, {"OLCR_NODE_MCP_RUNTIME_ROOT": str(root),
+                                         "OLCR_BACKEND_DIR": str(Path(__file__).parents[1]),
+                                         "MCP_RESOURCE_MODE": "DEV_SOURCE"}):
+                self.assertIsNone(runtime_root())
+                self.assertEqual("NODE_RUNTIME_MISSING", resolve_mcp_resources("animejs")["reason"])
+                node.chmod(0o755)
+                self.assertEqual(node.parents[2], runtime_root())
+                command = launch_command("animejs")
+                self.assertEqual(str(node), command[0])
+                self.assertIn("packaging/node-mcp/animejs-reference/server.js", command[1])
+
     def test_resolves_installed_current_runtime_without_a_developer_path(self):
         with tempfile.TemporaryDirectory() as directory:
             support = Path(directory)
             runtime = support / "runtime" / "current" / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             entrypoint = runtime / "node_modules" / "shadcn" / "dist" / "index.js"
             entrypoint.parent.mkdir(parents=True); entrypoint.touch()
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"shadcn": ["node_modules/shadcn/dist/index.js", "mcp"]}}))
@@ -33,7 +52,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             root = Path(directory)
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             entrypoint = runtime / "node_modules" / "shadcn" / "dist" / "index.js"
             entrypoint.parent.mkdir(parents=True); entrypoint.touch()
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"shadcn": ["node_modules/shadcn/dist/index.js", "mcp"]}}))
@@ -66,7 +85,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             root = Path(directory)
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"shadcn": ["node_modules/shadcn/dist/index.js", "mcp"]}}))
             self.assertIsNone(launch_command("shadcn", root))
 
@@ -75,7 +94,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             root = Path(directory) / "OLCR Node MCP Relocated"
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             entrypoint = runtime / "node_modules" / "shadcn" / "dist" / "index.js"
             entrypoint.parent.mkdir(parents=True); entrypoint.touch()
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"shadcn": ["node_modules/shadcn/dist/index.js", "mcp"]}}))
@@ -84,7 +103,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
     def test_olcr_owned_server_entrypoint_resolves(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); runtime = root / "mcp-runtime" / "node"
-            (runtime / "node" / "bin").mkdir(parents=True); (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin").mkdir(parents=True); (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             entrypoint = runtime / "servers" / "animejs-reference" / "server.js"
             entrypoint.parent.mkdir(parents=True); entrypoint.touch()
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"animejs": ["servers/animejs-reference/server.js"]}}))
@@ -96,7 +115,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
             node = runtime / "node" / "bin" / "node"
-            node.touch()
+            node.touch(); node.chmod(0o755)
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {}}))
             source = Path(directory) / "checkout"
             source_server = source / "packaging" / "node-mcp" / "animejs-reference" / "server.js"
@@ -116,7 +135,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             root = Path(directory) / "runtime-root"
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {}}))
             source = Path(directory) / "checkout"
             source_server = source / "packaging" / "node-mcp" / "animejs-reference" / "server.js"
@@ -137,7 +156,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             root = Path(directory)
             runtime = root / "mcp-runtime" / "node"
             (runtime / "node" / "bin").mkdir(parents=True)
-            (runtime / "node" / "bin" / "node").touch()
+            (runtime / "node" / "bin" / "node").touch(); (runtime / "node" / "bin" / "node").chmod(0o755)
             server = runtime / "servers" / "animejs-reference" / "server.js"
             server.parent.mkdir(parents=True); server.touch()
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"animejs": ["servers/animejs-reference/server.js"]}}))

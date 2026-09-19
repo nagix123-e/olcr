@@ -56,6 +56,26 @@ class ExternalToolsTests(unittest.TestCase):
             with self.assertRaisesRegex(tools.ExternalToolError, "PROVIDER_BAD_RESPONSE"):
                 tools.currency("USD", "JPY")
 
+    def test_currency_v2_normalizes_provider_rate_for_multiple_directions_and_amounts(self):
+        cases = [(100, "USD", "EUR", "0.8721", "87.21"),
+                 (100, "EUR", "USD", "1.1467", "114.67"),
+                 (1, "USD", "EUR", "0.8721", "0.8721"),
+                 (123.45, "USD", "EUR", "0.8721", "107.660745")]
+        for amount, base, quote, rate, expected in cases:
+            with self.subTest(amount=amount, base=base, quote=quote), patch.object(tools, "_request", return_value={"base": base, "quote": quote, "rate": rate, "date": "2026-09-18"}):
+                result = tools.currency(base, quote, amount)
+            self.assertEqual(base, result["data"]["base"])
+            self.assertEqual(quote, result["data"]["quote"])
+            self.assertEqual(expected, result["data"]["converted_amount"])
+
+    def test_currency_rejects_missing_rate_and_wrong_direction_metadata(self):
+        with patch.object(tools, "_request", return_value={"base": "USD", "quote": "EUR", "date": "2026-09-18"}):
+            with self.assertRaisesRegex(tools.ExternalToolError, "PROVIDER_BAD_RESPONSE"):
+                tools.currency("USD", "EUR", 100)
+        with patch.object(tools, "_request", return_value={"base": "EUR", "quote": "USD", "rate": "1.1467"}):
+            with self.assertRaisesRegex(tools.ExternalToolError, "PROVIDER_BAD_RESPONSE"):
+                tools.currency("USD", "EUR", 100)
+
     def test_openalex_key_is_never_returned(self):
         work={"results":[{"id":"https://openalex.org/W1","title":"Paper","publication_year":2025,"authorships":[],"primary_location":{},"open_access":{}}]}
         with patch.dict("os.environ", {"OLCR_OPENALEX_API_KEY":"never-display"}), patch.object(tools, "_request", return_value=work) as request:
