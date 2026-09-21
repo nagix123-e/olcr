@@ -21,11 +21,11 @@ def _scope(title: str) -> str:
     for pattern, scope in (
         (r"future|fix.?benchmark|later|将来", "FUTURE_WORK"),
         (r"failure.?handling|失敗時", "FAILURE_HANDLING"),
-        (r"verification|visual review|regression|^done$|検証|完了条件", "VERIFICATION_ONLY"),
+        (r"verification|visual review|regression|validation|validation focus|^rules?$|guardrails|invariants|^done$|検証|完了条件|確認項目|規則", "VERIFICATION_ONLY"),
         (r"^report(?:ing)?$|final status|報告", "REPORTING"),
-        (r"content accuracy|product(?: description)?$|architecture description|reference|example|page structure|ui copy|製品説明", "CONTENT_DESCRIPTION"),
-        (r"repository.*check|implementation order|blueprint|^resolve$|^phase\s+\d+", "PLANNING_DETAIL"),
-        (r"exclusion|non.?goals|out of scope|対象外|除外|実装しないもの", "CURRENT_PROHIBITION"),
+        (r"content(?: accuracy| description)?|product(?: description)?$|architecture(?: description)?|api(?:s)?(?: description| integration)?|mcp(?: description| integration)?|page content|reference|example|page structure|ui copy|製品説明|アーキテクチャ説明", "CONTENT_DESCRIPTION"),
+        (r"repository.*check|implementation order|blueprint|planning(?: detail)?|^resolve$|^phase\s+\d+", "PLANNING_DETAIL"),
+        (r"exclusion|non.?goals|out of scope|current.?prohibition|do\s+not\s+(?:implement|introduce)|it\s+must\s+not|対象外|除外|実装しないもの", "CURRENT_PROHIBITION"),
     ):
         if re.search(pattern, title, re.I):
             return scope
@@ -59,11 +59,11 @@ def parse_prompt_blocks(text: str) -> list[PromptBlock]:
         title = (md.group(2) if md else stripped).rstrip(":：").strip()
         # Plain headings have their own paragraph and title-style words.
         # Single technology names remain data, not headings.
-        known = bool(re.fullmatch(r"Goal|Product|Done|Report|FailureHandling|Footer|Accessibility|Performance|State|Data|要件|実装するもの|検証|完了条件", title, re.I))
+        known = bool(re.fullmatch(r"Goal|Product|Done|Report|Rules|Validation Focus|Validation|Verification|Planning|Planning Detail|FailureHandling|Footer|Accessibility|Performance|State|Data|Content|Content Description|Current Prohibition|Architecture|Architecture Description|API|API Description|MCP|MCP Description|Page Content|Product Description|Content Accuracy|UI Copy|MVP Exclusions|Exclusions|Do NOT implement|Do NOT introduce|It must not|要件|実装するもの|検証|完了条件", title, re.I))
         title_style = bool(not title.endswith(('.', '!', '?')) and re.fullmatch(r"[A-Z][A-Za-z0-9./ -]{2,75}", title) and
                            len(title.split()) > 1 and all(w[0].isupper() or w in {"/", "—", "of", "for", "and"} for w in title.split()))
         isolated = (n == 0 or not lines[n-1].strip()) and (n+1 == len(lines) or not lines[n+1].strip())
-        is_heading = not fenced and not bullet and (bool(md) or (not stripped.endswith((":", "：")) and isolated and (known or title_style)))
+        is_heading = not fenced and not bullet and (bool(md) or (not stripped.endswith((":", "：")) and (known or (isolated and title_style))))
         if is_heading:
             level = len(md.group(1)) if md else 1
             while headings and headings[-1][0] >= level:
@@ -103,7 +103,7 @@ def parse_prompt_blocks(text: str) -> list[PromptBlock]:
 
 
 _TECHNOLOGIES = {"nextjs": r"next\.js", "gsap": r"\bgsap\b", "framer_motion": r"framer motion", "threejs": r"three\.js"}
-_IGNORED_SCOPES = {"FUTURE_WORK", "FAILURE_HANDLING", "VERIFICATION_ONLY", "REPORTING", "CONTENT_DESCRIPTION"}
+_IGNORED_SCOPES = {"FUTURE_WORK", "FAILURE_HANDLING", "VERIFICATION_ONLY", "REPORTING", "CONTENT_DESCRIPTION", "PLANNING_DETAIL"}
 
 
 def capability_evidence(text: str, aliases: dict[str, str]) -> list[dict]:
@@ -130,6 +130,28 @@ def capability_evidence(text: str, aliases: dict[str, str]) -> list[dict]:
                 candidates = [(name, "capability") for name, pattern in aliases.items() if re.search(pattern, target_text, re.I)]
                 candidates += [(name, "technology") for name, pattern in _TECHNOLOGIES.items() if re.search(pattern, target_text, re.I)]
                 for name, category in candidates:
+                    # Package-manager and MCP policy prose can mention
+                    # dependency/UI tokens without requesting or forbidding
+                    # the capability itself. Keep that evidence visible for
+                    # diagnostics, but out of active control requirements.
+                    policy_only = bool(re.search(
+                        r"\b(?:claim|report|assert|fall\s+back|weaken|bypass|extend)\b"
+                        r"|(?:map|flatten).{0,40}(?:shadcn|@shadcn/ui)"
+                        r"|(?:成功|失敗).{0,24}(?:報告|主張|判定)|(?:キャッシュ|認可|権限|制限).{0,24}(?:戻|弱|回避|拡張)",
+                        clause, re.I))
+                    ui_package_only = name == "frontend" and bool(re.search(
+                        r"(?:shadcn\s*/\s*ui|@shadcn/ui)", clause, re.I)) and not bool(re.search(
+                        r"\b(?:implement|build|create|add|modify)\b|実装|作成|構築|追加|修正", clause, re.I))
+                    if policy_only or ui_package_only:
+                        evidence.append({"capability": name, "category": category,
+                            "polarity": "forbidden" if negative else "required",
+                            "source_scope": "current_user_text", "source_section": " > ".join(block.section_path),
+                            "section_path": list(block.section_path), "block_kind": block.block_kind,
+                            "semantic_scope": block.semantic_scope, "parent_polarity": block.polarity_context,
+                            "line_start": block.line_start, "line_end": block.line_end,
+                            "source_span_hash": hashlib.sha256(clause.encode()).hexdigest(),
+                            "reason": "SCOPE_CONSTRAINT", "active_for_control": False, "decision": "IGNORED"})
+                        continue
                     reason = "CURRENT_EXPLICIT_PROHIBITION" if negative else "CURRENT_IMPLEMENTATION_REQUIREMENT"
                     active = True
                     if block.semantic_scope in _IGNORED_SCOPES:

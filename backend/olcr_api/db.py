@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 24
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_path TEXT, archived INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL);
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS pending_actions(task_id TEXT PRIMARY KEY REFERENCES t
 CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, path TEXT UNIQUE NOT NULL, result_count INTEGER NOT NULL, size_bytes INTEGER NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS conversation_memory_embeddings(id INTEGER PRIMARY KEY, conversation_id TEXT NOT NULL, user_message TEXT NOT NULL, assistant_message TEXT NOT NULL, turn_ordinal INTEGER NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, index_version TEXT NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(conversation_id,turn_ordinal,model,index_version));
 CREATE TABLE IF NOT EXISTS vector_embeddings(id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, chunk_ordinal INTEGER NOT NULL, line_start INTEGER NOT NULL, text TEXT NOT NULL, content_hash TEXT NOT NULL, document_hash TEXT NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL, index_version TEXT NOT NULL, vector_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(document_id,chunk_ordinal,model,index_version));
-CREATE TABLE IF NOT EXISTS coding_tasks(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, source_message_id TEXT UNIQUE, original_goal TEXT NOT NULL, status TEXT NOT NULL, activity TEXT NOT NULL, plan_json TEXT, active_plan_json TEXT, plan_revision INTEGER NOT NULL DEFAULT 0, pending_plan_json TEXT, subtask_progress_json TEXT, current_phase_id TEXT, retry_count INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 2, replan_count INTEGER NOT NULL DEFAULT 0, replan_count_in_epoch INTEGER NOT NULL DEFAULT 0, recovery_epoch INTEGER NOT NULL DEFAULT 0, approved_scopes_json TEXT NOT NULL DEFAULT '[]', pending_authorization_json TEXT, pending_user_confirmation INTEGER NOT NULL DEFAULT 0, pause_requested INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, queue_order INTEGER, recovery_action TEXT NOT NULL DEFAULT 'NONE', recovery_reason TEXT NOT NULL DEFAULT 'NONE', final_report_json TEXT, final_report_status TEXT NOT NULL DEFAULT 'NOT_RUN', execution_mode TEXT NOT NULL DEFAULT 'NORMAL', task_profile TEXT NOT NULL DEFAULT 'GENERAL_CODING', requirements_json TEXT NOT NULL DEFAULT '{}', required_mcp_json TEXT NOT NULL DEFAULT '[]', mcp_evidence_json TEXT NOT NULL DEFAULT '[]', batch_cursor INTEGER NOT NULL DEFAULT 0, batch_handoff_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS coding_tasks(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, source_message_id TEXT UNIQUE, original_goal TEXT NOT NULL, status TEXT NOT NULL, activity TEXT NOT NULL, plan_json TEXT, active_plan_json TEXT, plan_revision INTEGER NOT NULL DEFAULT 0, pending_plan_json TEXT, subtask_progress_json TEXT, current_phase_id TEXT, retry_count INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 2, replan_count INTEGER NOT NULL DEFAULT 0, replan_count_in_epoch INTEGER NOT NULL DEFAULT 0, recovery_epoch INTEGER NOT NULL DEFAULT 0, task_total_plan_repair_count INTEGER NOT NULL DEFAULT 0, task_total_recovery_model_calls INTEGER NOT NULL DEFAULT 0, approved_scopes_json TEXT NOT NULL DEFAULT '[]', pending_authorization_json TEXT, pending_user_confirmation INTEGER NOT NULL DEFAULT 0, pause_requested INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, queue_order INTEGER, recovery_action TEXT NOT NULL DEFAULT 'NONE', recovery_reason TEXT NOT NULL DEFAULT 'NONE', final_report_json TEXT, final_report_status TEXT NOT NULL DEFAULT 'NOT_RUN', execution_mode TEXT NOT NULL DEFAULT 'NORMAL', task_profile TEXT NOT NULL DEFAULT 'GENERAL_CODING', requirements_json TEXT NOT NULL DEFAULT '{}', required_mcp_json TEXT NOT NULL DEFAULT '[]', mcp_evidence_json TEXT NOT NULL DEFAULT '[]', batch_cursor INTEGER NOT NULL DEFAULT 0, batch_handoff_json TEXT, resume_state_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_phase_reports(id TEXT PRIMARY KEY, coding_task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE, phase_id TEXT NOT NULL, attempt INTEGER NOT NULL, structured_report_json TEXT NOT NULL, validation_status TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS interactive_planning_sessions(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, planning_mode TEXT NOT NULL, status TEXT NOT NULL, planning_revision INTEGER NOT NULL, pending_questions_json TEXT NOT NULL, answered_questions_json TEXT NOT NULL, assumptions_json TEXT NOT NULL, decisions_json TEXT NOT NULL, format_state_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
@@ -177,6 +177,18 @@ class Database:
                 db.execute("CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL)")
                 db.execute("UPDATE schema_version SET version=22")
                 rows=[(22,)]
+            if rows and rows[0][0] == 22:
+                db.execute("ALTER TABLE coding_tasks ADD COLUMN task_total_plan_repair_count INTEGER NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE coding_tasks ADD COLUMN task_total_recovery_model_calls INTEGER NOT NULL DEFAULT 0")
+                db.execute("UPDATE schema_version SET version=23")
+                rows=[(23,)]
+            if rows and rows[0][0] == 23:
+                # Durable execution facts used when a Coding Task crosses a
+                # process restart. This is separate from the planner graph
+                # and from user authorization state.
+                db.execute("ALTER TABLE coding_tasks ADD COLUMN resume_state_json TEXT")
+                db.execute("UPDATE schema_version SET version=24")
+                rows=[(24,)]
             if rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.commit()
         finally: db.close()
@@ -264,7 +276,7 @@ class Database:
         with self.connect() as db:
             row=db.execute("SELECT * FROM coding_tasks WHERE id=?",(task_id,)).fetchone()
             if not row:return None
-            value=dict(row); legacy_plan=value.pop("plan_json") or "null"; active_plan=value.pop("active_plan_json") or legacy_plan; value["plan"]=json.loads(active_plan); value["active_plan"]=value["plan"]; value["pending_plan"]=json.loads(value.pop("pending_plan_json") or "null"); value["subtask_progress"]=json.loads(value.pop("subtask_progress_json") or "null"); value["approved_scopes"]=json.loads(value.pop("approved_scopes_json") or "[]"); value["pending_authorization"]=json.loads(value.pop("pending_authorization_json") or "null"); value["final_report"]=json.loads(value.pop("final_report_json") or "null"); value["batch_handoff"]=json.loads(value.pop("batch_handoff_json") or "null"); value["requirements"]=json.loads(value.pop("requirements_json") or "{}"); value["required_mcp"]=json.loads(value.pop("required_mcp_json") or "[]"); value["mcp_evidence"]=json.loads(value.pop("mcp_evidence_json") or "[]")
+            value=dict(row); legacy_plan=value.pop("plan_json") or "null"; active_plan=value.pop("active_plan_json") or legacy_plan; value["plan"]=json.loads(active_plan); value["active_plan"]=value["plan"]; value["pending_plan"]=json.loads(value.pop("pending_plan_json") or "null"); value["subtask_progress"]=json.loads(value.pop("subtask_progress_json") or "null"); value["approved_scopes"]=json.loads(value.pop("approved_scopes_json") or "[]"); value["pending_authorization"]=json.loads(value.pop("pending_authorization_json") or "null"); value["final_report"]=json.loads(value.pop("final_report_json") or "null"); value["batch_handoff"]=json.loads(value.pop("batch_handoff_json") or "null"); value["resume_state"]=json.loads(value.pop("resume_state_json") or "null"); value["requirements"]=json.loads(value.pop("requirements_json") or "{}"); value["required_mcp"]=json.loads(value.pop("required_mcp_json") or "[]"); value["mcp_evidence"]=json.loads(value.pop("mcp_evidence_json") or "[]")
             return value
     def coding_tasks(self, conversation_id: str) -> list[dict[str, Any]]:
         with self.connect() as db: ids=[x[0] for x in db.execute("SELECT id FROM coding_tasks WHERE conversation_id=? ORDER BY updated_at DESC",(conversation_id,))]
@@ -281,7 +293,7 @@ class Database:
     def update_coding_task(self, task_id: str, **values: Any) -> dict[str, Any] | None:
         current=self.coding_task(task_id)
         if not current:return None
-        allowed={"status","activity","plan","active_plan","plan_revision","pending_plan","subtask_progress","current_phase_id","retry_count","max_retries","replan_count","replan_count_in_epoch","recovery_epoch","approved_scopes","pending_authorization","pending_user_confirmation","pause_requested","archived","queue_order","recovery_action","recovery_reason","final_report","final_report_status","execution_mode","task_profile","requirements","required_mcp","mcp_evidence","batch_cursor","batch_handoff"}
+        allowed={"status","activity","plan","active_plan","plan_revision","pending_plan","subtask_progress","current_phase_id","retry_count","max_retries","replan_count","replan_count_in_epoch","recovery_epoch","task_total_plan_repair_count","task_total_recovery_model_calls","approved_scopes","pending_authorization","pending_user_confirmation","pause_requested","archived","queue_order","recovery_action","recovery_reason","final_report","final_report_status","execution_mode","task_profile","requirements","required_mcp","mcp_evidence","batch_cursor","batch_handoff","resume_state"}
         values={k:v for k,v in values.items() if k in allowed}
         if not values:return current
         if "plan" in values:
@@ -293,6 +305,7 @@ class Database:
         if "pending_authorization" in values: values["pending_authorization_json"]=json.dumps(values.pop("pending_authorization"))
         if "final_report" in values: values["final_report_json"]=json.dumps(values.pop("final_report"))
         if "batch_handoff" in values: values["batch_handoff_json"]=json.dumps(values.pop("batch_handoff"))
+        if "resume_state" in values: values["resume_state_json"]=json.dumps(values.pop("resume_state"), ensure_ascii=False)
         if "requirements" in values: values["requirements_json"]=json.dumps(values.pop("requirements"))
         if "required_mcp" in values: values["required_mcp_json"]=json.dumps(values.pop("required_mcp"))
         if "mcp_evidence" in values: values["mcp_evidence_json"]=json.dumps(values.pop("mcp_evidence"))

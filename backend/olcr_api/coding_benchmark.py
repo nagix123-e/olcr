@@ -315,6 +315,12 @@ def run_live_case(case: str, *, api_base: str, workspace: str | Path, output_dir
         phase_payload = call("GET", f"/coding-tasks/{task_id}/phase-reports")
         phase_summary = phase_payload.get("reports") if isinstance(phase_payload, dict) else []
         phase_summary = phase_summary if isinstance(phase_summary, list) else []
+        try:
+            runtime_model_observation = call("GET", "/runtime/observability")
+        except Exception as exc:
+            # Observability is additive and must not make a valid benchmark
+            # fail when an older backend does not expose the endpoint.
+            runtime_model_observation = {"status": "UNKNOWN", "reason": type(exc).__name__}
         changed_files = []
         for report in phase_summary:
             if not isinstance(report, dict):
@@ -349,7 +355,8 @@ def run_live_case(case: str, *, api_base: str, workspace: str | Path, output_dir
                   "baseline_ineligible_reasons": ineligible_reasons, "telemetry": telemetry, "success": eligible,
                   "baseline_eligible": eligible, "live_model": True, "final_report_present": final_report_present,
                   "final_report_generation_mode": telemetry.get("final_report_generation_mode", "UNKNOWN"),
-                  "changed_files": changed_files, "phase_summary": phase_summary}
+                  "changed_files": changed_files, "phase_summary": phase_summary,
+                  "runtime_model_observation": runtime_model_observation}
     except Exception as exc:
         result = write_incomplete_artifact(output_dir, contract=contract, task_id=task_id or "UNKNOWN", reason=f"{type(exc).__name__}:{exc}")
         result.update({"benchmark_execution_mode": "LIVE_ORCHESTRATOR", "workspace_path": str(root), "benchmark_run_id": run_id})

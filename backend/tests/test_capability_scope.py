@@ -77,3 +77,68 @@ class CapabilityScopeTests(unittest.TestCase):
         self.assertEqual(['framer_motion', 'gsap', 'nextjs', 'threejs'], r['forbidden_technologies'])
         self.assertNotIn('dependencies', r['forbidden_capabilities'])
         self.assertEqual('FIX', normalize_coding_requirements('開始ボタンを押してもゲームが始まりません。直してください')['mutation_mode'])
+
+    def test_validation_and_package_policy_text_cannot_contradict_stack(self):
+        text = (
+            "Required Technology Stack\n"
+            "- React\n- Anime.js v4\n\n"
+            "Do NOT introduce:\n- backend server\n- database\n\n"
+            "Validation Focus\n"
+            "Rules\n"
+            "- Do not fall back to the shared user npm cache after an install failure.\n"
+            "- Do not map shadcn to @shadcn/ui.\n"
+            "- Do not claim dependency installation success unless the real PACKAGE_INSTALL process exits successfully."
+        )
+        value = normalize_coding_requirements(text)
+        diagnostics = value["normalization_diagnostics"]
+        self.assertTrue(diagnostics["canonical_requirements_valid"])
+        self.assertEqual([], diagnostics["conflicting_semantic_keys"])
+        self.assertEqual("NO", diagnostics["requirement_contradiction"])
+        self.assertGreater(diagnostics["ignored_non_control_evidence_count"], 0)
+        self.assertFalse(any(item["active_for_control"] and item["capability"] == "frontend" and item["polarity"] == "forbidden"
+                             for item in diagnostics["capability_provenance"]))
+
+    def test_true_current_requirement_contradiction_exposes_sources(self):
+        value = normalize_coding_requirements("Implement a backend API.\nDo not implement backend.")
+        diagnostics = value["normalization_diagnostics"]
+        self.assertFalse(diagnostics["canonical_requirements_valid"])
+        self.assertEqual(["backend"], diagnostics["conflicting_semantic_keys"])
+        self.assertEqual(1, diagnostics["conflict_count"])
+        self.assertEqual("ACTIVE_CURRENT_REQUIREMENT_AND_PROHIBITION", diagnostics["conflict_reason"])
+        self.assertEqual("backend", diagnostics["required_source"]["capability"])
+        self.assertEqual("backend", diagnostics["forbidden_source"]["capability"])
+        conflict = diagnostics["conflict_details"][0]
+        self.assertEqual("backend", conflict["semantic_key"])
+        self.assertEqual(1, conflict["required_source"]["line_start"])
+        self.assertEqual(2, conflict["forbidden_source"]["line_start"])
+        self.assertTrue(conflict["required_source"]["source_span_hash"])
+        self.assertTrue(conflict["forbidden_source"]["source_span_hash"])
+
+    def test_planning_and_reporting_scopes_do_not_create_active_requirements(self):
+        value = normalize_coding_requirements(
+            "Planning Detail\nImplement backend later.\n\n"
+            "Verification\nDo not implement backend.\n\n"
+            "Report\nbackend=PASS"
+        )
+        diagnostics = value["normalization_diagnostics"]
+        self.assertTrue(diagnostics["canonical_requirements_valid"])
+        self.assertEqual([], diagnostics["active_required_capabilities"])
+        self.assertEqual([], diagnostics["active_forbidden_capabilities"])
+
+    def test_descriptive_backend_and_database_copy_keeps_current_prohibition(self):
+        value = normalize_coding_requirements(
+            "Content Description\nThe website displays backend/API information and database status.\n"
+            "Current Prohibition\nDo not add backend or database."
+        )
+        diagnostics = value["normalization_diagnostics"]
+        self.assertEqual([], value["required_capabilities"])
+        self.assertEqual(["backend", "database"], value["forbidden_capabilities"])
+        self.assertTrue(diagnostics["canonical_requirements_valid"])
+
+    def test_negative_parent_heading_propagates_only_to_children(self):
+        value = normalize_coding_requirements(
+            "Do NOT implement\nbackend\ndatabase\n\nGoal\nImplement frontend."
+        )
+        self.assertEqual(["frontend"], value["required_capabilities"])
+        self.assertEqual(["backend", "database"], value["forbidden_capabilities"])
+        self.assertTrue(value["normalization_diagnostics"]["canonical_requirements_valid"])

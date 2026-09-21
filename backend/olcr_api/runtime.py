@@ -17,6 +17,7 @@ from .models import Risk, Route, Task, TaskState
 from .ollama import ModelFailure, ModelProvider
 from .procedures import LOWERCASE_PROCEDURE, ProcedureRunner
 from .retrieval import RetrievalRouter, PathGuard
+from .package_manager import PackageManagerError, PackageManagerExecutor
 from .web import search as web_search, brave_search, brave_news_search, tavily_search, fetch as web_fetch, setup_guidance
 from .tools import ToolValidationError, registry
 
@@ -29,23 +30,80 @@ RELATION_SCHEMA_INSTRUCTION = "Each relationships[] entry must be an object with
 def _operation_failure_class(error: BaseException | str | None) -> str:
     """Map deterministic executor errors to the public operation diagnostics."""
     value = str(error or "").lower()
+    if "package.json dependency declarations are owned by package_install" in value:
+        return "PACKAGE_JSON_OWNERSHIP_VIOLATION"
+    if "package.json configuration mutations are not authorized" in value:
+        return "PACKAGE_JSON_CONFIG_UNAUTHORIZED"
+    if "empty implementation" in value or "empty operation" in value:
+        return "EMPTY_IMPLEMENTATION_OPERATIONS"
     if "target not found" in value:
         return "TARGET_NOT_FOUND"
     if "outside allowed roots" in value or "invalid path" in value:
         return "TARGET_PATH_INVALID"
     if "outside authorized mutation scope" in value:
-        return "OPERATION_SCHEMA_SEMANTIC_ERROR"
+        return "OPERATION_SCOPE_UNAUTHORIZED"
     if "patch precondition" in value or "source changed" in value or "fragment is ambiguous" in value:
         return "PREIMAGE_MISMATCH"
     if "minor edit cannot replace" in value or "invalid full-file operation" in value:
         return "WRITE_CONTENT_INVALID"
     if "structural validation" in value:
         return "WRITE_CONTENT_INVALID"
-    if "unsupported file operation" in value or "implementation plan" in value:
+    if "package-manager" in value or "package manager" in value or "package installation" in value:
+        if "timeout" in value:
+            return "PACKAGE_MANAGER_TIMEOUT"
+        if "not authorized" in value or "authorization" in value:
+            return "PACKAGE_NOT_AUTHORIZED"
+        if "unavailable" in value:
+            return "PACKAGE_MANAGER_UNAVAILABLE"
+        return "PACKAGE_MANAGER_NONZERO_EXIT"
+    if ("unsupported file operation" in value or "implementation plan" in value or
+            "patch operation requires" in value or "write operation requires" in value):
         return "OPERATION_SCHEMA_SEMANTIC_ERROR"
     if "encoding" in value or "unicode" in value:
         return "ENCODING_ERROR"
     return "EXECUTOR_ERROR" if value else "UNKNOWN"
+
+
+PACKAGE_JSON_MUTATION_CLASSES = (
+    "DEPENDENCY_DECLARATION",
+    "DEV_DEPENDENCY_DECLARATION",
+    "SCRIPT_CONFIGURATION",
+    "PROJECT_METADATA",
+    "OTHER_CONFIG",
+)
+
+
+def _package_json_changed_fields(before: str | None, after: str | None) -> set[str]:
+    """Return top-level package.json fields changed by one candidate operation."""
+    try:
+        old = json.loads(before or "{}")
+        new = json.loads(after or "{}")
+    except (TypeError, ValueError):
+        return {"OTHER_CONFIG"}
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return {"OTHER_CONFIG"}
+    changed = {str(key) for key in set(old) | set(new) if old.get(key) != new.get(key)}
+    classes: set[str] = set()
+    if "dependencies" in changed or "peerDependencies" in changed or "optionalDependencies" in changed:
+        classes.add("DEPENDENCY_DECLARATION")
+    if "devDependencies" in changed:
+        classes.add("DEV_DEPENDENCY_DECLARATION")
+    if "scripts" in changed:
+        classes.add("SCRIPT_CONFIGURATION")
+    if "name" in changed or "version" in changed or "private" in changed or "description" in changed:
+        classes.add("PROJECT_METADATA")
+    if changed - {"dependencies", "peerDependencies", "optionalDependencies", "devDependencies", "scripts", "name", "version", "private", "description"}:
+        classes.add("OTHER_CONFIG")
+    return classes
+
+
+def _ownership_failure_fingerprint(*, path: str, semantic_fields: set[str], owner: str,
+                                   package_status: str, dependencies_satisfied: bool) -> str:
+    value = {"failure_class": "PACKAGE_JSON_OWNERSHIP_VIOLATION", "path": path,
+             "semantic_fields": sorted(semantic_fields), "owner": owner,
+             "package_install_status": package_status,
+             "dependencies_satisfied": bool(dependencies_satisfied)}
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 class ContextManager:
@@ -342,11 +400,13 @@ class Runtime:
         print(f"BRAIN_THINKING_RESPONSE_CHARS={chars}", file=sys.stderr, flush=True)
         print(f"BRAIN_THINKING_EFFECTIVE={effective}", file=sys.stderr, flush=True)
         return result
-    def __init__(self, settings: Settings, db: Database, retrieval: RetrievalRouter, model: ModelProvider, artifacts: Any = None):
+    def __init__(self, settings: Settings, db: Database, retrieval: RetrievalRouter, model: ModelProvider, artifacts: Any = None,
+                 package_manager_executor: PackageManagerExecutor | None = None):
         self.settings, self.db, self.retrieval, self.model = settings, db, retrieval, model
         self.tools, self.policy = registry(), AuthorizationPolicy()
         self.procedures = ProcedureRunner(self.tools, self.policy)
         self.artifacts = artifacts
+        self.package_manager_executor = package_manager_executor or PackageManagerExecutor()
     def execute(self, text: str, approved: bool = False, core_context: str = "", suppress_web: bool = False, workspace_root: str | None = None, managed_context: dict | None = None) -> tuple[Task, str]:
         task = Task(text); task.transition(TaskState.ROUTING); started = time.perf_counter()
         try:
@@ -783,8 +843,106 @@ class Runtime:
         execution_guard = PathGuard([str(root)])
         print(f"PATHGUARD_ALLOWED_ROOTS={str(root)} PATHGUARD_TARGET_ROOT_MATCH=YES", file=sys.stderr, flush=True)
         artifact = managed_context.get("implementation_plan_artifact") if isinstance(managed_context, dict) else None
+        package_install_required = bool((managed_context or {}).get("package_install_required")) if isinstance(managed_context, dict) else False
+        package_install_satisfied = bool((managed_context or {}).get("package_install_satisfied")) if isinstance(managed_context, dict) else False
+        package_json_file_mutation_allowed = bool((managed_context or {}).get("allow_package_json_file_mutation")) if isinstance(managed_context, dict) else False
+        authorized_package_requirements = ((managed_context or {}).get("authorized_package_requirements")
+                                           if isinstance(managed_context, dict) else None)
+        package_install_operations = ((managed_context or {}).get("package_install_operations")
+                                      if isinstance(managed_context, dict) else None)
+        prior_package_install_evidence = ((managed_context or {}).get("prior_package_install_evidence")
+                                          if isinstance(managed_context, dict) else None)
+        package_json_owner = str((managed_context or {}).get("package_json_dependency_owner") or
+                                 ("PACKAGE_INSTALL" if package_install_required else "NONE"))
+        package_json_mutation_classes = list((managed_context or {}).get("package_json_mutation_classes") or PACKAGE_JSON_MUTATION_CLASSES)
+        dependencies_already_satisfied = bool((managed_context or {}).get("dependencies_already_satisfied", package_install_satisfied))
+        package_json_config_mutation_allowed = package_json_file_mutation_allowed
+        package_install_status = "PASS" if package_install_satisfied else ("PLANNED" if package_install_required else "NOT_REQUIRED")
+        package_json_dependency_mutation_allowed = not package_install_required
+        if isinstance(prior_package_install_evidence, list) and prior_package_install_evidence:
+            # Keep prior successful install evidence attached to a file retry;
+            # it is observational state, not a second package operation.
+            task.tool_executions.append({"tool": "package_install_evidence", "version": "1.0",
+                                         "risk": "SAFE", "input": {"owner": package_json_owner},
+                                         "output": {"status": "PASS", "evidence": prior_package_install_evidence[:4]},
+                                         "status": "evidence", "latency_ms": 0})
+        if package_install_required and not package_install_satisfied:
+            if not authorized_package_requirements:
+                raise PackageManagerError("package installation has no canonical authorization",
+                                          failure_class="PACKAGE_NOT_AUTHORIZED")
+            operations = package_install_operations if isinstance(package_install_operations, list) and package_install_operations else [{
+                "operation_type": "PACKAGE_INSTALL", "packages": authorized_package_requirements,
+                "dependency_kind": (managed_context or {}).get("dependency_kind", "dependencies"),
+            }]
+            for operation in operations:
+                if not isinstance(operation, dict) or not isinstance(operation.get("packages"), list):
+                    raise PackageManagerError("package installation operation is invalid", failure_class="PACKAGE_LIST_INVALID")
+                package_input = {"operation_type": "PACKAGE_INSTALL", "package_manager": (managed_context or {}).get("package_manager"),
+                                 "packages": operation["packages"], "workspace_root": str(root),
+                                 "dependency_kind": operation.get("dependency_kind", "dependencies")}
+                try:
+                    package_evidence = self.package_manager_executor.install(
+                        workspace_root=root, packages=operation["packages"],
+                        package_manager=(managed_context or {}).get("package_manager"),
+                        dependency_kind=operation.get("dependency_kind", "dependencies"),
+                        authorized_packages=authorized_package_requirements, authorized_workspace_root=root,
+                        allow_explicit_default=bool((managed_context or {}).get("allow_explicit_package_manager_default")),
+                    )
+                except PackageManagerError as exc:
+                    evidence = exc.details.get("evidence") if isinstance(exc.details.get("evidence"), dict) else {}
+                    task.tool_executions.append({"tool": "package_install", "version": "1.0", "risk": "SAFE",
+                                                  "input": package_input,
+                                                  "output": {"failure_class": exc.failure_class, **evidence},
+                                                  "status": "failed", "latency_ms": 0})
+                    print(f"PACKAGE_INSTALL_REQUESTED=YES PACKAGE_INSTALL_AUTHORIZED=YES "
+                          f"PACKAGE_INSTALL_PROCESS_STARTED={'YES' if evidence.get('process_started') else 'NO'} "
+                          f"PACKAGE_INSTALL_EXIT_CODE={evidence.get('exit_code', 'NONE')} PACKAGE_INSTALL_STATUS=FAIL "
+                          f"PACKAGE_INSTALL_FAILURE_CLASS={exc.failure_class}", file=sys.stderr, flush=True)
+                    raise RuntimeError(f"{exc.failure_class}: {exc}") from exc
+                task.tool_executions.append({"tool": "package_install", "version": "1.0", "risk": "SAFE",
+                                              "input": package_input, "output": {**package_evidence, "path": "package.json"},
+                                              "status": "success", "latency_ms": package_evidence.get("elapsed_ms", 0)})
+            package_install_satisfied = True
+            dependencies_already_satisfied = True
+            package_install_status = "PASS"
+            print(f"PACKAGE_INSTALL_REQUESTED=YES PACKAGE_INSTALL_AUTHORIZED=YES "
+                  f"PACKAGE_INSTALL_PROCESS_STARTED={'YES' if package_evidence.get('process_started') else 'NO'} "
+                  f"PACKAGE_INSTALL_EXIT_CODE={package_evidence.get('exit_code', 'NONE')} PACKAGE_INSTALL_STATUS=PASS "
+                  "DEPENDENCY_REQUIREMENTS_SATISFIED=YES",
+                  file=sys.stderr, flush=True)
+        elif package_install_required:
+            print("PACKAGE_INSTALL_REQUESTED=YES PACKAGE_INSTALL_AUTHORIZED=YES PACKAGE_INSTALL_DISPATCHED=SKIPPED_ALREADY_PASS PACKAGE_INSTALL_STATUS=PASS",
+                  file=sys.stderr, flush=True)
+        if package_install_required:
+            # Package installation can create/update package.json, a lockfile,
+            # and node_modules.  Re-read those artifacts after the typed
+            # operation so the Implementer receives current state and a
+            # durable provenance event instead of stale pre-install hashes.
+            observed = {}
+            for name in ("package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"):
+                candidate = root / name
+                if candidate.is_file():
+                    try:
+                        data = candidate.read_bytes()
+                        observed[name] = {"exists": True, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+                    except OSError:
+                        observed[name] = {"exists": False}
+                else:
+                    observed[name] = {"exists": False}
+            node_modules = root / "node_modules"
+            task.tool_executions.append({"tool": "workspace_refresh", "version": "1.0", "risk": "SAFE",
+                                         "input": {"reason": "POST_PACKAGE_INSTALL"},
+                                         "output": {"status": "PASS", "artifacts": observed,
+                                                    "node_modules_exists": node_modules.is_dir(),
+                                                    "provenance": {"package.json": "PACKAGE_INSTALL",
+                                                                    "lockfile": "PACKAGE_INSTALL",
+                                                                    "node_modules": "PACKAGE_INSTALL"}},
+                                         "status": "success", "latency_ms": 0})
         manifest_paths = {str(item.get("path")) for item in (artifact or {}).get("file_manifest", [])
                           if isinstance(item, dict) and isinstance(item.get("path"), str)}
+        scaffold_paths = {str(path).replace("\\", "/").lstrip("./")
+                          for path in (artifact or {}).get("scaffold_created_paths", [])
+                          if isinstance(path, str)}
         # Small managed tasks do not have a persisted file manifest.  Their
         # original plan scope is still the authorization boundary and must be
         # enforced by the same executor before any write occurs.
@@ -799,6 +957,12 @@ class Runtime:
             authorized_paths = manifest_paths
         else:
             authorized_paths = approved_scope_paths
+        # A package install owns dependency declarations.  Remove package.json
+        # from the effective file mutation contract unless the phase explicitly
+        # requested a non-dependency configuration edit.  The executor guard
+        # below remains in place for callers that bypass the generated schema.
+        if package_install_required and not package_json_config_mutation_allowed:
+            authorized_paths = {path for path in authorized_paths if path.replace("\\", "/").lstrip("./") != "package.json"}
         if authorized_paths:
             print(f"IMPLEMENTATION_AUTHORIZED_SCOPE_COUNT={len(authorized_paths)} IMPLEMENTATION_SCOPE_SOURCE={'PLAN_MANIFEST' if manifest_paths else 'APPROVED_SCOPE'}", file=sys.stderr, flush=True)
 
@@ -809,6 +973,18 @@ class Runtime:
 
         if manifest_paths:
             print(f"IMPLEMENTATION_SCOPE_SOURCE=PLAN_MANIFEST FILE_MANIFEST_COUNT={len(manifest_paths)}", file=sys.stderr, flush=True)
+
+        authorized_path_schema = {"type": "string"}
+        if package_install_required and not package_json_config_mutation_allowed:
+            # Keep the ownership boundary in the generation contract even for
+            # legacy managed calls that have no explicit manifest enum.
+            authorized_path_schema["not"] = {"const": "package.json"}
+        if authorized_paths:
+            # The persisted manifest is an exact-file authorization contract.
+            # Constrain structured generation to that set when the provider
+            # supports JSON Schema; PathGuard and the preflight remain the
+            # final enforcement layers for every caller.
+            authorized_path_schema["enum"] = sorted(authorized_paths)
         edit_request = bool(re.search(r"(?:編集|置き換え|置換|修正|変更|更新)\s*(?:して|しろ|ください|する)", text, re.I))
         target_match = re.search(r"(?:^|[\s「『])([\w./-]+\.(?:html?|css|js|mjs|ts|jsx|tsx|py))", text, re.I)
         if edit_request and target_match:
@@ -838,11 +1014,36 @@ class Runtime:
                     source_snapshot_hashes[rel] = hashlib.sha256(candidate.read_bytes()).hexdigest()
             except OSError:
                 continue
+        source_snapshot_paths = set(files)
         prompt = ("You have bounded filesystem tools inside the authorized workspace only. The following are actual current source contents. Diagnose from them. "
+                  "Scaffold-created files are real current files, so use an exact expected_old_fragment copied from SOURCE, or use a complete write operation with content. "
                   "For existing-file modifications, return a bounded patch using expected_old_fragment and replacement_fragment; do not regenerate a whole file. Return ONLY JSON: "
                   '{"change_required":true,"source_inspected":true,"condition_evaluated":true,"reason_code":"...","operations":[{"op":"patch","path":"relative/path","expected_old_fragment":"...","replacement_fragment":"..."}],"verification":"..."}. '
                   "For implementation requests you must provide one or more write operations; do not return Markdown code blocks or claim files were changed without operations. "
                   f"Workspace files: {files}.\nSOURCE:\n{json.dumps(existing, ensure_ascii=False)}\nRequest: {text}")
+        authorized_package_requirements = ((managed_context or {}).get("authorized_package_requirements")
+                                           if isinstance(managed_context, dict) else None)
+        package_install_required = bool((managed_context or {}).get("package_install_required")) if isinstance(managed_context, dict) else False
+        package_install_satisfied = bool((managed_context or {}).get("package_install_satisfied")) if isinstance(managed_context, dict) else False
+        if authorized_package_requirements:
+            if package_install_required:
+                prompt += ("\nPACKAGE_INSTALL_DISPATCHED=YES. The authorized package installation was handled by the typed "
+                           "executor before this file-operation call. Do not emit op=package_install and do not edit "
+                           "dependency declarations in package.json; implement the remaining authorized file changes. "
+                           f"PACKAGE_INSTALL_SATISFIED={'YES' if package_install_satisfied else 'NO'} "
+                           f"PACKAGE_INSTALL_STATUS={package_install_status} "
+                           f"DEPENDENCIES_ALREADY_SATISFIED={'YES' if dependencies_already_satisfied else 'NO'} "
+                           f"PACKAGE_JSON_DEPENDENCY_OWNER={package_json_owner} "
+                           f"PACKAGE_JSON_DEPENDENCY_MUTATION_ALLOWED={'YES' if package_json_dependency_mutation_allowed else 'NO'} "
+                           f"PACKAGE_JSON_CONFIG_MUTATION_ALLOWED={'YES' if package_json_config_mutation_allowed else 'NO'} "
+                           f"PACKAGE_JSON_MUTATION_CLASSES={json.dumps(package_json_mutation_classes, ensure_ascii=False)} "
+                           f"PACKAGE_JSON_EFFECTIVE_MUTATION_SCOPE={json.dumps(sorted(authorized_paths), ensure_ascii=False)} "
+                           f"AUTHORIZED_PACKAGE_REQUIREMENTS={json.dumps(authorized_package_requirements, ensure_ascii=False, sort_keys=True)}\n")
+            else:
+                prompt += ("\nIf dependency installation is explicitly required by this phase, the only package operation allowed is "
+                           "op=package_install with the authorized package specs below. It must be the sole operation in a batch; "
+                           "do not emit shell commands, scripts, global installs, or arbitrary package names. "
+                           f"AUTHORIZED_PACKAGE_REQUIREMENTS={json.dumps(authorized_package_requirements, ensure_ascii=False, sort_keys=True)}\n")
         if core_context: prompt += "\nDevelopment plan: " + core_context[: self.settings.context_budget // 4]
         messages=[{"role":"system","content":"Use only the supplied workspace tool protocol."},{"role":"user","content":prompt}]
         operation_schema={
@@ -852,13 +1053,26 @@ class Runtime:
                 "source_inspected":{"type":"boolean"},
                 "condition_evaluated":{"type":"boolean"},
                 "reason_code":{"type":"string"},
-                "operations":{"type":"array","items":{"type":"object","properties":{
-                    "op":{"type":"string","enum":["patch","write"]},
-                    "path":{"type":"string"},
-                    "expected_old_fragment":{"type":"string"},
-                    "replacement_fragment":{"type":"string"},
-                    "content":{"type":"string"},
-                },"required":["op","path"]}},
+                "operations":{"type":"array","items":{"oneOf":[
+                    {"type":"object","properties":{
+                        "op":{"const":"package_install"}, "package_manager":{"enum":["npm","pnpm","yarn"]},
+                        "packages":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"string","maxLength":160}},
+                        "workspace_root":{"type":"string"}, "dependency_kind":{"enum":["dependencies","devDependencies"]}
+                    },"required":["op","packages","workspace_root","dependency_kind"],"additionalProperties":False},
+                    {"type":"object","properties":{
+                        "op":{"const":"patch"}, "path":authorized_path_schema,
+                        "expected_old_fragment":{"type":"string"},
+                        "replacement_fragment":{"type":"string"},
+                        "old_text":{"type":"string"}, "new_text":{"type":"string"},
+                    },"required":["op","path","expected_old_fragment","replacement_fragment"],"additionalProperties":False},
+                    {"type":"object","properties":{
+                        "op":{"const":"patch"}, "path":authorized_path_schema,
+                        "old_text":{"type":"string"}, "new_text":{"type":"string"},
+                    },"required":["op","path","old_text","new_text"],"additionalProperties":False},
+                    {"type":"object","properties":{
+                        "op":{"const":"write"}, "path":authorized_path_schema, "content":{"type":"string"},
+                    },"required":["op","path","content"],"additionalProperties":False},
+                ]}},
                 "verification":{"type":"string"},
             },
             "required":["operations"],
@@ -870,13 +1084,29 @@ class Runtime:
         # Keep this override local to the typed Implementer call; all other
         # model roles retain their request-scoped thinking policy.
         result = self._generate_brain(messages, text, structured_schema=operation_schema, thinking_override=False)
-        task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms","model_runtime","model_engine","model_quantization")}, "status":"success"})
+        task.model_calls.append({"model":self.settings.main_model, **{k:result.get(k) for k in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms","model_runtime","model_engine","model_quantization","request_options")}, "status":"success"})
         raw=result.get("text", "") if isinstance(result,dict) else ""
         # Qwen may wrap a single otherwise-valid JSON object in a Markdown fence.
         if raw.strip().startswith("```") and raw.strip().endswith("```"):
             raw=raw.strip().split("\n",1)[-1].rsplit("```",1)[0].strip()
         try:
             payload=json.loads(raw); operations=payload.get("operations")
+            if isinstance(operations, list):
+                normalized_operations = []
+                for candidate in operations:
+                    if isinstance(candidate, dict):
+                        candidate = dict(candidate)
+                        # Accept the two common names emitted by older
+                        # Implementer prompts, then validate the canonical
+                        # operations_v1 fields below.  This is a lossless
+                        # field normalization, not a relaxation of preimages.
+                        if candidate.get("op") == "patch":
+                            if "expected_old_fragment" not in candidate and isinstance(candidate.get("old_text"), str):
+                                candidate["expected_old_fragment"] = candidate["old_text"]
+                            if "replacement_fragment" not in candidate and isinstance(candidate.get("new_text"), str):
+                                candidate["replacement_fragment"] = candidate["new_text"]
+                    normalized_operations.append(candidate)
+                operations = normalized_operations
             raw_kind="STRUCTURED_OPERATIONS" if isinstance(operations,list) and bool(operations) else "EMPTY"
             asked=bool(re.search(r"(?:続行しますか|継続しますか|ask user|next step|continue\??|次に進みますか)", raw or "", re.I))
             print(f"MODEL_RAW_RESPONSE_KIND={raw_kind} MODEL_OPERATION_EMITTED={'YES' if isinstance(operations,list) and bool(operations) else 'NO'} MODEL_OPERATION_COUNT={len(operations) if isinstance(operations,list) else 0} OPERATION_PARSE_RESULT=PASS PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'}", file=sys.stderr, flush=True)
@@ -885,44 +1115,208 @@ class Runtime:
         except (TypeError, ValueError, KeyError) as exc:
             asked=bool(re.search(r"(?:続行|継続|continue|next step|ask user|次に進|続行しますか)", raw or "", re.I))
             print(f"MODEL_RAW_RESPONSE_KIND={'EMPTY' if not raw.strip() else 'INVALID_JSON'} MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=FAIL PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'} OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
-            raise RuntimeError("implementation model did not return a valid file-operation plan") from exc
+            raise RuntimeError("IMPLEMENTER_STRUCTURED_OUTPUT_INVALID: implementation model did not return a valid file-operation plan") from exc
         if not isinstance(operations,list):
             print("MODEL_RAW_RESPONSE_KIND=INVALID_JSON MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=FAIL PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION=NO OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
-            raise RuntimeError("implementation model returned invalid operations")
+            raise RuntimeError("IMPLEMENTER_STRUCTURED_OUTPUT_INVALID: implementation model returned invalid operations")
         if not operations:
             asked=bool(re.search(r"(?:続行|継続|continue|next step|ask user|次に進|続行しますか)", raw or "", re.I))
             print(f"MODEL_RAW_RESPONSE_KIND=EMPTY MODEL_OPERATION_EMITTED=NO MODEL_OPERATION_COUNT=0 OPERATION_PARSE_RESULT=PASS PROSE_FALLBACK_USED=NO MODEL_ASKED_FOR_CONTINUATION={'YES' if asked else 'NO'} OPERATION_AUTHORIZED=NO OPERATION_EXECUTION_STARTED=NO OPERATION_EXECUTION_RESULT=FAIL", file=sys.stderr, flush=True)
             if payload.get("change_required") is False and payload.get("reason_code") == "already_satisfied" and payload.get("source_inspected") is True and payload.get("condition_evaluated") is True:
                 task.transition(TaskState.COMPLETED)
                 return self._finish(task, "No changes needed. Verified: source inspection PASS; requested condition already satisfied PASS; workspace writes: 0. Runtime behavior: NOT_RUN.", started)
-            raise RuntimeError("invalid empty implementation result")
+            # Preserve an auditable typed failure for recovery accounting.  An
+            # empty Implementer response is different from an already-satisfied
+            # read-only result and must consume the bounded recovery budget.
+            task.tool_executions.append({"tool": "operation_rejection", "version": "1.0", "risk": "SAFE",
+                                         "input": {"operation_count": 0, "mutation_required": True,
+                                                    "failure_class": "EMPTY_IMPLEMENTATION_OPERATIONS"},
+                                         "output": {"failure_class": "EMPTY_IMPLEMENTATION_OPERATIONS",
+                                                    "reason": "implementation model returned no operations",
+                                                    "worktree_state": "UNCHANGED"},
+                                         "status": "failed", "latency_ms": 0})
+            raise RuntimeError("IMPLEMENTER_STRUCTURED_OUTPUT_INVALID: implementation model returned no operations")
         if len(operations)>20: raise RuntimeError("implementation plan exceeds the 20-operation safety limit")
+        package_operations = [item for item in operations if isinstance(item, dict) and item.get("op") == "package_install"]
+        if package_operations and package_install_required:
+            task.tool_executions.append({"tool": "operation_rejection", "version": "1.0", "risk": "SAFE",
+                                         "input": {"operation_count": len(operations),
+                                                    "failure_class": "PACKAGE_INSTALL_ALREADY_DISPATCHED"},
+                                         "output": {"failure": "PACKAGE_INSTALL was already dispatched by the phase executor",
+                                                    "authorized": False, "worktree_state": "UNCHANGED"},
+                                         "status": "rejected", "latency_ms": 0})
+            raise RuntimeError("PACKAGE_INSTALL_ALREADY_DISPATCHED: package installation must not be repeated by the file Implementer")
+        if package_operations:
+            if len(package_operations) != 1 or len(operations) != 1:
+                raise RuntimeError("package installation must be the sole operation in a batch")
+            operation = package_operations[0]
+            requested_root = Path(str(operation.get("workspace_root") or "")).expanduser().resolve()
+            if requested_root != root:
+                raise PermissionError("package-manager workspace_root must equal the authorized project root")
+            if not authorized_package_requirements:
+                raise PackageManagerError("package installation has no canonical authorization",
+                                          failure_class="PACKAGE_NOT_AUTHORIZED")
+            try:
+                evidence = self.package_manager_executor.install(
+                    workspace_root=root,
+                    package_manager=operation.get("package_manager"),
+                    packages=operation.get("packages"),
+                    dependency_kind=operation.get("dependency_kind"),
+                    authorized_packages=authorized_package_requirements,
+                    authorized_workspace_root=root,
+                    allow_explicit_default=bool((managed_context or {}).get("allow_explicit_package_manager_default")),
+                )
+            except PackageManagerError as exc:
+                evidence = exc.details.get("evidence") if isinstance(exc.details.get("evidence"), dict) else {}
+                task.tool_executions.append({"tool": "package_install", "version": "1.0", "risk": "SAFE",
+                                              "input": {"operation_type": "PACKAGE_INSTALL",
+                                                        "package_manager": operation.get("package_manager"),
+                                                        "packages": operation.get("packages"),
+                                                        "workspace_root": str(root),
+                                                        "dependency_kind": operation.get("dependency_kind")},
+                                              "output": {"failure_class": exc.failure_class, **evidence},
+                                              "status": "failed", "latency_ms": 0})
+                raise RuntimeError(f"{exc.failure_class}: {exc}") from exc
+            task.tool_executions.append({"tool": "package_install", "version": "1.0", "risk": "SAFE",
+                                          "input": {"operation_type": "PACKAGE_INSTALL",
+                                                    "package_manager": evidence["package_manager"],
+                                                    "packages": evidence["packages_requested"],
+                                                    "workspace_root": str(root),
+                                                    "dependency_kind": operation.get("dependency_kind")},
+                                          "output": {**evidence, "path": "package.json"}, "status": "success",
+                                          "latency_ms": evidence.get("elapsed_ms", 0)})
+            task.transition(TaskState.COMPLETED)
+            return self._finish(task, "Package installation completed with structured evidence.", started)
         changed=[]; snapshots: dict[Path, str | None] = {}; patch_attempted=False; write_attempted=False
+        # Preflight simulates the batch in order.  This lets a later patch on
+        # the same file consume the state produced by an earlier operation,
+        # while still checking the real worktree hash exactly once before any
+        # mutation starts.
+        preflight_states: dict[Path, str | None] = {}
         # Validate every operation and path before the first write. This keeps
         # authorization atomic: a later out-of-scope operation cannot follow a
         # successful earlier mutation.
+        ownership_context: dict[str, Any] = {}
         try:
             for candidate in operations:
                 if not isinstance(candidate,dict) or candidate.get("op") not in {"patch", "write"} or not isinstance(candidate.get("path"),str):
                     raise RuntimeError("implementation plan contains an unsupported file operation")
+                if candidate.get("op") == "patch" and (
+                    not isinstance(candidate.get("expected_old_fragment"), str) or
+                    not isinstance(candidate.get("replacement_fragment"), str)):
+                    raise RuntimeError("patch operation requires expected_old_fragment and replacement_fragment")
+                if candidate.get("op") == "write" and not isinstance(candidate.get("content"), str):
+                    raise RuntimeError("write operation requires content")
                 requested=Path(candidate["path"])
                 target=(requested if requested.is_absolute() else root / requested).expanduser().resolve()
                 if root not in target.parents and target != root:
                     raise PermissionError("target outside allowed roots: outside authorized project workspace")
                 execution_guard.resolve(str(target))
                 relative = target.relative_to(root).as_posix()
+                if package_install_required and relative == "package.json" and not package_json_file_mutation_allowed:
+                    ownership_context = {"path": relative, "semantic_fields": {"DEPENDENCY_DECLARATION", "DEV_DEPENDENCY_DECLARATION"},
+                                         "owner": package_json_owner, "package_install_status": package_install_status,
+                                         "dependencies_already_satisfied": dependencies_already_satisfied}
+                    raise PermissionError("package.json dependency declarations are owned by PACKAGE_INSTALL")
                 if authorized_paths and not scope_allows(relative):
                     raise PermissionError("target outside authorized mutation scope")
-                pre_hash = hashlib.sha256(target.read_bytes()).hexdigest() if target.is_file() else None
+                if target not in preflight_states:
+                    initial = target.read_text(encoding="utf-8") if target.is_file() else None
+                    preflight_states[target] = initial
+                    pre_hash = hashlib.sha256(initial.encode("utf-8")).hexdigest() if initial is not None else None
+                    if relative in source_snapshot_paths and source_snapshot_hashes.get(relative) != pre_hash:
+                        raise RuntimeError("preimage mismatch; source changed since Implementer snapshot")
+                current = preflight_states[target] or ""
+                old = candidate.get("expected_old_fragment")
+                new = candidate.get("replacement_fragment")
+                if candidate.get("op") == "patch":
+                    if ((relative in scaffold_paths or preflight_states[target] is None or current == "")
+                            and isinstance(new, str) and new and old in (None, "")):
+                        simulated = new
+                    elif isinstance(old, str) and isinstance(new, str) and current.count(old) == 1:
+                        simulated = current.replace(old, new, 1)
+                    else:
+                        # Keep the historical application-layer diagnostic for
+                        # an invalid search fragment.  No write is performed
+                        # during preflight; execution will reject and roll
+                        # back the whole transaction before reporting failure.
+                        simulated = current
+                else:
+                    simulated = candidate.get("content")
+                if package_install_required and relative == "package.json":
+                    changed_fields = _package_json_changed_fields(current, simulated)
+                    dependency_fields = changed_fields & {"DEPENDENCY_DECLARATION", "DEV_DEPENDENCY_DECLARATION"}
+                    if dependency_fields:
+                        ownership_context = {"path": relative, "semantic_fields": dependency_fields,
+                                             "owner": package_json_owner, "package_install_status": package_install_status,
+                                             "dependencies_already_satisfied": dependencies_already_satisfied}
+                        raise PermissionError("package.json dependency declarations are owned by PACKAGE_INSTALL")
+                    if changed_fields and not package_json_config_mutation_allowed:
+                        ownership_context = {"path": relative, "semantic_fields": changed_fields,
+                                             "owner": package_json_owner, "package_install_status": package_install_status,
+                                             "dependencies_already_satisfied": dependencies_already_satisfied}
+                        raise PermissionError("package.json configuration mutations are not authorized for this phase")
+                pre_apply_hash = hashlib.sha256(current.encode("utf-8")).hexdigest() if preflight_states[target] is not None else None
+                preflight_states[target] = simulated
                 task.tool_executions.append({"tool": "operation_preflight", "version": "operations_v1",
                                              "risk": "SAFE", "input": {"op": candidate.get("op"), "path": relative},
                                              "output": {"target_canonical": str(target), "authorized": True,
-                                                        "pathguard_allowed": True, "pre_apply_hash": pre_hash},
+                                                        "pathguard_allowed": True, "pre_apply_hash": pre_apply_hash},
                                              "status": "pass", "latency_ms": 0})
-        except Exception:
+        except Exception as exc:
+            # Preserve the exact rejected operation as typed evidence.  The
+            # operation was never authorized and no mutation has started;
+            # callers can now distinguish a scope rejection from a generic
+            # model/provider failure without weakening PathGuard.
+            rejected = candidate if isinstance(candidate, dict) else {}
+            requested_path = str(rejected.get("path") or "")
+            failure_class = _operation_failure_class(exc)
+            if not ownership_context and requested_path.replace("\\", "/").lstrip("./") == "package.json" and package_install_required:
+                ownership_context = {"path": "package.json",
+                                     "semantic_fields": {"DEPENDENCY_DECLARATION", "DEV_DEPENDENCY_DECLARATION"},
+                                     "owner": package_json_owner,
+                                     "package_install_status": package_install_status,
+                                     "dependencies_already_satisfied": dependencies_already_satisfied}
+            if ownership_context and failure_class == "PACKAGE_JSON_OWNERSHIP_VIOLATION":
+                ownership_context["failure_fingerprint"] = _ownership_failure_fingerprint(
+                    path=str(ownership_context.get("path") or "package.json"),
+                    semantic_fields=set(ownership_context.get("semantic_fields") or []),
+                    owner=str(ownership_context.get("owner") or "PACKAGE_INSTALL"),
+                    package_status=str(ownership_context.get("package_install_status") or "UNKNOWN"),
+                    dependencies_satisfied=bool(ownership_context.get("dependencies_already_satisfied")),
+                )
+            task.tool_executions.append({
+                "tool": "operation_rejection",
+                "version": "operations_v1",
+                "risk": "SAFE",
+                "input": {"op": rejected.get("op"), "path": requested_path,
+                          "failure_class": failure_class,
+                          "semantic_field": ",".join(sorted(ownership_context.get("semantic_fields") or [])) or None,
+                          "owner": ownership_context.get("owner"),
+                          "failure_fingerprint": ownership_context.get("failure_fingerprint"),
+                          "operation_fields": sorted(str(key) for key in rejected.keys())},
+                "output": {"failure": str(exc), "authorized": False,
+                           "pathguard_allowed": "outside allowed roots" not in str(exc).lower(),
+                           "authorization_scope": "PLAN_MUTABLE_MANIFEST_SCOPE",
+                           "rejection_reason": str(exc),
+                           "semantic_field": ",".join(sorted(ownership_context.get("semantic_fields") or [])) or None,
+                           "owner": ownership_context.get("owner"),
+                           "package_install_status": ownership_context.get("package_install_status"),
+                           "dependencies_already_satisfied": ownership_context.get("dependencies_already_satisfied"),
+                           "failure_fingerprint": ownership_context.get("failure_fingerprint"),
+                           "worktree_state": "UNCHANGED"},
+                "status": "rejected",
+                "latency_ms": 0,
+            })
+            print(f"OPERATION_REJECTED=YES OPERATION_REJECTION_CLASS={failure_class} "
+                  f"OPERATION_REJECTION_PATH={requested_path or 'UNKNOWN'} "
+                  f"OPERATION_REJECTION_FIELD=operations[].path "
+                  f"OPERATION_REJECTION_REASON={str(exc)} "
+                  "FILES_WRITTEN=0 ACCEPTED_MUTATIONS=0", file=sys.stderr, flush=True)
             print(f"OPERATION_AUTHORIZED=NO OPERATION_COUNT={len(operations)}", file=sys.stderr, flush=True)
             raise
         print(f"OPERATION_AUTHORIZED=YES OPERATION_COUNT={len(operations)}", file=sys.stderr, flush=True)
+        execution_expected: dict[Path, str | None] = {}
         try:
           print("OPERATION_EXECUTION_STARTED=YES", file=sys.stderr, flush=True)
           for operation in operations:
@@ -936,15 +1330,21 @@ class Runtime:
             relative = target.relative_to(root).as_posix()
             if authorized_paths and not scope_allows(relative):
                 raise PermissionError("target outside authorized mutation scope")
-            existed_before=target.exists()
-            pre_apply_bytes = target.read_bytes() if existed_before else b""
-            pre_apply_hash = hashlib.sha256(pre_apply_bytes).hexdigest() if existed_before else None
+            existed_before=target.is_file()
+            current = target.read_text(encoding="utf-8") if existed_before else None
+            if target not in execution_expected:
+                execution_expected[target] = current
+            elif current != execution_expected[target]:
+                raise RuntimeError("preimage mismatch; worktree changed during operation batch")
+            pre_apply_hash = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
             source_hash = source_snapshot_hashes.get(relative)
             print(f"OPERATION_TARGET={relative} OPERATION_TARGET_CANONICAL={target} AUTHORIZED=YES PATHGUARD_ALLOWED=YES "
                   f"IMPLEMENTER_SOURCE_HASH={source_hash or 'NONE'} EXECUTOR_PRE_APPLY_HASH={pre_apply_hash or 'NONE'} "
                   f"SOURCE_HASH_MATCH={'YES' if source_hash == pre_apply_hash else 'UNKNOWN'}", file=sys.stderr, flush=True)
-            current = target.read_text(encoding="utf-8") if existed_before else ""
-            snapshots[target] = current if existed_before else None
+            current_text = current or ""
+            if target not in snapshots:
+                snapshots[target] = current if existed_before else None
+            normalized_scaffold_write = False
             if operation["op"] == "patch":
                 patch_attempted=True
                 old, new = operation.get("expected_old_fragment"), operation.get("replacement_fragment")
@@ -952,25 +1352,42 @@ class Runtime:
                 # implementation model.  For an absent (or empty artifact)
                 # target, normalize it to a content-bearing write.  Existing
                 # non-empty files retain strict patch preconditions.
-                if (not existed_before or current == "") and isinstance(new, str) and new and (old in (None, "")):
+                if (relative in scaffold_paths or not existed_before or current_text == "") and isinstance(new, str) and new and (old in (None, "")):
                     operation = {"op":"write", "path":operation["path"], "content":new}
+                    normalized_scaffold_write = True
                     task.tool_executions.append({"tool":"workspace_write_normalized","version":"1.0","risk":"SAFE","input":{"path":str(target),"reason":"new_file_complete_content"},"output":{},"status":"normalized","latency_ms":0})
 
             if operation["op"] == "patch":
-                if not isinstance(old, str) or not isinstance(new, str) or not old or current.count(old) != 1:
+                if not isinstance(old, str) or not isinstance(new, str) or not old or current_text.count(old) != 1:
+                    old_match_count = current_text.count(old) if isinstance(old, str) else 0
+                    patch_diagnostic = {
+                        "patch_context": "EXPECTED_OLD_FRAGMENT",
+                        "patch_old_text_hash": hashlib.sha256(old.encode("utf-8")).hexdigest() if isinstance(old, str) else "NONE",
+                        "patch_new_text_hash": hashlib.sha256(new.encode("utf-8")).hexdigest() if isinstance(new, str) else "NONE",
+                        "patch_old_match_count": old_match_count,
+                        "implementer_source_hash": source_hash or "NONE",
+                        "executor_pre_apply_hash": pre_apply_hash or "NONE",
+                        "actual_file_content_hash": pre_apply_hash or "NONE",
+                        "transaction_base_hash": hashlib.sha256((execution_expected[target] or "").encode("utf-8")).hexdigest() if execution_expected[target] is not None else "NONE",
+                        "preimage_failure_reason": ("STALE_OLD_TEXT" if old_match_count == 0 else "AMBIGUOUS_OLD_TEXT_MATCH"),
+                    }
+                    task.tool_executions.append({"tool": "preimage_diagnostic", "version": "operations_v1", "risk": "SAFE",
+                                                 "input": {key: value for key, value in patch_diagnostic.items() if key != "patch_new_text_hash"},
+                                                 "output": patch_diagnostic, "status": "failed", "latency_ms": 0})
                     raise RuntimeError("patch precondition failed; source changed or fragment is ambiguous")
-                content = current.replace(old, new, 1)
+                content = current_text.replace(old, new, 1)
             else:
                 write_attempted=True
                 content = operation.get("content")
                 if not isinstance(content, str) or len(content) > 500_000: raise RuntimeError("invalid full-file operation")
-            if target.exists() and operation["op"] == "write" and len(content) < max(32, len(current)//2):
+            if target.exists() and operation["op"] == "write" and not normalized_scaffold_write and len(content) < max(32, len(current_text)//2):
                 raise RuntimeError("minor edit cannot replace most of an existing file")
             related = self._related_sources(target, root=root)
             if not self._structural_ok(target, content, related): raise RuntimeError("structural validation failed")
             target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content, encoding="utf-8")
+            execution_expected[target] = content
             changed.append(str(target))
-            task.tool_executions.append({"tool":"workspace_write","version":"1.0","risk":"SAFE","input":{"path":str(target),"content_length":len(content)},"output":{"path":str(target),"bytes":target.stat().st_size},"status":"success","latency_ms":0})
+            task.tool_executions.append({"tool":"workspace_write","version":"1.0","risk":"SAFE","input":{"path":str(target),"content_length":len(content)},"output":{"path":str(target),"bytes":target.stat().st_size,"created_by_current_task":not existed_before},"status":"success","latency_ms":0})
         except Exception as exc:
           failure_class = _operation_failure_class(exc)
           task.tool_executions.append({"tool": "operation_application_failure", "version": "operations_v1",

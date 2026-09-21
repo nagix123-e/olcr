@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .config import DEFAULT_ROUTER_MODEL, Settings
+from .config import DEFAULT_MAIN_MODEL, DEFAULT_ROUTER_MODEL, Settings
 from .artifacts import ArtifactStore
 from .db import Database
 from .ollama import OllamaProvider
@@ -36,7 +36,10 @@ from .external_tools import (ExternalToolError, REGISTRY, execute as execute_ext
     route as route_external_tool, compile_provider_arguments, normalize_weather_arguments,
     normalize_research_arguments, normalize_wiki_arguments, status as external_tool_status,
     NEW_TOOL_IDS)
-from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TASK, PHASE_EXECUTION_MODES, coding_candidate,
+from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TASK, MAX_BLOCKER_REOPEN_EPOCHS,
+                            TASK_GLOBAL_REPLAN_LIMIT,
+                            TASK_GLOBAL_PLAN_REPAIR_LIMIT, TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT,
+                            PHASE_EXECUTION_MODES, coding_candidate,
                             classify_coding_request,
     completion_prompt, deterministic_final_report, manager_review_prompt, model_slot, new_id, plan_prompt,
     plan_repair_prompt, report_has_authoritative_failure,
@@ -44,14 +47,23 @@ from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TA
     normalize_manager_decision, evaluate_phase, classify_waiting_input, classify_execution_mode,
     compact_normal_plan, execution_mode_diagnostics, resumable_continuation_eligible,
     workspace_mutation_count, zero_mutation_retry_instruction, task_profile,
-    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, animejs_project_version, animejs_version_compatibility,
+    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, canonical_dependency_requirements, dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements, animejs_project_version, animejs_version_compatibility,
+    normalize_replan_graph, graph_validation_diagnostics, reconcile_graph_references,
+    ensure_explicit_phase_execution_modes, phase_executor_capability,
     phase_has_observable_deliverable, coding_classification_diagnostics, classify_mutation_mode,
-    attachment_repair_evidence, validate_fix_plan_quality, phase_execution_contract_errors)
+    attachment_repair_evidence, validate_fix_plan_quality, phase_execution_contract_errors,
+    repair_phase_complexity, dependency_requirement_names)
 from .mcp_manifest import server_definition
 from .mcp_runtime import MCPRuntime
 from .node_mcp_runtime import launch_command as node_mcp_launch_command, resolve_mcp_resources as node_mcp_resource_status
 from .interactive_planning import parse_pending_questions, resolve_short_reply
-from .implementation_plan import prepare_implementation_plan
+from .implementation_plan import (PlanPathValidationError, PlanManifestCoverageError, PlanStackConformanceError, path_validation_code,
+                                   deterministic_manifest_completion, manifest_coverage, manifest_coverage_message,
+                                   manifest_repair_no_progress_message,
+                                   deterministic_manifest_completion_diagnostics, manifest_repair_progress,
+                                   path_validation_message, prepare_implementation_plan, stack_conformance,
+                                   stack_conformance_message,
+                                   workspace_state, normalize_plan_artifact_paths)
 from .coding_telemetry import CodingTelemetry
 from .node_mcp_runtime import runtime_diagnostics
 print(json.dumps(runtime_diagnostics(), ensure_ascii=False), file=__import__('sys').stderr, flush=True)
@@ -69,6 +81,10 @@ class ChatInput(BaseModel):
     external: Optional[dict] = None
     message_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     execution_intent: Optional[str] = Field(default=None, max_length=64)
+    # Resume is an explicit control-plane action.  Ordinary chat text must
+    # remain owned by Normal Brain even when a resumable Coding Task exists.
+    resume_control: bool = False
+    resume_task_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 class SearchInput(BaseModel):
@@ -246,6 +262,39 @@ def model_status():
         pass
     return {"main_model":settings.main_model, "main_installed":settings.main_model in installed, "router_model":settings.router_model, "router_installed":settings.router_model in installed, "installed":installed}
 
+def _coding_model_provenance(model: str, role: str | None = None) -> dict[str, Any]:
+    """Explain the effective Coding model without exposing configuration secrets."""
+    effective = str(model or settings.main_model or "UNKNOWN")
+    try:
+        application_main = db.load_application_settings().get("main_model")
+    except Exception:
+        application_main = None
+    if application_main == "qwen3:14b" and effective == DEFAULT_MAIN_MODEL:
+        source = "APPLICATION_SETTINGS_MAIN_MODEL_LEGACY_NORMALIZED_TO_DEFAULT_MAIN_MODEL"
+    elif application_main:
+        source = "APPLICATION_SETTINGS_MAIN_MODEL"
+    elif os.environ.get("OLLAMA_MODEL"):
+        source = "OLLAMA_MODEL_ENV"
+    else:
+        source = "DEFAULT_MAIN_MODEL"
+    return {"effective_model": effective, "source": source,
+            "application_main_model": str(application_main or "NOT_PERSISTED"),
+            "application_main_model_used_for_coding": "YES" if application_main and effective == settings.main_model else "NO",
+            "role": role or "CODING"}
+
+@app.get("/api/runtime/observability")
+def runtime_observability():
+    """Read-only allow-listed Ollama runtime metadata for performance audits."""
+    provider = getattr(runtime, "model", None)
+    if hasattr(provider, "runtime_observation"):
+        observation = provider.runtime_observation(settings.main_model)
+    else:
+        observation = {"status": "UNKNOWN", "target_model": settings.main_model,
+                       "processor_placement": "UNKNOWN", "gpu_offload": "UNKNOWN",
+                       "daemon_keep_alive": "UNKNOWN", "loaded_models": []}
+    observation["model_provenance"] = _coding_model_provenance(settings.main_model)
+    return observation
+
 def valid_workspace(path: str | None) -> str | None:
     if path is None or not path.strip(): return None
     candidate=Path(path).expanduser().resolve()
@@ -307,14 +356,39 @@ def _coding_task_context(conversation_id: str) -> str:
 
 
 _INTERNAL_CONTROL_FRAME = re.compile(r"\[ACTIVE_CODING_TASK_STATE\].*?\[/ACTIVE_CODING_TASK_STATE\]", re.IGNORECASE | re.DOTALL)
+_INTERNAL_THINK_FRAME = re.compile(r"<think\b[^>]*>.*?</think\s*>", re.IGNORECASE | re.DOTALL)
 
 
 def _sanitize_user_visible_assistant_text(value: str) -> str:
-    """Strip internal coding-task control frames before persistence/rendering."""
+    """Render only the user-visible model channel.
+
+    Ollama normally returns reasoning in a separate ``message.thinking``
+    field.  A provider or test double can still put reasoning delimiters in
+    ``content``; those delimiters are an internal channel boundary and must
+    never become an assistant message.  The stream path also calls this
+    helper on the accumulated response, so a delimiter split across chunks
+    is handled as one frame rather than as independent prose.
+    """
     text = str(value or "")
-    if "[ACTIVE_CODING_TASK_STATE]" not in text:
-        return text
-    cleaned = _INTERNAL_CONTROL_FRAME.sub("", text)
+    cleaned = _INTERNAL_THINK_FRAME.sub("", text)
+    # Fail closed for an incomplete reasoning frame.  Keeping text before an
+    # opening marker supports providers that prepend a short visible prefix,
+    # while ensuring the hidden channel itself is never rendered.
+    opening = re.search(r"<think\b[^>]*>", cleaned, re.IGNORECASE)
+    if opening:
+        closing = re.search(r"</think\s*>", cleaned[opening.end():], re.IGNORECASE)
+        if closing:
+            end = opening.end() + closing.end()
+            cleaned = cleaned[:opening.start()] + cleaned[end:]
+        else:
+            cleaned = cleaned[:opening.start()]
+    elif re.search(r"</think\s*>", cleaned, re.IGNORECASE):
+        # A continuation chunk can contain only the closing delimiter.  The
+        # content before it belongs to the hidden channel.
+        cleaned = re.split(r"</think\s*>", cleaned, maxsplit=1, flags=re.IGNORECASE)[-1]
+    if "[ACTIVE_CODING_TASK_STATE]" not in cleaned:
+        return cleaned.strip()
+    cleaned = _INTERNAL_CONTROL_FRAME.sub("", cleaned)
     # Fail closed for an unterminated or frame-only response; control JSON is
     # never allowed to become an assistant message.
     cleaned = re.sub(r"\[ACTIVE_CODING_TASK_STATE\].*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
@@ -326,6 +400,245 @@ def _blocked_task_user_message(task: dict) -> str:
     if reason == "NARRATIVE_ONLY_RETRY_EXHAUSTED":
         return "実装操作を開始できない状態が再試行上限まで続いたため、タスクを停止しました。"
     return "Coding Task はブロックされています。状態を確認してから再試行してください。"
+
+
+def _blocked_task_phase_contract(task: dict) -> tuple[dict | None, list[dict], str | None]:
+    """Return the persisted phase contract and its owned dependency records."""
+    plan = task.get("plan") if isinstance(task.get("plan"), dict) else {}
+    phase_id = str(task.get("current_phase_id") or "")
+    phase = next((item for item in (plan.get("phases") or [])
+                  if isinstance(item, dict) and str(item.get("id") or "") == phase_id), None)
+    if phase is None:
+        return None, [], None
+    artifact = plan.get("implementation_plan_artifact") if isinstance(plan, dict) else None
+    coverage = artifact.get("manifest_coverage") if isinstance(artifact, dict) else {}
+    all_records = (coverage or {}).get("dependency_requirement_records") or \
+        ((coverage or {}).get("requirement_types") or {}).get("DEPENDENCY_REQUIREMENT_PROVENANCE") or []
+    phase_records = phase.get("dependency_requirements")
+    if not isinstance(phase_records, list):
+        phase_records = [item for item in all_records
+                         if isinstance(item, dict) and str(item.get("phase_id") or "") == phase_id]
+    root = artifact.get("target_root") if isinstance(artifact, dict) else None
+    return phase, [item for item in phase_records if isinstance(item, dict)], str(root) if root else None
+
+
+def _latest_blocker_evidence(task: dict) -> dict[str, Any]:
+    """Reduce persisted reports to the deterministic blocker evidence surface."""
+    task_id = str(task.get("id") or "")
+    phase_id = str(task.get("current_phase_id") or "")
+    revision = int(task.get("plan_revision") or 0)
+    rows = db.coding_phase_reports(task_id)
+    candidates = [row for row in rows if (not phase_id or row.get("phase_id") == phase_id)
+                  and _report_plan_revision(row.get("structured_report") or {}) == revision]
+    if not candidates:
+        candidates = rows
+    latest = None
+    rejected: list[dict] = []
+    typed_latest: dict[str, Any] = {}
+    for row in reversed(candidates):
+        report = row.get("structured_report") if isinstance(row.get("structured_report"), dict) else {}
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        current_rejected = [item for item in (typed.get("rejected_operations") or []) if isinstance(item, dict)]
+        if latest is None and (current_rejected or typed.get("failure_class") or typed.get("package_install_status")):
+            latest = report
+            typed_latest = typed
+        rejected.extend(current_rejected)
+    if latest is None and candidates:
+        latest = candidates[-1].get("structured_report") or {}
+        typed_latest = latest.get("typed_execution_summary") if isinstance(latest.get("typed_execution_summary"), dict) else {}
+    ownership = next((item for item in rejected
+                      if str(item.get("category") or "") == "PACKAGE_JSON_OWNERSHIP_VIOLATION"
+                      or "package.json" in str(item.get("path") or "")
+                      and "owned by PACKAGE_INSTALL" in str(item.get("reason") or "")), None)
+    package_failed = any(item.get("tool") == "package_install" and
+                         (str(item.get("status") or "").lower() not in {"success", "completed", "ok"}
+                          or (isinstance(item.get("output"), dict) and item["output"].get("exit_code") not in (None, 0)))
+                         for row in candidates
+                         for item in ((row.get("structured_report") or {}).get("typed_execution_summary") or {}).get("operations") or [])
+    failure_class = str(typed_latest.get("failure_class") or (latest or {}).get("failure_class") or "UNKNOWN").upper()
+    if ownership:
+        blocker_class = "PACKAGE_JSON_OWNERSHIP_VIOLATION"
+    elif package_failed or "PACKAGE" in failure_class:
+        blocker_class = "PACKAGE_MANAGER_FAILURE"
+    elif "PREIMAGE" in failure_class or typed_latest.get("preimage_diagnostics"):
+        blocker_class = "PREIMAGE_FAILURE"
+    elif any(token in failure_class for token in ("MANIFEST", "PATH")):
+        blocker_class = "MANIFEST_PATH_FAILURE"
+    else:
+        blocker_class = failure_class or "UNKNOWN_BLOCKER"
+    package_state = _package_install_state_from_reports(task_id, phase_id, revision) if phase_id else None
+    no_progress, fingerprint, count = _repeated_zero_progress_failure(task_id)
+    # Reports created by older scheduler versions can share a timestamp with
+    # the blueprint row, so the persisted row order is not a reliable source
+    # for lifetime no-progress history.  Count every typed zero-progress
+    # report as well and retain all known fingerprints in the recovery state.
+    zero_progress_reports = [
+        (_zero_progress_signature(row.get("structured_report") or ""), row.get("structured_report") or {})
+        for row in candidates
+    ]
+    historical_zero_progress = [item for item in zero_progress_reports if item[0]]
+    if historical_zero_progress:
+        count = max(count, len(historical_zero_progress))
+        fingerprint = fingerprint or historical_zero_progress[-1][0]
+    return {"blocker_class": blocker_class, "failure_class": failure_class,
+            "latest_report": latest or {}, "typed": typed_latest,
+            "rejected_operation": ownership or (rejected[-1] if rejected else {}),
+            "package_state": package_state, "no_progress": no_progress,
+            "no_progress_fingerprint": fingerprint, "no_progress_count": count,
+            "failure_fingerprints": [item[0] for item in historical_zero_progress[-16:]],
+            "package_failure_evidence": package_failed,
+            "rejected_operations": rejected[-8:]}
+
+
+def _revalidate_blocked_task(task: dict, *, source: str) -> dict:
+    """Reopen a BLOCKED task only after typed, observable blocker checks pass."""
+    task_id = str(task.get("id") or "")
+    before_status = str(task.get("status") or "UNKNOWN")
+    before_epoch = int(task.get("recovery_epoch") or 0)
+    phase_before = task.get("current_phase_id")
+    evidence = _latest_blocker_evidence(task)
+    state = task.get("resume_state") if isinstance(task.get("resume_state"), dict) else {}
+    history = list(state.get("blocker_history") or []) if isinstance(state.get("blocker_history"), list) else []
+    blocker_class = str(evidence.get("blocker_class") or "UNKNOWN_BLOCKER")
+    fingerprint = str(evidence.get("no_progress_fingerprint") or "")
+    historical_reason = str(task.get("recovery_reason") or "UNKNOWN")
+    telemetry = {"result": "INDETERMINATE", "blocker_class": blocker_class,
+                 "reason": "", "fingerprint": fingerprint,
+                 "source": source, "at": time.time(), "retry_channel": None}
+    prior_fingerprints = [str(item) for item in (state.get("failure_fingerprints") or [])
+                          if isinstance(item, (str, int, float))]
+    evidence_fingerprints = [str(item) for item in (evidence.get("failure_fingerprints") or [])
+                             if isinstance(item, (str, int, float))]
+    state = {**state, "version": _RESUME_STATE_VERSION,
+             "original_recovery_reason": state.get("original_recovery_reason") or historical_reason,
+             "no_progress_count": max(int(state.get("no_progress_count") or 0), int(evidence.get("no_progress_count") or 0)),
+             "last_failure_fingerprint": state.get("last_failure_fingerprint") or fingerprint,
+             "failure_fingerprints": list(dict.fromkeys(
+                 prior_fingerprints + evidence_fingerprints + ([fingerprint] if fingerprint else [])
+             ))[-32:],
+             "blocker_revalidation": {"status": "BLOCKER_REVALIDATION", "started_at": telemetry["at"],
+                                      "blocker_class": blocker_class}}
+    db.update_coding_task(task_id, status="BLOCKED", activity="BLOCKER_REVALIDATION", resume_state=state)
+    print(f"TASK_ID={task_id} BLOCKED_CONTINUE_REQUESTED=YES BLOCKER_REVALIDATION_STARTED=YES "
+          f"TASK_STATUS_BEFORE={before_status} PHASE_CURSOR_BEFORE={phase_before or 'NONE'} "
+          f"RECOVERY_EPOCH_BEFORE={before_epoch}", file=__import__('sys').stderr, flush=True)
+
+    result = "INDETERMINATE"
+    reason = "historical blocker evidence is unavailable"
+    retry_channel = None
+    phase, dependency_records, artifact_root = _blocked_task_phase_contract(task)
+    package_state = evidence.get("package_state")
+    workspace_root = artifact_root or (package_state or {}).get("workspace_root")
+    if blocker_class in {"PACKAGE_JSON_OWNERSHIP_VIOLATION", "PACKAGE_MANAGER_FAILURE"}:
+        if phase is None:
+            reason = "current phase contract is unavailable"
+        elif not isinstance(package_state, dict) or not package_state.get("authorized_package_set"):
+            if blocker_class == "PACKAGE_MANAGER_FAILURE" and evidence.get("package_failure_evidence"):
+                result = "STILL_BLOCKED"
+                reason = "PACKAGE_INSTALL evidence remains invalid because the package-manager operation did not pass"
+            else:
+                reason = "successful PACKAGE_INSTALL evidence is missing"
+        else:
+            # This is the same resume boundary used by the scheduler.  It
+            # checks hashes, dependency fingerprints, workspace ownership,
+            # and node_modules before any queue entry is created.
+            ok, _package_evidence, restored = _reconcile_package_install_resume(
+                task_id, phase, int(task.get("plan_revision") or 0), workspace_root, dependency_records)
+            package_state = restored or package_state
+            if not ok:
+                result = "STILL_BLOCKED"
+                reason = str((package_state or {}).get("resume_evidence_invalidation_reason") or
+                             "current PACKAGE_INSTALL evidence is invalid")
+            elif str((package_state or {}).get("owner") or "") != "PACKAGE_INSTALL":
+                reason = "PACKAGE_INSTALL evidence does not retain PACKAGE_INSTALL ownership"
+            elif not bool((package_state or {}).get("dependencies_satisfied")):
+                reason = "PACKAGE_INSTALL evidence does not prove dependencies are satisfied"
+            else:
+                package_authorized = phase.get("requires_dependency_installation") is True and bool(dependency_records)
+                if not package_authorized:
+                    reason = "current phase contract does not authorize PACKAGE_INSTALL ownership"
+                else:
+                    result, reason, retry_channel = "RESOLVED", "PACKAGE_INSTALL evidence is valid and current implementation excludes dependency mutation", "IMPLEMENTATION"
+    elif blocker_class in {"UNKNOWN", "UNKNOWN_BLOCKER", "PREIMAGE_FAILURE", "MANIFEST_PATH_FAILURE"}:
+        reason = f"typed revalidation for {blocker_class} is unavailable"
+
+    telemetry.update({"result": result, "reason": reason, "retry_channel": retry_channel,
+                      "package_install_status": (package_state or {}).get("status") if isinstance(package_state, dict) else None,
+                      "dependencies_satisfied": (package_state or {}).get("dependencies_satisfied") if isinstance(package_state, dict) else None,
+                      "package_json_owner": (package_state or {}).get("package_json_owner") if isinstance(package_state, dict) else None})
+    history.append(telemetry)
+    state = {**(db.coding_task(task_id) or {}).get("resume_state", state),
+             "version": _RESUME_STATE_VERSION, "blocker_history": history[-16:],
+             "last_blocker_revalidation": telemetry}
+    if result != "RESOLVED":
+        state["blocker_revalidation"] = {"status": result, "reason": reason, "blocker_class": blocker_class}
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE",
+                              recovery_reason=str(state.get("original_recovery_reason") or historical_reason or f"BLOCKER_REVALIDATION_{result}"),
+                              resume_state=state)
+        print(f"TASK_ID={task_id} BLOCKER_REVALIDATION_RESULT={result} BLOCKER_REVALIDATION_REASON={reason} "
+              f"RECOVERY_EPOCH_BEFORE={before_epoch} RECOVERY_EPOCH_AFTER={before_epoch} "
+              f"TASK_STATUS_AFTER=BLOCKED PHASE_CURSOR_AFTER={phase_before or 'NONE'} "
+              "RETRY_CHANNEL_AFTER=NONE NORMAL_RUNTIME_FALLBACK=false RESPONSE_OWNER=CODING_ORCHESTRATOR",
+              file=__import__('sys').stderr, flush=True)
+        response = f"BLOCKER_REVALIDATION={result}: {reason}"
+        return {"conversation_id": task.get("conversation_id"), "coding_task_id": task_id,
+                "response": response,
+                "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                    "task_id": task_id, "status": "BLOCKED"}, "sources": []}
+
+    reopen_count = int(state.get("blocker_reopen_epochs") or 0)
+    if reopen_count >= MAX_BLOCKER_REOPEN_EPOCHS:
+        reason = f"blocker reopen limit reached ({MAX_BLOCKER_REOPEN_EPOCHS})"
+        telemetry.update(result="STILL_BLOCKED", reason=reason)
+        state["last_blocker_revalidation"] = telemetry
+        state["blocker_revalidation"] = {"status": "STILL_BLOCKED", "reason": reason, "blocker_class": blocker_class}
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE", recovery_reason="BLOCKER_REOPEN_LIMIT",
+                              resume_state=state)
+        print(f"TASK_ID={task_id} BLOCKER_REVALIDATION_RESULT=STILL_BLOCKED BLOCKER_REVALIDATION_REASON={reason} "
+              f"RECOVERY_EPOCH_BEFORE={before_epoch} RECOVERY_EPOCH_AFTER={before_epoch} "
+              "TASK_STATUS_AFTER=BLOCKED RETRY_CHANNEL_AFTER=NONE NORMAL_RUNTIME_FALLBACK=false RESPONSE_OWNER=CODING_ORCHESTRATOR",
+              file=__import__('sys').stderr, flush=True)
+        return {"conversation_id": task.get("conversation_id"), "coding_task_id": task_id,
+                "response": f"BLOCKER_REVALIDATION=STILL_BLOCKED: {reason}",
+                "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS", "task_id": task_id, "status": "BLOCKED"},
+                "sources": []}
+
+    after_epoch = before_epoch + 1
+    state.update({"blocker_reopen_epochs": reopen_count + 1,
+                  "phase_cursor": phase_before, "retry_channel": retry_channel,
+                  "blocker_revalidation": {"status": "REOPENED", "reason": reason,
+                                             "blocker_class": blocker_class}})
+    db.update_coding_task(task_id, recovery_epoch=after_epoch, retry_count=0,
+                          replan_count_in_epoch=0, current_phase_id=phase_before,
+                          recovery_action="BLOCKER_REOPEN", recovery_reason="BLOCKER_REVALIDATED",
+                          resume_state=state)
+    queued = db.enqueue_coding_task(task_id)
+    _coding_scheduler_wake.set()
+    accepted = bool(queued and queued.get("status") == "QUEUED")
+    after_status = queued.get("status") if queued else "UNKNOWN"
+    print(f"TASK_ID={task_id} BLOCKER_REVALIDATION_RESULT=RESOLVED BLOCKER_REVALIDATION_REASON={reason} "
+          f"RECOVERY_EPOCH_BEFORE={before_epoch} RECOVERY_EPOCH_AFTER={after_epoch} "
+          f"TASK_STATUS_AFTER={after_status} PHASE_CURSOR_AFTER={phase_before or 'NONE'} "
+          f"RETRY_CHANNEL_AFTER={retry_channel or 'NONE'} GREENFIELD_INIT_REENTERED=NO "
+          "NORMAL_RUNTIME_FALLBACK=false RESPONSE_OWNER=CODING_ORCHESTRATOR",
+          file=__import__('sys').stderr, flush=True)
+    return {"conversation_id": task.get("conversation_id"), "coding_task_id": task_id,
+            "response": "" if accepted else f"BLOCKER_REVALIDATION=RESOLVED but queueing failed for task {task_id}",
+            "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                "task_id": task_id, "status": after_status or "UNKNOWN"}, "sources": []}
+
+
+def _add_task_message_once(conversation_id: str, task_id: str, content: str) -> bool:
+    """Persist one logical recovery message, even if status is replayed."""
+    conversation = db.conversation(conversation_id) or {}
+    for message in reversed(conversation.get("messages") or []):
+        if (message.get("role") == "assistant" and message.get("task_id") == task_id
+                and message.get("content") == content):
+            return False
+    db.add_message(conversation_id, "assistant", content, time.time(), str(uuid.uuid4()), task_id)
+    return True
 
 def _planning_context_prompt(session: dict | None) -> str:
     if not session: return ""
@@ -420,6 +733,61 @@ def list_projects(): return {"projects":db.projects()}
 @app.get("/api/conversations/{conversation_id}/coding-tasks")
 def list_coding_tasks(conversation_id: str): return {"tasks":db.coding_tasks(conversation_id)}
 
+
+def _resume_coding_task_control(task: dict, *, source: str) -> dict:
+    """Queue one persisted task from an explicit, exclusive resume action."""
+    if str(task.get("status") or "") == "BLOCKED":
+        return _revalidate_blocked_task(task, source=source)
+    if not resumable_continuation_eligible(task):
+        raise HTTPException(409, "task is not safely resumable or requires authorization")
+    task_id = task["id"]
+    if task.get("recovery_reason") == "PLAN_MANIFEST_REPAIR_NO_PROGRESS":
+        # An unchanged failed repair has no new information to consume.  An
+        # explicit Resume must not replay the same model repair or emit the
+        # same pause message a second time.
+        print(f"TASK_ID={task_id} RESUME_REQUEST_SOURCE={source} RESUME_SAME_TASK=NO "
+              "RESUME_REQUESTED=true RESUME_ACCEPTED=false "
+              "RECOVERY_REASON=PLAN_MANIFEST_REPAIR_NO_PROGRESS "
+              "NEXT_TASK_ACTION=NONE NORMAL_BRAIN_INVOKED=NO "
+              "DUPLICATE_PAUSE_MESSAGE_SUPPRESSED=YES",
+              file=__import__('sys').stderr, flush=True)
+        return {"conversation_id": task.get("conversation_id"), "coding_task_id": task_id,
+                "response": "", "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                                      "task_id": task_id, "status": "RESUMABLE"},
+                "sources": []}
+    replan_epoch_resume = _begin_human_recovery_epoch(task)
+    current = db.coding_task(task_id)
+    queued = current
+    if current and current.get("status") != "BLOCKED":
+        queued = db.enqueue_coding_task(task_id)
+        _coding_scheduler_wake.set()
+    accepted = bool(queued and queued.get("status") == "QUEUED")
+    after_status = queued.get("status", "UNKNOWN") if queued else "UNKNOWN"
+    phase_before = task.get("current_phase_id") or ((task.get("batch_handoff") or {}).get("next_phase_id") if isinstance(task.get("batch_handoff"), dict) else None)
+    phase_after = queued.get("current_phase_id") if queued else phase_before
+    print(
+        f"TASK_ID={task_id} RESUME_REQUEST_SOURCE={source} "
+        f"RESUME_SAME_TASK=YES RESUME_REQUESTED=true "
+        f"RESUME_ACCEPTED={'true' if accepted else 'false'} "
+        f"STATUS_BEFORE_RESUME={task.get('status','UNKNOWN')} STATUS_AFTER_RESUME={after_status} "
+        f"ORIGINAL_CANONICAL_REQUIREMENTS_PRESERVED=YES "
+        f"CONTINUATION_INPUT_SEPARATED=YES CODING_CONTEXT_SIGNAL=RESUMED_CODING_TASK "
+        f"NORMAL_BRAIN_INVOKED=NO USER_VISIBLE_MESSAGE_EMITTED_AFTER_RESUME=NO "
+        f"RECOVERY_ACTION={task.get('recovery_action','NONE')} "
+        f"RECOVERY_REASON={task.get('recovery_reason','NONE')} "
+        f"RECOVERY_EPOCH={queued.get('recovery_epoch',0) if queued else task.get('recovery_epoch',0)} "
+        f"REPLAN_COUNT_FOR_NEW_EPOCH={queued.get('replan_count_in_epoch','unchanged') if queued else 'unchanged'} "
+        f"PHASE_CURSOR_BEFORE_RESUME={phase_before or 'NONE'} PHASE_CURSOR_AFTER_RESUME={phase_after or 'NONE'} "
+        f"GREENFIELD_INIT_REENTERED_AFTER_COMPLETION=NO "
+        f"NEXT_TASK_ACTION={'QUEUE_FIFO' if replan_epoch_resume else 'NONE'}",
+        file=__import__('sys').stderr, flush=True)
+    return {"conversation_id": task.get("conversation_id"), "coding_task_id": task_id,
+            "response": "" if accepted else _blocked_task_user_message(queued or task),
+            "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                "task_id": task_id, "status": after_status},
+            "sources": []}
+
+
 @app.patch("/api/coding-tasks/{task_id}")
 def update_coding_task(task_id: str, value: CodingTaskUpdate):
     task=db.coding_task(task_id)
@@ -428,12 +796,9 @@ def update_coding_task(task_id: str, value: CodingTaskUpdate):
     if value.pause_requested is not None: updates["pause_requested"]=value.pause_requested
     if value.archived is not None: updates["archived"]=value.archived
     if value.resume:
-        if not resumable_continuation_eligible(task): raise HTTPException(409,"task is not safely resumable or requires authorization")
         if updates: db.update_coding_task(task_id,**updates)
-        replan_epoch_resume = _begin_human_recovery_epoch(task)
-        result=db.enqueue_coding_task(task_id); _coding_scheduler_wake.set()
-        print(f"TASK_ID={task_id} RESUME_SAME_TASK=YES RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE STATUS_AFTER_RESUME=QUEUED RECOVERY_ACTION={task.get('recovery_action','NONE')} RECOVERY_REASON={task.get('recovery_reason','NONE')} RECOVERY_EPOCH={result.get('recovery_epoch',0) if result else task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={result.get('replan_count_in_epoch','unchanged') if result else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
-        return result
+        result = _resume_coding_task_control(task, source="EXPLICIT_GUI_RESUME_ACTION")
+        return db.coding_task(task_id) or result
     if value.pause_requested is True:
         result=db.dequeue_coding_task(task_id)
         return db.update_coding_task(task_id,pause_requested=True,archived=updates.get("archived",task.get("archived")),recovery_action="RECOVERY_REVIEW",recovery_reason="PAUSED") or result
@@ -482,7 +847,32 @@ def _begin_human_recovery_epoch(task: dict) -> bool:
     """
     if task.get("recovery_action") != "REPLAN_CONTINUATION" or task.get("recovery_reason") != "REPLAN_LIMIT":
         return False
+    if int(task.get("replan_count") or 0) >= TASK_GLOBAL_REPLAN_LIMIT:
+        db.update_coding_task(task["id"], status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE", recovery_reason="GLOBAL_RECOVERY_LIMIT")
+        print(f"TASK_ID={task['id']} TASK_GLOBAL_BOUND_ENFORCED=YES AUTO_REQUEUE_AFTER_GLOBAL_LIMIT=NO "
+              "GLOBAL_LIMIT_KIND=REPLAN STATUS_AFTER=BLOCKED", file=__import__('sys').stderr, flush=True)
+        return False
     db.update_coding_task(task["id"], recovery_epoch=int(task.get("recovery_epoch") or 0) + 1, replan_count_in_epoch=0)
+    return True
+
+
+def _record_recovery_model_call(task_id: str, *, repair: bool = False) -> bool:
+    """Reserve one recovery model call before making it."""
+    task = db.coding_task(task_id) or {}
+    calls = int(task.get("task_total_recovery_model_calls") or 0)
+    repairs = int(task.get("task_total_plan_repair_count") or 0)
+    if calls >= TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT or (repair and repairs >= TASK_GLOBAL_PLAN_REPAIR_LIMIT):
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE", recovery_reason="GLOBAL_RECOVERY_LIMIT")
+        print(f"TASK_ID={task_id} TASK_GLOBAL_BOUND_ENFORCED=YES AUTO_REQUEUE_AFTER_GLOBAL_LIMIT=NO "
+              f"GLOBAL_LIMIT_KIND={'PLAN_REPAIR' if repair else 'RECOVERY_MODEL_CALL'} STATUS_AFTER=BLOCKED",
+              file=__import__('sys').stderr, flush=True)
+        return False
+    updates = {"task_total_recovery_model_calls": calls + 1}
+    if repair:
+        updates["task_total_plan_repair_count"] = repairs + 1
+    db.update_coding_task(task_id, **updates)
     return True
 
 def _telemetry_role(activity: str) -> str:
@@ -499,12 +889,16 @@ def _telemetry_role(activity: str) -> str:
         return "SEMANTIC_VERIFICATION"
     return "OTHER_CODING"
 
+def _telemetry_provenance(model: str, role: str) -> dict[str, Any]:
+    return _coding_model_provenance(model, role)
+
 
 def _model_text(task_id: str, status: str, activity: str, model: str, messages: list[dict], structured_schema: dict | None = None) -> str | None:
     if _pause_at_checkpoint(task_id): return None
     db.update_coding_task(task_id,status=status,activity=activity)
     print(f"TASK_ID={task_id} TASK_STATUS={status} TASK_ACTIVITY={activity} MODEL_SLOT_OWNER={task_id} MODEL_NAME={model}",file=__import__('sys').stderr,flush=True)
     role = _telemetry_role(activity)
+    provenance = _telemetry_provenance(model, role)
     with model_slot():
         started = time.perf_counter()
         try:
@@ -517,17 +911,17 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
             except Exception as exc:
                 telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
                 telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages, result=None,
-                                   started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__)
+                                   started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__, model_provenance=provenance)
                 raise
         except Exception as exc:
             telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
             telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages, result=None,
-                               started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__)
+                               started=time.time() - (time.perf_counter() - started), finished=time.time(), structured=structured_schema is not None, thinking=False, success=False, failure_class=type(exc).__name__, model_provenance=provenance)
             raise
     telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
     telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages,
                        result=raw if isinstance(raw, dict) else None, started=time.time() - (time.perf_counter() - started), finished=time.time(),
-                       structured=structured_schema is not None, thinking=False, success=isinstance(raw, dict), failure_class="NONE" if isinstance(raw, dict) else "INVALID_RESPONSE")
+                       structured=structured_schema is not None, thinking=False, success=isinstance(raw, dict), failure_class="NONE" if isinstance(raw, dict) else "INVALID_RESPONSE", model_provenance=provenance)
     print(f"TASK_ID={task_id} CODING_TELEMETRY_CALL=RECORDED CODING_TELEMETRY_ROLE={role} MODEL_CALL_COUNT={telemetry.record['model_call_count']}", file=__import__('sys').stderr, flush=True)
     return raw.get("text","") if isinstance(raw,dict) else ""
 
@@ -607,14 +1001,105 @@ def _typed_summary(execution: Task) -> dict:
     operations=[]
     failure_class = "UNKNOWN"
     worktree_state = "UNKNOWN"
+    attempted_mutations = 0
+    accepted_mutations = 0
+    rejected_mutations = 0
+    rolled_back_mutations = 0
+    written_paths: list[str] = []
+    rejected_signals: list[dict[str, str]] = []
+    preimage_diagnostics: list[dict[str, Any]] = []
+    package_install_evidence: list[dict[str, Any]] = []
+    package_install_requested = False
+    package_install_authorized = False
+    package_install_process_started = False
+    package_install_exit_code: int | None = None
+    package_install_status = "NOT_RUN"
     for item in execution.tool_executions:
-        operations.append({"tool":item.get("tool"),"status":item.get("status"),"output":item.get("output"),"error":item.get("error")})
-        if item.get("tool") == "operation_application_failure":
+        operations.append({"tool":item.get("tool"),"status":item.get("status"),"input":item.get("input"),"output":item.get("output"),"error":item.get("error")})
+        tool = str(item.get("tool") or "")
+        status = str(item.get("status") or "").lower()
+        if tool in {"operation_preflight", "workspace_write", "workspace_write_normalized", "workspace_patch", "workspace_delete", "workspace_remove", "write_text", "package_install", "operation_rejection"}:
+            attempted_mutations += 1 if tool != "operation_preflight" or status != "pass" else 0
+        # ``workspace_write_normalized`` is a contract-normalization event,
+        # not an additional filesystem mutation.  Count only the tool event
+        # that actually changed the worktree so scaffold/accepted/rollback
+        # evidence remains one operation per write.
+        if tool in {"workspace_write", "workspace_patch", "workspace_delete", "workspace_remove", "write_text"} and status in {"success", "completed", "ok"}:
+            accepted_mutations += 1
+            output = item.get("output") if isinstance(item.get("output"), dict) else {}
+            path = output.get("path") or (item.get("input") or {}).get("path")
+            if isinstance(path, str) and path.strip():
+                written_paths.append(path.strip())
+        if tool in {"package_install", "package_install_evidence"}:
+            package_install_requested = True
+            output = item.get("output") if isinstance(item.get("output"), dict) else {}
+            if tool == "package_install_evidence":
+                for evidence in output.get("evidence") or []:
+                    if isinstance(evidence, dict):
+                        package_install_evidence.append(dict(evidence))
+                if str(output.get("status") or "").upper() == "PASS":
+                    package_install_status = "PASS"
+                package_install_authorized = True
+                package_install_process_started = package_install_process_started or any(
+                    evidence.get("process_started") is True for evidence in (output.get("evidence") or []) if isinstance(evidence, dict))
+                continue
+            package_install_authorized = status in {"success", "completed", "ok"} or str(output.get("failure_class") or "") not in {
+                "PACKAGE_NOT_AUTHORIZED", "PACKAGE_SPEC_INVALID", "PACKAGE_LIST_INVALID"}
+            package_install_process_started = package_install_process_started or output.get("process_started") is True
+            if output.get("exit_code") is not None:
+                package_install_exit_code = output.get("exit_code")
+            package_install_status = "PASS" if status in {"success", "completed", "ok"} and output.get("exit_code") == 0 else "FAIL"
+            if status not in {"success", "completed", "ok"}:
+                failure_class = str(output.get("failure_class") or failure_class)
+            if status in {"success", "completed", "ok"}:
+                accepted_mutations += 1
+                written_paths.extend([str(path) for path in ("package.json",) if output.get("package_json_after", {}).get("exists")])
+            if output:
+                package_install_evidence.append(dict(output))
+        if tool == "operation_rejection" or status in {"rejected", "denied", "forbidden_by_user", "permission_denied"}:
+            rejected_mutations += 1
+            input_value = item.get("input") if isinstance(item.get("input"), dict) else {}
+            output = item.get("output") if isinstance(item.get("output"), dict) else {}
+            rejected_signals.append({
+                "category": str(input_value.get("failure_class") or "REJECTED_OPERATION"),
+                "path": str(input_value.get("path") or "UNKNOWN"),
+                "reason": str(output.get("failure") or item.get("error") or "rejected")[:300],
+                "semantic_field": str(output.get("semantic_field") or input_value.get("semantic_field") or ""),
+                "owner": str(output.get("owner") or input_value.get("owner") or ""),
+                "package_install_status": str(output.get("package_install_status") or ""),
+                "dependencies_already_satisfied": output.get("dependencies_already_satisfied"),
+                "failure_fingerprint": str(output.get("failure_fingerprint") or input_value.get("failure_fingerprint") or ""),
+            })
+        if tool == "operation_application_failure":
             output = item.get("output") or {}
             failure_class = str((item.get("input") or {}).get("failure_class") or failure_class)
             worktree_state = str(output.get("worktree_state") or worktree_state)
+            if worktree_state == "ROLLED_BACK":
+                rolled_back_mutations = max(rolled_back_mutations, accepted_mutations)
+                accepted_mutations = 0
+                written_paths = []
+        if tool == "preimage_diagnostic" and isinstance(item.get("output"), dict):
+            preimage_diagnostics.append(dict(item["output"]))
+    if rejected_signals and failure_class == "UNKNOWN":
+        failure_class = rejected_signals[-1]["category"]
     return {"state":execution.state.value,"error":execution.error,"operations":operations,
-            "failure_class":failure_class,"worktree_state":worktree_state}
+            "failure_class":failure_class,"worktree_state":worktree_state,
+            "attempted_mutations":attempted_mutations,
+            "accepted_mutations":accepted_mutations,
+            "rejected_mutations":rejected_mutations,
+            "files_written":len(set(written_paths)),
+            "written_paths":sorted(set(written_paths)),
+            "rejected_operations":rejected_signals,
+            "preimage_diagnostics":preimage_diagnostics,
+            "package_install_evidence": package_install_evidence,
+            "package_install_requested": package_install_requested,
+            "package_install_authorized": package_install_authorized,
+            "package_install_process_started": package_install_process_started,
+            "package_install_exit_code": package_install_exit_code,
+            "package_install_status": package_install_status,
+            "rolled_back_mutations":rolled_back_mutations,
+            "final_worktree_mutations":len(set(written_paths)),
+            "phase_progress":bool(accepted_mutations or written_paths)}
 
 
 def _phase_execution_expectations(phase: dict) -> dict:
@@ -856,7 +1341,11 @@ def _implementation_result_kind(phase: dict, execution: Task, response: str) -> 
     expectations = phase.get("execution_expectations") or _phase_execution_expectations(phase)
     successful = [item for item in execution.tool_executions if item.get("status") == "success"]
     mutations = [item for item in successful if item.get("tool") in {
-        "workspace_write", "workspace_write_normalized", "workspace_patch", "workspace_delete", "workspace_remove"}]
+        "workspace_write", "workspace_write_normalized", "workspace_patch", "workspace_delete", "workspace_remove", "package_install"}]
+    if any(item.get("tool") == "operation_application_failure" and
+           (item.get("output") or {}).get("worktree_state") == "ROLLED_BACK"
+           for item in execution.tool_executions):
+        return "FAILED"
     error = str(execution.error or "").lower()
     prose = str(response or "").strip().lower()
     narrative_markers = ("i will", "here's what", "here is what", "next step", "次に", "これから", "実装します", "変更します")
@@ -876,7 +1365,7 @@ def _implementation_result_kind(phase: dict, execution: Task, response: str) -> 
 
 def _report_from_execution(phase: dict, attempt: int, execution: Task, response: str) -> dict:
     typed=_typed_summary(execution)
-    write_tools={"workspace_write","workspace_write_normalized","workspace_patch"}
+    write_tools={"workspace_write","workspace_write_normalized","workspace_patch","package_install"}
     wrote=any(item.get("tool") in write_tools and item.get("status")=="success" for item in execution.tool_executions)
     web_only_zero_write=(execution.state == TaskState.COMPLETED and execution.route != Route.IMPLEMENTATION and not wrote)
     if web_only_zero_write:
@@ -886,22 +1375,69 @@ def _report_from_execution(phase: dict, attempt: int, execution: Task, response:
     expectations=phase.get("execution_expectations") or _phase_execution_expectations(phase)
     result_kind=_implementation_result_kind({**phase, "execution_expectations": expectations}, execution, response)
     failed=execution.state in {TaskState.FAILED,TaskState.DENIED} or bool(execution.error) or web_only_zero_write
+    # The Implementer's text is model evidence only.  A user-visible phase
+    # report may carry a response after an authoritative executor result, but
+    # never after a failed/invalid operation parse and never as a prose
+    # substitute for a typed mutation.
+    safe_execution_response = (str(response or "")[:400]
+                               if not failed and result_kind in {"EXECUTED", "READ_ONLY_COMPLETED"}
+                               else "")
     changed=[]
     for item in execution.tool_executions:
         output=item.get("output") or {}
-        if item.get("tool") in {"workspace_write","workspace_write_normalized"} and output.get("path"):
+        if item.get("tool") in {"workspace_write","workspace_write_normalized","package_install"} and output.get("path"):
             changed.append(output["path"])
+        if item.get("tool") == "package_install" and isinstance(output.get("package_json_after"), dict) and output["package_json_after"].get("exists"):
+            changed.append("package.json")
+    if typed.get("worktree_state") == "ROLLED_BACK":
+        changed = []
     # Do not surface a model's future-tense narrative as an implementation
     # result.  The structured report records the detection for audit/retry.
+    progress = typed.get("phase_progress") is True
+    rejected = typed.get("rejected_operations") if isinstance(typed.get("rejected_operations"), list) else []
+    ownership = next((item for item in rejected if isinstance(item, dict) and
+                      item.get("category") == "PACKAGE_JSON_OWNERSHIP_VIOLATION"), {})
+    refresh = next((item for item in (typed.get("operations") or []) if isinstance(item, dict) and
+                    item.get("tool") == "workspace_refresh" and item.get("status") == "success"), {})
+    rejection_signature = _context_fingerprint({
+        "rejections": [{"category": item.get("category"), "path": item.get("path"), "reason": item.get("reason"),
+                        "semantic_field": item.get("semantic_field"), "owner": item.get("owner"),
+                        "failure_fingerprint": item.get("failure_fingerprint")} for item in rejected if isinstance(item, dict)],
+        "accepted_mutations": typed.get("accepted_mutations", 0),
+        "files_written": typed.get("files_written", 0),
+    }) if rejected else ""
     return {"phase_id":phase["id"],"attempt":attempt,"status":"FAIL" if failed else "PASS",
-            "implemented":([] if result_kind == "NARRATIVE_ONLY" else [response[:400]] if response else []),"changed_files":changed,
+            "implemented":([safe_execution_response] if safe_execution_response else []),"changed_files":changed,
             "test_executed":[],"test_pass":[],"test_fail":[],"build_executed":"NOT_RUN",
             "build_pass":"NOT_RUN","errors":([execution.error] if execution.error else []) + (["CODING_IMPLEMENTATION_ZERO_WRITE_WEB_ROUTE"] if web_only_zero_write else []),"blockers":[],"risks":[],
             "typed_execution_summary":typed, "execution_expectations":expectations,
-            "implementation_result_kind":result_kind}
+            "implementation_result_kind":result_kind,
+            "attempted_mutations":int(typed.get("attempted_mutations") or 0),
+            "accepted_mutations":int(typed.get("accepted_mutations") or 0),
+            "rejected_mutations":int(typed.get("rejected_mutations") or 0),
+            "files_written":int(typed.get("files_written") or len(changed)),
+            "rolled_back_mutations":int(typed.get("rolled_back_mutations") or 0),
+            "final_worktree_mutations":int(typed.get("final_worktree_mutations") or 0),
+            "phase_progress":progress,
+            "no_progress":not progress,
+            "rejection_signature":rejection_signature,
+            "ownership_failure_class": str(ownership.get("category") or "NONE"),
+            "ownership_failure_fingerprint": str(ownership.get("failure_fingerprint") or ""),
+            "ownership_retry_context_required": bool(ownership),
+            "post_install_worktree_refresh": bool(refresh),
+            "package_install_evidence_preserved": bool(typed.get("package_install_evidence"))}
 
 def _save_report(task_id: str, phase_id: str, attempt: int, report: dict, validation_status: str) -> dict:
     db.add_coding_phase_report(task_id,phase_id,attempt,report,validation_status,time.time())
+    # Keep successful package-manager facts on the task itself.  Phase reports
+    # remain the detailed audit trail, while this compact state is the restart
+    # boundary used before the next Implementer dispatch.
+    revision = _report_plan_revision(report)
+    evidence = _package_install_state_from_reports(task_id, phase_id, revision)
+    if evidence is not None:
+        task = db.coding_task(task_id) or {}
+        _persist_resume_package_state(task_id, phase_id, revision, evidence,
+                                      phase_cursor=task.get("current_phase_id") or phase_id)
     return db.coding_phase_reports(task_id)[-1]
 
 
@@ -912,6 +1448,10 @@ def _bounded_review_context(report: dict) -> dict:
     if not isinstance(diagnosis, dict):
         diagnosis = {}
     typed_summary = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+    rejected_operations = [dict(item) for item in (typed_summary.get("rejected_operations") or [])[:4]
+                           if isinstance(item, dict)]
+    ownership_rejections = [item for item in rejected_operations
+                            if str(item.get("category") or "") == "PACKAGE_JSON_OWNERSHIP_VIOLATION"]
     return {
         "decision": str(decision.get("decision") or "")[:80],
         "reason": str(decision.get("reason") or "")[:500],
@@ -923,7 +1463,8 @@ def _bounded_review_context(report: dict) -> dict:
             "unmet_verify": [str(x)[:240] for x in (diagnosis.get("unmet_verify") or [])[:8]],
             "evidence": [str(x)[:240] for x in (diagnosis.get("evidence_used") or diagnosis.get("evidence") or [])[:8]],
             "evidence_used": [str(x)[:240] for x in (diagnosis.get("evidence_used") or diagnosis.get("evidence") or [])[:8]],
-            "failure_class": str(diagnosis.get("failure_class") or "RECOVERABLE_INTERNAL")[:80],
+            "failure_class": ("PACKAGE_JSON_OWNERSHIP_VIOLATION" if ownership_rejections else
+                              str(diagnosis.get("failure_class") or "RECOVERABLE_INTERNAL"))[:80],
             "retry_instruction": str(diagnosis.get("retry_instruction") or "")[:500],
             "specific_fix": str(diagnosis.get("specific_fix") or diagnosis.get("retry_instruction") or "")[:500],
             "verification_instruction": str(diagnosis.get("verification_instruction") or "")[:500],
@@ -934,8 +1475,29 @@ def _bounded_review_context(report: dict) -> dict:
         },
         "typed_state": str(typed_summary.get("state") or "")[:80],
         "typed_error": str(typed_summary.get("error") or "")[:500],
-        "typed_failure_class": str(typed_summary.get("failure_class") or "UNKNOWN")[:80],
+        "typed_failure_class": ("PACKAGE_JSON_OWNERSHIP_VIOLATION" if ownership_rejections else
+                                str(typed_summary.get("failure_class") or "UNKNOWN"))[:80],
         "typed_worktree_state": str(typed_summary.get("worktree_state") or "UNKNOWN")[:40],
+        "rejected_operations": rejected_operations,
+        "package_ownership": {
+            "failure_class": "PACKAGE_JSON_OWNERSHIP_VIOLATION" if ownership_rejections else "NONE",
+            "path": str(ownership_rejections[-1].get("path") or "package.json") if ownership_rejections else "",
+            "semantic_field": str(ownership_rejections[-1].get("semantic_field") or "") if ownership_rejections else "",
+            "owner": str(ownership_rejections[-1].get("owner") or "PACKAGE_INSTALL") if ownership_rejections else "",
+            "package_install_status": str(ownership_rejections[-1].get("package_install_status") or "") if ownership_rejections else "",
+            "dependencies_already_satisfied": ownership_rejections[-1].get("dependencies_already_satisfied") if ownership_rejections else None,
+            "failure_fingerprint": str(ownership_rejections[-1].get("failure_fingerprint") or "") if ownership_rejections else "",
+        },
+        "preimage_diagnostics": [dict(item) for item in (typed_summary.get("preimage_diagnostics") or [])[:2]
+                                 if isinstance(item, dict)],
+        "attempted_mutations": int(report.get("attempted_mutations") or typed_summary.get("attempted_mutations") or 0),
+        "accepted_mutations": int(report.get("accepted_mutations") or typed_summary.get("accepted_mutations") or 0),
+        "rejected_mutations": int(report.get("rejected_mutations") or typed_summary.get("rejected_mutations") or 0),
+        "files_written": int(report.get("files_written") or typed_summary.get("files_written") or 0),
+        "rolled_back_mutations": int(report.get("rolled_back_mutations") or typed_summary.get("rolled_back_mutations") or 0),
+        "final_worktree_mutations": int(report.get("final_worktree_mutations") or typed_summary.get("final_worktree_mutations") or 0),
+        "phase_progress": bool(report.get("phase_progress") or typed_summary.get("phase_progress")),
+        "rejection_signature": str(report.get("rejection_signature") or "")[:32],
     }
 
 
@@ -943,17 +1505,78 @@ def _context_fingerprint(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
+def _zero_progress_signature(report: dict) -> str:
+    """Return a stable, plan-independent signature for no meaningful progress."""
+    if not isinstance(report, dict):
+        return ""
+    typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+    evaluation = report.get("phase_evaluation") if isinstance(report.get("phase_evaluation"), dict) else {}
+    decision = report.get("manager_decision") if isinstance(report.get("manager_decision"), dict) else {}
+    meaningful = (bool(report.get("phase_progress")) or
+                  int(report.get("accepted_mutations") or typed.get("accepted_mutations") or 0) > 0 or
+                  int(report.get("files_written") or typed.get("files_written") or 0) > 0 or
+                  int(report.get("final_worktree_mutations") or typed.get("final_worktree_mutations") or 0) > 0 or
+                  evaluation.get("phase_complete") is True or
+                  str(decision.get("decision") or "").upper() == "PASS")
+    if meaningful:
+        return ""
+    rejected = typed.get("rejected_operations", [])
+    categories = [str(item.get("category") or "UNKNOWN") for item in rejected if isinstance(item, dict)]
+    rejection_context = [{"category": item.get("category"), "path": item.get("path"),
+                          "semantic_field": item.get("semantic_field"), "owner": item.get("owner"),
+                          "package_install_status": item.get("package_install_status"),
+                          "dependencies_already_satisfied": item.get("dependencies_already_satisfied"),
+                          "failure_fingerprint": item.get("failure_fingerprint")}
+                         for item in rejected if isinstance(item, dict)]
+    package_failures = [item for item in (typed.get("package_install_evidence") or [])
+                        if isinstance(item, dict) and item.get("failure_fingerprint")]
+    return _context_fingerprint({
+        "failure_class": typed.get("failure_class") or report.get("failure_class") or "UNKNOWN",
+        "worktree_state": typed.get("worktree_state") or "UNKNOWN",
+        "categories": sorted(categories),
+        "rejection_context": rejection_context,
+        "package_failure_fingerprint": str(package_failures[-1].get("failure_fingerprint")) if package_failures else "",
+    })
+
+
+def _repeated_zero_progress_failure(task_id: str) -> tuple[bool, str, int]:
+    """Detect consecutive recovery attempts without worktree or criteria progress."""
+    rows = db.coding_phase_reports(task_id)
+    states = [(_zero_progress_signature(row.get("structured_report") or {}), row.get("structured_report") or {})
+              for row in rows]
+    if not states or not states[-1][0]:
+        return False, "", 0
+    latest_signature = states[-1][0]
+    consecutive = 0
+    # Different plans, failure classes, and fingerprints still count as one
+    # recovery attempt when none produced filesystem or acceptance progress.
+    for signature, report in reversed(states):
+        if not signature:
+            break
+        consecutive += 1
+    return consecutive >= 2, latest_signature, consecutive
+
+
 def _evidence_counts(report: dict, typed_summary: dict) -> tuple[int, int]:
     operations=[item for item in (typed_summary.get("operations") or []) if isinstance(item,dict)]
     successful=[item for item in operations if str(item.get("status") or "").lower() in {"success", "completed", "ok"}]
-    done=len(report.get("changed_files") or []) + sum(1 for item in successful if item.get("tool") in {"workspace_write", "workspace_write_normalized", "workspace_patch"})
+    if typed_summary.get("worktree_state") == "ROLLED_BACK":
+        done = 0
+    else:
+        changed = {str(path) for path in (report.get("changed_files") or [])}
+        actual_writes = [item for item in successful
+                         if item.get("tool") in {"workspace_write", "workspace_patch"}]
+        written_paths = {str((item.get("output") or {}).get("path") or (item.get("input") or {}).get("path") or "")
+                         for item in actual_writes}
+        done = len(changed | {path for path in written_paths if path})
     verify=sum(1 for item in successful if item.get("tool") in {"workspace_read", "workspace_read_normalized"})
     verify += len(report.get("test_pass") or []) + (1 if report.get("build_pass") == "PASS" else 0)
     return done, verify
 
 
 def _phase_signature(phase: dict) -> str:
-    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "risks", "execution_mode")}
+    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "risks", "execution_mode",
+                                                "requires_dependency_installation", "dependency_requirements")}
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, completed: list[dict], workspace_root: str | None = None) -> str | None:
@@ -969,6 +1592,11 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
           f"GEMMA_EVIDENCE_COUNT={len((typed.get('operations') or []))}",
           file=__import__('sys').stderr,flush=True)
     print(f"TASK_ID={task_id} PHASE_EVALUATION_COMPLETE={'true' if evaluation['phase_complete'] else 'false'} DONE_TOTAL={evaluation['done_total']} DONE_SATISFIED={evaluation['done_satisfied']} VERIFY_TOTAL={evaluation['verify_total']} VERIFY_SATISFIED={evaluation['verify_satisfied']} AUTHORITATIVE_FAILURE={'true' if evaluation['authoritative_failure_present'] else 'false'} REQUIRED_NOT_RUN={'true' if evaluation['required_not_run_present'] else 'false'} ALLOWED_DECISIONS={json.dumps(evaluation['allowed_decisions'])}",file=__import__('sys').stderr,flush=True)
+    if evaluation.get("required_not_run_present"):
+        print(f"TASK_ID={task_id} REQUIRED_NOT_RUN_IDS={json.dumps(evaluation.get('required_not_run_ids') or [], ensure_ascii=False)} "
+              f"REQUIRED_NOT_RUN_KINDS={json.dumps(evaluation.get('required_not_run_kinds') or [], ensure_ascii=False)} "
+              f"REQUIRED_NOT_RUN_EXECUTOR_CAPABILITY={json.dumps(evaluation.get('required_not_run_executor_capability') or [], ensure_ascii=False)}",
+              file=__import__('sys').stderr, flush=True)
     # Coding Orchestrator decisions are derived from typed evidence.  The
     # lightweight router model remains available to unrelated external-tool
     # routing, but is never a Coding phase manager.
@@ -986,12 +1614,16 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
     elif evaluation["external_blocker_present"]:
         decision = {"decision": "BLOCKED", "reason": "external condition prevents progress"}
     elif int(report.get("attempt", 0)) < MAX_RETRIES_PER_PHASE:
-        decision = {"decision": "RETRY", "reason": "recoverable phase evidence is incomplete"}
+        package_channel = "PACKAGE_MANAGER_COMMAND" in (evaluation.get("required_not_run_executor_capability") or [])
+        decision = {"decision": "RETRY",
+                    "reason": "recoverable package-install evidence is incomplete" if package_channel else "recoverable phase evidence is incomplete",
+                    "retry_channel": "PACKAGE_INSTALL" if package_channel else "IMPLEMENTATION"}
     else:
         decision = {"decision": "REPLAN_REQUIRED", "reason": "phase retry budget exhausted"}
     report["manager_decision"] = decision
     report["manager_diagnostics"] = {"raw_decision": None, "decision_valid": True,
                                       "effective_decision": decision["decision"], "phase_complete": evaluation["phase_complete"],
+                                      "retry_channel": decision.get("retry_channel", "IMPLEMENTATION"),
                                       "execution_binding_diagnosis": ("MODEL_RETURNED_NARRATIVE_INSTEAD_OF_FILE_OPERATION_PLAN" if narrative_only else None)}
     # Persist the deterministic decision before callers advance the plan.  The
     # completion path reloads reports from storage and treats this decision as
@@ -1079,13 +1711,43 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
           file=__import__('sys').stderr,flush=True)
     return decision["decision"]
 
-def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirements: dict | None = None) -> tuple[dict | None, str | None]:
+def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirements: dict | None = None,
+                   *, recovery: bool = False) -> tuple[dict | None, str | None]:
+    if recovery and not _record_recovery_model_call(task_id):
+        return None, None
     raw=_model_text(task_id,"PLANNING" if activity=="QWEN_PLANNING" else "RUNNING",activity,settings.main_model,[
         {"role":"system","content":"You are OLCR Qwen Planning Mode. Return JSON only; this is read-only planning."},
         {"role":"user","content":prompt},
     ], structured_schema=plan_schema())
     if raw is None: return None,None
     plan,parse_error=extract_plan_json(raw)
+    if isinstance(plan, dict):
+        plan, mode_changes = ensure_explicit_phase_execution_modes(plan)
+        if mode_changes:
+            print(f"PLAN_PHASE_EXECUTION_MODE_NORMALIZED=YES CHANGES={json.dumps(mode_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+        plan, complexity_changes = repair_phase_complexity(plan)
+        if complexity_changes:
+            print(f"PLAN_PHASE_COMPLEXITY_AUTO_REPAIRED=YES CHANGES={json.dumps(complexity_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+        plan, graph_changes, graph_diagnostics = reconcile_graph_references(plan, plan.get("graph_replacement_map"))
+        if graph_changes:
+            print(f"GRAPH_REFERENCE_RECONCILIATION=PASS CHANGES={json.dumps(graph_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
+        if graph_diagnostics.get("errors"):
+            first = graph_diagnostics["first_error"] or {}
+            print(f"GRAPH_VALIDATION=FAIL OFFENDING_PHASE_ID={first.get('offending_phase_id') or 'NONE'} "
+                  f"OFFENDING_TASK_ID={first.get('offending_task_id') or 'NONE'} "
+                  f"OFFENDING_DEPENDENCY_REF={first.get('offending_dependency_ref') or 'NONE'} "
+                  f"EXPECTED_REFERENCE_TYPE={first.get('expected_reference_type') or 'UNKNOWN'} "
+                  f"KNOWN_PHASE_IDS={json.dumps(graph_diagnostics.get('known_phase_ids') or [], ensure_ascii=False)} "
+                  f"KNOWN_TASK_IDS={json.dumps(graph_diagnostics.get('known_task_ids') or [], ensure_ascii=False)} "
+                  f"DEPENDENCY_VALIDATION_REASON={first.get('reason') or 'UNKNOWN'} "
+                  f"GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'}",
+                  file=__import__('sys').stderr, flush=True)
+    if recovery and isinstance(plan, dict):
+        plan, graph_changes = normalize_replan_graph(plan, (requirements or {}).get("required_mcps"))
+        if graph_changes:
+            print(f"PLAN_GRAPH_NORMALIZED=YES CHANGES={json.dumps(graph_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+    graph_diagnostics = graph_validation_diagnostics(plan)
     errors=([parse_error] if parse_error else []) + validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements)
     # The task goal is persisted host state; a model paraphrase must never
     # consume the single schema-repair attempt or alter that identity.
@@ -1107,15 +1769,42 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
             plan,errors=phase_plan,[]
     print(f"PLAN_INITIAL_PARSE={'PASS' if not parse_error else 'FAIL'} PLAN_INITIAL_SCHEMA={'PASS' if not validate_plan(plan,goal) else 'FAIL'} PLAN_INITIAL_ERRORS={json.dumps(errors,ensure_ascii=False)}",file=__import__('sys').stderr,flush=True)
     if not errors: return plan,raw
+    if recovery and not _record_recovery_model_call(task_id, repair=True):
+        return None, raw
     repaired=_model_text(task_id,"PLANNING","QWEN_PLAN_SCHEMA_REPAIR",settings.main_model,[
         {"role":"system","content":"You only repair JSON schema and format. Do not plan new work or execute tools."},
-        {"role":"user","content":plan_repair_prompt(goal,raw,errors)},
+        {"role":"user","content":plan_repair_prompt(goal,raw,errors,graph_diagnostics)},
     ], structured_schema=plan_schema())
     if repaired is None: return None,None
     plan,repair_parse_error=extract_plan_json(repaired)
     if plan is not None and isinstance(plan,dict):
         plan={**plan,"original_goal":goal}
+        plan, mode_changes = ensure_explicit_phase_execution_modes(plan)
+        if mode_changes:
+            print(f"PLAN_PHASE_EXECUTION_MODE_NORMALIZED=YES REPAIR_CHANGES={json.dumps(mode_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+        plan, graph_changes, repair_graph_diagnostics = reconcile_graph_references(plan, plan.get("graph_replacement_map") if isinstance(plan, dict) else None)
+        if graph_changes:
+            print(f"GRAPH_REFERENCE_RECONCILIATION=PASS REPAIR_CHANGES={json.dumps(graph_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
+        if recovery:
+            plan, graph_changes = normalize_replan_graph(plan, (requirements or {}).get("required_mcps"))
+            if graph_changes:
+                print(f"PLAN_GRAPH_NORMALIZED=YES REPAIR_CHANGES={json.dumps(graph_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+    repair_graph_diagnostics = graph_validation_diagnostics(plan)
     repair_errors=([repair_parse_error] if repair_parse_error else []) + validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements)
+    initial_graph_error = graph_diagnostics.get("first_error") if isinstance(graph_diagnostics, dict) else None
+    repaired_graph_error = repair_graph_diagnostics.get("first_error") if isinstance(repair_graph_diagnostics, dict) else None
+    if initial_graph_error and repaired_graph_error and initial_graph_error.get("fingerprint") == repaired_graph_error.get("fingerprint"):
+        print(f"PLAN_SCHEMA_REPAIR_NO_PROGRESS=YES GRAPH_ERROR_FINGERPRINT={repaired_graph_error.get('fingerprint')}",
+              file=__import__('sys').stderr, flush=True)
+    if repair_graph_diagnostics.get("errors"):
+        first = repair_graph_diagnostics["first_error"] or {}
+        print(f"GRAPH_VALIDATION=FAIL REPAIR_OFFENDING_PHASE_ID={first.get('offending_phase_id') or 'NONE'} "
+              f"REPAIR_OFFENDING_TASK_ID={first.get('offending_task_id') or 'NONE'} "
+              f"REPAIR_OFFENDING_DEPENDENCY_REF={first.get('offending_dependency_ref') or 'NONE'} "
+              f"REPAIR_EXPECTED_REFERENCE_TYPE={first.get('expected_reference_type') or 'UNKNOWN'} "
+              f"REPAIR_GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'}",
+              file=__import__('sys').stderr, flush=True)
     print(f"PLAN_REPAIR_PARSE={'PASS' if not repair_parse_error else 'FAIL'} PLAN_REPAIR_SCHEMA={'PASS' if not validate_plan(plan,goal) else 'FAIL'} PLAN_REPAIR_ERRORS={json.dumps(repair_errors,ensure_ascii=False)}",file=__import__('sys').stderr,flush=True)
     return (plan,repaired) if not repair_errors else (None,repaired)
 
@@ -1140,10 +1829,45 @@ def _plan_authorization_boundary(plan: dict) -> list[str]:
 
 def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: str, diagnosis: dict | None = None) -> str:
     replan_count_in_epoch=int(managed.get("replan_count_in_epoch") or 0)
+    if int(managed.get("replan_count") or 0) >= TASK_GLOBAL_REPLAN_LIMIT:
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE", recovery_reason="GLOBAL_RECOVERY_LIMIT")
+        print(f"TASK_ID={task_id} TASK_GLOBAL_BOUND_ENFORCED=YES AUTO_REQUEUE_AFTER_GLOBAL_LIMIT=NO "
+              "GLOBAL_LIMIT_KIND=REPLAN STATUS_AFTER=BLOCKED", file=__import__('sys').stderr, flush=True)
+        return "Coding Task is blocked: task-global recovery budget exhausted."
     if replan_count_in_epoch >= MAX_SUBSTANTIAL_REPLANS_PER_TASK:
         _transition_resumable(task_id,"REPLAN_LIMIT","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
         return "Coding Task could not continue after the replan limit."
+    no_progress, no_progress_signature, no_progress_count = _repeated_zero_progress_failure(task_id)
+    if no_progress:
+        # A second structurally equivalent rejected operation with zero
+        # accepted mutations cannot be repaired by another unconstrained model
+        # call.  Stop before invoking the planner again; PathGuard and all
+        # accepted writes remain untouched.
+        current_phase_id = (managed.get("current_phase_id") or
+                            next((phase.get("id") for phase in (managed.get("plan") or {}).get("phases", [])
+                                  if phase.get("id") not in completed_ids), None))
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              current_phase_id=current_phase_id,
+                              recovery_action="NONE", recovery_reason="NO_PROGRESS")
+        print(f"TASK_ID={task_id} NO_PROGRESS=YES ZERO_WRITE=YES REPEATED_EQUIVALENT_FAILURE=YES "
+              f"NO_PROGRESS_COUNT={no_progress_count} NO_PROGRESS_SIGNATURE={no_progress_signature} "
+              "NEXT_TASK_ACTION=TERMINATE TASK_STATUS=BLOCKED", file=__import__('sys').stderr, flush=True)
+        return "Coding Task is blocked: repeated unauthorized implementation operations made no filesystem progress."
+    # Reserve the bounded recovery attempt before invoking the replanner.  A
+    # malformed schema, path validation failure, or blueprint rejection is
+    # still a recovery attempt and must consume the same epoch budget as a
+    # successfully applied replan.  Otherwise an invalid model response can
+    # loop indefinitely without ever reaching REPLAN_LIMIT.
+    reserved_replan_count = int(managed.get("replan_count") or 0) + 1
+    reserved_epoch_count = replan_count_in_epoch + 1
+    db.update_coding_task(task_id, replan_count=reserved_replan_count,
+                          replan_count_in_epoch=reserved_epoch_count)
     current=managed.get("plan") or {}
+    current, current_mode_changes = ensure_explicit_phase_execution_modes(current)
+    if current_mode_changes:
+        print(f"TASK_ID={task_id} EXISTING_PLAN_PHASE_EXECUTION_MODE_NORMALIZED=YES CHANGES={json.dumps(current_mode_changes, ensure_ascii=False)}",
+              file=__import__('sys').stderr, flush=True)
     continuation_policy = (managed.get("requirements") or {}).get("execution_policy") or {}
     reports=[r["structured_report"] for r in db.coding_phase_reports(task_id)]
     unfinished=[phase for phase in current.get("phases",[]) if phase.get("id") not in completed_ids]
@@ -1167,7 +1891,7 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     print(f"TASK_ID={task_id} REPLAN_FAILURE_CONTEXT_PRESENT={'true' if failure_history else 'false'} "
           f"REPLAN_BOUNDED_FAILURE_COUNT={len(failure_history)} REPLAN_CONTEXT_FINGERPRINT={_context_fingerprint({'revision': managed.get('plan_revision',0), 'completed': sorted(completed_ids), 'history': failure_history, 'reason': reason[:500]})}",
           file=__import__('sys').stderr,flush=True)
-    plan,_=_generate_plan(task_id,managed["original_goal"],prompt,"QWEN_REPLANNING")
+    plan,_=_generate_plan(task_id,managed["original_goal"],prompt,"QWEN_REPLANNING", recovery=True)
     if not plan:
         _transition_resumable(task_id,"REPLAN_VALIDATION","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
         return "Coding Task replan could not be validated."
@@ -1175,6 +1899,12 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     project = db.project(conversation.get("project_id", "")) or {}
     replan_root = str(Path(project.get("workspace_path")).expanduser().resolve()) if project.get("workspace_path") else None
     plan = _bind_scope_contract(plan, _workspace_scope_contract(replan_root))
+    requirements_for_replan = managed.get("requirements") or {}
+    plan, dependency_changes = associate_dependency_requirements(plan, requirements_for_replan)
+    if dependency_changes:
+        print(f"TASK_ID={task_id} DEPENDENCY_REQUIREMENT_PHASE_ASSOCIATION=PASS "
+              f"CHANGES={json.dumps(dependency_changes, ensure_ascii=False)}",
+              file=__import__('sys').stderr, flush=True)
     if continuation_policy.get("task_size") == "LARGE":
         from .continuation import phase_lifecycle_stages
         if any(len(phase_lifecycle_stages(p)) >= 4 for p in plan["phases"] if p["id"] not in completed_ids):
@@ -1224,21 +1954,29 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
           f"REPLAN_NEW_PHASE_SIGNATURES={json.dumps(new_signatures,sort_keys=True)} "
           f"FAILING_PHASE_CHANGED={'true' if structure_changed else 'false'} REPLAN_EFFECTIVE={'true' if structure_changed else 'false'}",
           file=__import__('sys').stderr,flush=True)
-    if structural_reason and not structure_changed:
+    if not structure_changed:
         unmet = []
         if diagnosis:
             unmet.extend(diagnosis.get("unmet_done") or [])
             unmet.extend(diagnosis.get("unmet_verify") or [])
         pending = {"type":"REPLAN_INEFFECTIVE", "reason":"Phase replan did not change the failing phase structure.", "unmet_criteria": unmet[:8], "state":"PENDING"}
+        # An unchanged replacement cannot make the failing phase complete.
+        # Keep its cursor and wait for a materially different user/model
+        # decision instead of treating the replan call itself as progress.
         db.update_coding_task(task_id,status="WAITING_FOR_USER",activity="NONE",queue_order=None,
                               current_phase_id=failing_phase_id or None,
                               pending_authorization=pending,pending_user_confirmation=1,
                               recovery_action="NONE",recovery_reason="REPLAN_INEFFECTIVE")
-        print(f"TASK_ID={task_id} FAILURE_STAGE=REPLAN_INEFFECTIVE NEXT_TASK_ACTION=WAITING_FOR_USER",file=__import__('sys').stderr,flush=True)
+        print(f"TASK_ID={task_id} PHASE_ID_BEFORE={failing_phase_id or 'UNKNOWN'} PHASE_COMPLETE=false "
+              "REPLAN_EFFECTIVE=false PHASE_CURSOR_ADVANCED=false "
+              "PHASE_ADVANCE_REASON=INEFFECTIVE_REPLAN "
+              f"PHASE_ID_AFTER={failing_phase_id or 'UNKNOWN'} "
+              "FAILURE_STAGE=REPLAN_INEFFECTIVE NEXT_TASK_ACTION=WAITING_FOR_USER",
+              file=__import__('sys').stderr,flush=True)
         return "Coding Task の再計画では問題を解消できませんでした。修正したい内容を入力してください。"
     expansion=_scope_expansion(current,plan)
-    count=int(managed.get("replan_count") or 0)+1
-    epoch_count=replan_count_in_epoch+1
+    count=reserved_replan_count
+    epoch_count=reserved_epoch_count
     if expansion:
         authorization={"requested_scope":expansion,"reason":reason,"source":"replan","state":"PENDING"}
         db.update_coding_task(task_id,status="WAITING_FOR_USER",activity="SCOPE_AUTHORIZATION",pending_plan=plan,pending_authorization=authorization,pending_user_confirmation=1,replan_count=count,replan_count_in_epoch=epoch_count)
@@ -1252,18 +1990,111 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         plan["implementation_plan_artifact"] = {**prior_artifact, "plan_revision": int(managed.get("plan_revision") or 0) + 1}
     elif isinstance(prior_artifact, dict) and isinstance(plan.get("file_manifest"), list):
         try:
+            repair_workspace = workspace_state(prior_artifact.get("target_root"))
+            repair_requirements = managed.get("requirements") or {}
+            repair_workspace["new_project_intent"] = bool(
+                repair_requirements.get("new_project_intent") and
+                repair_workspace.get("project_state") != "ESTABLISHED" and
+                repair_requirements.get("task_profile") in {"FRONTEND_ONLY_MARKETING_SITE", "GENERAL_CODING"})
+            repair_workspace["workspace_state"] = repair_workspace.get("project_state", "UNKNOWN")
+            repair_workspace["host_workspace_authorized"] = bool(valid_workspace(prior_artifact.get("target_root")))
+            repair_workspace["host_authorized_root"] = str(Path(prior_artifact.get("target_root")).expanduser().resolve()) if repair_workspace["host_workspace_authorized"] else None
+            provenance = _current_task_file_provenance(
+                task_id, prior_artifact, reports, prior_artifact.get("target_root"))
+            repair_workspace["replan_reconciliation"] = True
+            repair_workspace["current_task_provenance"] = provenance
+            repair_workspace["current_task_created_paths"] = sorted(
+                path for path, kind in provenance.items()
+                if kind in {"CREATED_BY_CURRENT_TASK_SCAFFOLD", "CREATED_BY_CURRENT_TASK_IMPLEMENTATION"})
+            print(f"TASK_ID={task_id} WORKTREE_PROVENANCE_TRACKING=YES "
+                  f"CURRENT_TASK_CREATED_PATHS={json.dumps(repair_workspace['current_task_created_paths'], ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
             plan, replacement_artifact = prepare_implementation_plan(
                 task_id, plan, prior_artifact.get("target_root"),
-                {**(managed.get("requirements") or {}), "requirements_hash": _context_fingerprint(managed.get("requirements") or {})})
+                {**repair_requirements, "requirements_hash": _context_fingerprint(repair_requirements)},
+                repair_workspace)
             replacement_artifact["plan_revision"] = int(managed.get("plan_revision") or 0) + 1
             plan["implementation_plan_artifact"] = replacement_artifact
             print(f"TASK_ID={task_id} IMPLEMENTATION_PLAN_REVISED=YES IMPLEMENTATION_PLAN_LOCATION=task_state:coding_tasks.plan_json FILE_MANIFEST_COUNT={replacement_artifact['file_manifest_count']}", file=__import__('sys').stderr, flush=True)
         except (OSError, TypeError, ValueError, PermissionError) as exc:
-            _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "REPLAN_CONTINUATION", exc)
-            return "Coding Task の再計画ファイル範囲を検証できないため、実装は開始していません。"
+            diagnostics = getattr(exc, "diagnostics", []) or []
+            if isinstance(exc, PlanStackConformanceError):
+                stack_details = getattr(exc, "diagnostics", {}) or {}
+                print(f"TASK_ID={task_id} PLAN_STACK_CONFORMANCE=FAIL "
+                      f"EXPECTED_STACK={json.dumps(stack_details.get('expected_stack') or [], ensure_ascii=False)} "
+                      f"OBSERVED_STACK_SIGNALS={json.dumps(stack_details.get('observed_stack_signals') or [], ensure_ascii=False)} "
+                      f"STACK_CONFLICTS={json.dumps(stack_details.get('stack_conflicts') or [], ensure_ascii=False)} "
+                      "PLAN_MANIFEST_COVERAGE=NOT_RUN PLAN_PATH_VALIDATION=NOT_RUN IMPLEMENTATION_STARTED=NO",
+                      file=__import__('sys').stderr, flush=True)
+                _transition_resumable(task_id, "PLAN_STACK_CONFORMANCE", "RECOVERABLE_INTERNAL", "REPLAN_CONTINUATION", exc,
+                                      "PLAN_STACK_CONFORMANCE")
+                return stack_conformance_message(stack_details)
+            if diagnostics:
+                pending_plan = dict(plan)
+                pending_plan["path_validation_diagnostics"] = diagnostics[:16]
+                db.update_coding_task(task_id, pending_plan=pending_plan)
+            first_diagnostic = diagnostics[0] if diagnostics else {}
+            coverage_failure = isinstance(exc, PlanManifestCoverageError)
+            repair_progress: dict[str, Any] = {}
+            if coverage_failure:
+                before_coverage = (prior_artifact.get("manifest_coverage")
+                                    if isinstance(prior_artifact, dict) else None)
+                if not isinstance(before_coverage, dict):
+                    before_coverage = manifest_coverage(
+                        {**current, "file_manifest": list((prior_artifact or {}).get("file_manifest") or [])},
+                        {**repair_requirements, "requirements_hash": _context_fingerprint(repair_requirements)},
+                        repair_workspace)
+                candidate_coverage = manifest_coverage(
+                    plan, {**repair_requirements, "requirements_hash": _context_fingerprint(repair_requirements)},
+                    repair_workspace)
+                repair_progress = manifest_repair_progress(before_coverage, candidate_coverage)
+                print(f"TASK_ID={task_id} MANIFEST_REPAIR_CLASSIFICATION={repair_progress['classification']} "
+                      f"MISSING_ARTIFACTS_BEFORE={json.dumps(repair_progress['missing_artifacts_before'], ensure_ascii=False)} "
+                      f"MISSING_ARTIFACTS_AFTER={json.dumps(repair_progress['missing_artifacts_after'], ensure_ascii=False)}",
+                      file=__import__('sys').stderr, flush=True)
+            if coverage_failure:
+                print(" ".join([
+                    f"TASK_ID={task_id}", "PLAN_MANIFEST_COVERAGE=FAIL", "PLAN_PATH_VALIDATION=NOT_RUN",
+                    f"MISSING_PLANNED_ARTIFACTS={json.dumps(exc.missing, ensure_ascii=False)}",
+                    "SCAFFOLD_STARTED=NO", "IMPLEMENTATION_STARTED=NO",
+                ]), file=__import__('sys').stderr, flush=True)
+            else:
+                print(" ".join([
+                    f"TASK_ID={task_id}", "PLAN_PATH_VALIDATION=FAIL",
+                    f"OFFENDING_PLAN_PATH={first_diagnostic.get('offending_plan_path', 'UNKNOWN')}",
+                    f"OFFENDING_PLAN_FIELD={first_diagnostic.get('offending_plan_field', 'UNKNOWN')}",
+                    f"OFFENDING_PHASE={first_diagnostic.get('offending_phase', 'UNKNOWN')}",
+                    f"PATH_VALIDATION_REASON={first_diagnostic.get('path_validation_reason', str(exc))}",
+                    "IMPLEMENTATION_STARTED=NO",
+                ]), file=__import__('sys').stderr, flush=True)
+            no_progress = coverage_failure and repair_progress.get("classification") == "REPAIR_NO_CHANGE"
+            recovery_reason = ("PLAN_MANIFEST_REPAIR_NO_PROGRESS" if no_progress else
+                               "PLAN_MANIFEST_COVERAGE" if coverage_failure else "PLAN_PATH_VALIDATION")
+            if no_progress:
+                print(f"TASK_ID={task_id} MANIFEST_REPAIR_NO_PROGRESS=YES "
+                      f"MISSING_ARTIFACTS_BEFORE={json.dumps(repair_progress['missing_artifacts_before'], ensure_ascii=False)} "
+                      f"MISSING_ARTIFACTS_AFTER={json.dumps(repair_progress['missing_artifacts_after'], ensure_ascii=False)} "
+                      "IMPLEMENTATION_STARTED=NO SCAFFOLD_STARTED=NO",
+                      file=__import__('sys').stderr, flush=True)
+            _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "REPLAN_CONTINUATION", exc,
+                                  recovery_reason)
+            if no_progress:
+                return manifest_repair_no_progress_message()
+            if coverage_failure:
+                return manifest_coverage_message(replan=True)
+            code = first_diagnostic.get("path_validation_code") or path_validation_code(first_diagnostic.get("path_validation_reason") or str(exc))
+            return path_validation_message(code, replan=False)
     next_phase=next((phase for phase in plan.get("phases",[])
                      if phase.get("id") not in completed_ids
                      and all(dep in completed_ids for dep in phase.get("dependencies",[]))), None)
+    phase_cursor_advanced = bool(failing_phase_id and next_phase and next_phase.get("id") != failing_phase_id)
+    print(f"TASK_ID={task_id} PHASE_ID_BEFORE={failing_phase_id or 'UNKNOWN'} "
+          f"PHASE_COMPLETE={'true' if failing_phase_id in completed_ids else 'false'} "
+          f"REPLAN_EFFECTIVE={'true' if structure_changed else 'false'} "
+          f"PHASE_CURSOR_ADVANCED={'true' if phase_cursor_advanced else 'false'} "
+          f"PHASE_ADVANCE_REASON={'VALID_REPLACEMENT' if phase_cursor_advanced else 'REPLAN_CONTINUATION'} "
+          f"PHASE_ID_AFTER={next_phase.get('id') if next_phase else 'NONE'}",
+          file=__import__('sys').stderr,flush=True)
     db.update_coding_task(task_id,plan=plan,plan_revision=int(managed.get("plan_revision") or 0)+1,replan_count=count,replan_count_in_epoch=epoch_count,
                           current_phase_id=next_phase.get("id") if next_phase else None,
                           retry_count=0,recovery_action="NONE",recovery_reason="NONE")
@@ -1321,6 +2152,266 @@ def _latest_completed_phase_report(task_id: str, phase_id: str) -> dict | None:
     return rows[-1] if rows else None
 
 
+def _phase_package_install_satisfied(task_id: str, phase_id: str, plan_revision: int) -> bool:
+    """Return true only for persisted successful PACKAGE_INSTALL evidence."""
+    for row in db.coding_phase_reports(task_id):
+        if row.get("phase_id") != phase_id or row.get("validation_status") != "PASS":
+            continue
+        report = row.get("structured_report") if isinstance(row.get("structured_report"), dict) else {}
+        if _report_plan_revision(report) != int(plan_revision):
+            continue
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, dict) or operation.get("tool") != "package_install":
+                continue
+            output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+            if (str(operation.get("status") or "").lower() in {"success", "completed", "ok"}
+                    and output.get("exit_code") == 0
+                    and output.get("process_started") is True):
+                return True
+    return False
+
+
+def _phase_package_install_evidence(task_id: str, phase_id: str, plan_revision: int) -> list[dict]:
+    """Return bounded successful install evidence for a file-operation retry."""
+    evidence: list[dict] = []
+    for row in db.coding_phase_reports(task_id):
+        if row.get("phase_id") != phase_id or row.get("validation_status") != "PASS":
+            continue
+        report = row.get("structured_report") if isinstance(row.get("structured_report"), dict) else {}
+        if _report_plan_revision(report) != int(plan_revision):
+            continue
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        for item in typed.get("package_install_evidence") or []:
+            if isinstance(item, dict) and str(item.get("status") or "").upper() == "PASS":
+                evidence.append(dict(item))
+    return evidence[-4:]
+
+
+_RESUME_STATE_VERSION = 1
+_PACKAGE_ARTIFACT_FILES = ("package.json", "package-lock.json", "npm-shrinkwrap.json",
+                           "pnpm-lock.yaml", "yarn.lock")
+
+
+def _package_artifact_snapshot(workspace_root: str | None) -> dict[str, dict]:
+    """Read the small package-manager surface needed for resume validation."""
+    snapshot: dict[str, dict] = {}
+    if not workspace_root:
+        return snapshot
+    root = Path(workspace_root).expanduser().resolve()
+    for name in _PACKAGE_ARTIFACT_FILES:
+        path = root / name
+        if not path.is_file():
+            snapshot[name] = {"exists": False}
+            continue
+        try:
+            raw = path.read_bytes()
+            snapshot[name] = {"exists": True, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+        except OSError as exc:
+            snapshot[name] = {"exists": True, "read_error": type(exc).__name__}
+    node_modules = root / "node_modules"
+    snapshot["node_modules"] = {"exists": node_modules.is_dir()}
+    return snapshot
+
+
+def _package_dependency_fingerprint(packages: list[str] | None) -> str:
+    values = sorted(dict.fromkeys(str(item).strip() for item in (packages or []) if str(item).strip()))
+    return hashlib.sha256(json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _package_install_state_from_reports(task_id: str, phase_id: str, plan_revision: int) -> dict | None:
+    """Reduce successful typed package operations to restart-safe evidence."""
+    packages: list[str] = []
+    package_manager: str | None = None
+    package_json_after: dict | None = None
+    lockfiles: dict[str, dict] = {}
+    node_modules_exists: bool | None = None
+    workspace_root: str | None = None
+    attempts: list[int] = []
+    for row in db.coding_phase_reports(task_id):
+        if row.get("phase_id") != phase_id:
+            continue
+        report = row.get("structured_report") if isinstance(row.get("structured_report"), dict) else {}
+        if _report_plan_revision(report) != int(plan_revision):
+            continue
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, dict) or operation.get("tool") != "package_install":
+                continue
+            output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+            if (str(operation.get("status") or "").lower() not in {"success", "completed", "ok"}
+                    or output.get("exit_code") != 0 or output.get("process_started") is not True):
+                continue
+            attempts.append(int(row.get("attempt") or 0))
+            package_manager = str(output.get("package_manager") or package_manager or "") or None
+            workspace_root = str(output.get("workspace_root") or workspace_root or "") or None
+            for item in output.get("packages_authorized") or output.get("packages_requested") or []:
+                if str(item).strip() and str(item).strip() not in packages:
+                    packages.append(str(item).strip())
+            if isinstance(output.get("package_json_after"), dict):
+                package_json_after = dict(output["package_json_after"])
+            if isinstance(output.get("lockfile_after"), dict):
+                for name, value in output["lockfile_after"].items():
+                    if isinstance(value, dict):
+                        lockfiles[str(name)] = dict(value)
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, dict) or operation.get("tool") != "workspace_refresh" or operation.get("status") != "success":
+                continue
+            output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+            if isinstance(output.get("artifacts"), dict):
+                for name, value in output["artifacts"].items():
+                    if isinstance(value, dict) and name in _PACKAGE_ARTIFACT_FILES:
+                        lockfiles[name] = dict(value) if name != "package.json" else lockfiles.get(name, dict(value))
+            if isinstance(output.get("node_modules_exists"), bool):
+                node_modules_exists = output["node_modules_exists"]
+            workspace_root = str(output.get("workspace_root") or workspace_root or "") or workspace_root
+    if not attempts or not packages:
+        return None
+    evidence = {
+        "status": "PASS",
+        "package_install_status": "PASS",
+        "dependencies_satisfied": True,
+        "owner": "PACKAGE_INSTALL",
+        "package_json_owner": "PACKAGE_INSTALL",
+        "package_manager": package_manager,
+        "authorized_package_set": sorted(packages),
+        "dependency_fingerprint": _package_dependency_fingerprint(packages),
+        "package_json": package_json_after or {},
+        "package_json_hash": (package_json_after or {}).get("sha256"),
+        "lockfiles": lockfiles,
+        "lockfile_hashes": {name: value.get("sha256") for name, value in lockfiles.items()
+                            if isinstance(value, dict) and value.get("sha256")},
+        "node_modules_exists": node_modules_exists,
+        "exit_code": 0,
+        "package_manager_exit_code": 0,
+        "phase_id": phase_id,
+        "plan_revision": int(plan_revision),
+        "source": "TYPED_PACKAGE_INSTALL_REPORT",
+        "attempts": sorted(set(attempts)),
+    }
+    if workspace_root:
+        evidence["workspace_root"] = str(Path(workspace_root).expanduser().resolve())
+    return evidence
+
+
+def _resume_state_package_entry(task: dict, phase_id: str) -> dict | None:
+    state = task.get("resume_state") if isinstance(task.get("resume_state"), dict) else {}
+    entries = state.get("package_install_evidence") if isinstance(state.get("package_install_evidence"), dict) else {}
+    entry = entries.get(phase_id)
+    return dict(entry) if isinstance(entry, dict) else None
+
+
+def _persist_resume_package_state(task_id: str, phase_id: str, plan_revision: int,
+                                  evidence: dict, *, phase_cursor: str | None = None) -> dict:
+    task = db.coding_task(task_id) or {}
+    current = task.get("resume_state") if isinstance(task.get("resume_state"), dict) else {}
+    entries = dict(current.get("package_install_evidence") or {}) if isinstance(current.get("package_install_evidence"), dict) else {}
+    entries[phase_id] = {**evidence, "phase_id": phase_id, "plan_revision": int(plan_revision),
+                         "resume_evidence_invalidated": bool(evidence.get("resume_evidence_invalidated", False)),
+                         "resume_evidence_invalidation_reason": str(evidence.get("resume_evidence_invalidation_reason") or "NONE")}
+    state = {**current, "version": _RESUME_STATE_VERSION, "package_install_evidence": entries,
+             "phase_cursor": phase_cursor or task.get("current_phase_id"),
+             "updated_at": time.time()}
+    db.update_coding_task(task_id, resume_state=state)
+    return state
+
+
+def _reconcile_package_install_resume(task_id: str, phase: dict, plan_revision: int,
+                                      workspace_root: str | None,
+                                      dependency_records: list[dict] | None) -> tuple[bool, list[dict], dict | None]:
+    """Validate persisted install facts against the current authorized workspace."""
+    task = db.coding_task(task_id) or {}
+    phase_id = str(phase.get("id") or "")
+    state = _resume_state_package_entry(task, phase_id)
+    if state is None:
+        state = _package_install_state_from_reports(task_id, phase_id, plan_revision)
+        if state is not None:
+            _persist_resume_package_state(task_id, phase_id, plan_revision, state,
+                                          phase_cursor=task.get("current_phase_id") or phase_id)
+            print(f"TASK_ID={task_id} RESUME_EVIDENCE_RESTORED=YES RESUME_EVIDENCE_SOURCE=PHASE_REPORT "
+                  f"PHASE_ID={phase_id}", file=__import__('sys').stderr, flush=True)
+    if not isinstance(state, dict) or not state.get("authorized_package_set"):
+        print(f"TASK_ID={task_id} RESUME_EVIDENCE_RESTORED=NO RESUME_EVIDENCE_INVALIDATED=NO "
+              f"RESUME_EVIDENCE_INVALIDATION_REASON=NO_PERSISTED_PACKAGE_EVIDENCE PHASE_ID={phase_id}",
+              file=__import__('sys').stderr, flush=True)
+        return False, [], state
+    expected = dependency_requirement_specs(dependency_records or [])
+    stored = [str(item) for item in (state.get("authorized_package_set") or [])]
+    if expected and set(expected) != set(stored):
+        reason = "DEPENDENCY_FINGERPRINT_MISMATCH"
+    else:
+        reason = ""
+    root = Path(workspace_root).expanduser().resolve() if workspace_root else None
+    if not reason and state.get("workspace_root") and root and Path(str(state["workspace_root"])).expanduser().resolve() != root:
+        reason = "WORKSPACE_ROOT_MISMATCH"
+    snapshot = _package_artifact_snapshot(str(root) if root else None)
+    print(f"TASK_ID={task_id} PHASE_ID={phase_id} WORKSPACE_AUTO_INSPECTION=YES "
+          f"POST_RESUME_WORKTREE_REFRESH={'YES' if root else 'NO'} "
+          "USER_READINESS_CONFIRMATION=NOT_REQUIRED",
+          file=__import__('sys').stderr, flush=True)
+    if not reason:
+        package_json = snapshot.get("package.json") or {}
+        persisted_package_json = state.get("package_json") if isinstance(state.get("package_json"), dict) else {}
+        persisted_package_hash = persisted_package_json.get("sha256") or state.get("package_json_hash")
+        if not package_json.get("exists"):
+            reason = "PACKAGE_JSON_MISSING"
+        elif not persisted_package_hash:
+            reason = "PACKAGE_JSON_HASH_MISSING"
+        elif package_json.get("sha256") != persisted_package_hash:
+            reason = "PACKAGE_JSON_HASH_CHANGED"
+        else:
+            try:
+                data = json.loads((root / "package.json").read_text(encoding="utf-8")) if root else {}
+                declared = set(dependency_requirement_names(list((data.get("dependencies") or {}).keys()) + list((data.get("devDependencies") or {}).keys())))
+                required_names = set(dependency_requirement_names(expected or stored))
+                if not required_names.issubset(declared):
+                    reason = "DEPENDENCY_DECLARATIONS_MISSING"
+            except (OSError, ValueError, TypeError):
+                reason = "PACKAGE_JSON_UNREADABLE"
+    if not reason:
+        for name, expected_value in (state.get("lockfiles") or {}).items():
+            if not isinstance(expected_value, dict) or not expected_value.get("exists"):
+                continue
+            current_value = snapshot.get(name) or {}
+            if not current_value.get("exists"):
+                reason = f"LOCKFILE_MISSING:{name}"; break
+            if not expected_value.get("sha256"):
+                reason = f"LOCKFILE_HASH_MISSING:{name}"; break
+            if current_value.get("sha256") != expected_value.get("sha256"):
+                reason = f"LOCKFILE_HASH_CHANGED:{name}"; break
+    if not reason and state.get("node_modules_exists") is True and not (snapshot.get("node_modules") or {}).get("exists"):
+        reason = "NODE_MODULES_MISSING"
+    if reason:
+        invalidated = {**state, "status": "INVALIDATED", "package_install_status": "NEEDS_INSPECTION",
+                       "dependencies_satisfied": False, "owner": "PACKAGE_INSTALL", "package_json_owner": "PACKAGE_INSTALL",
+                       "resume_evidence_invalidated": True, "resume_evidence_invalidation_reason": reason,
+                       "invalidated_at": time.time()}
+        _persist_resume_package_state(task_id, phase_id, plan_revision, invalidated,
+                                      phase_cursor=task.get("current_phase_id") or phase_id)
+        print(f"TASK_ID={task_id} RESUME_EVIDENCE_RESTORED=NO RESUME_EVIDENCE_INVALIDATED=YES "
+              f"RESUME_EVIDENCE_INVALIDATION_REASON={reason} PHASE_ID={phase_id}",
+              file=__import__('sys').stderr, flush=True)
+        return False, [], invalidated
+    restored = {**state, "status": "PASS", "package_install_status": "PASS",
+                "dependencies_satisfied": True, "owner": "PACKAGE_INSTALL", "package_json_owner": "PACKAGE_INSTALL",
+                "resume_evidence_invalidated": False, "resume_evidence_invalidation_reason": "NONE",
+                "validated_at": time.time(), "workspace_snapshot": snapshot}
+    _persist_resume_package_state(task_id, phase_id, plan_revision, restored,
+                                  phase_cursor=task.get("current_phase_id") or phase_id)
+    evidence = [{"status": "PASS", "operation_type": "PACKAGE_INSTALL",
+                 "package_manager": restored.get("package_manager"),
+                 "packages_authorized": restored.get("authorized_package_set") or [],
+                 "workspace_root": str(root) if root else restored.get("workspace_root"),
+                 "exit_code": 0, "dependency_requirements_satisfied": True,
+                 "package_json_after": restored.get("package_json"),
+                 "lockfile_after": restored.get("lockfiles") or {}}]
+    print(f"TASK_ID={task_id} RESUME_EVIDENCE_RESTORED=YES RESUME_EVIDENCE_INVALIDATED=NO "
+          f"RESUME_EVIDENCE_INVALIDATION_REASON=NONE PHASE_ID={phase_id} PACKAGE_INSTALL_STATUS=PASS "
+          "DEPENDENCIES_SATISFIED=YES PACKAGE_JSON_OWNER=PACKAGE_INSTALL",
+          file=__import__('sys').stderr, flush=True)
+    return True, evidence, restored
+
+
 def _artifact_paths_from_reports(reports: list[dict], workspace_root: str | None = None) -> list[str]:
     """Collect deterministic paths produced by successful typed file writes."""
     paths: set[str] = set()
@@ -1353,6 +2444,58 @@ def _artifact_paths_from_reports(reports: list[dict], workspace_root: str | None
     return sorted(normalized)
 
 
+def _current_task_file_provenance(task_id: str, artifact: dict | None,
+                                  reports: list[dict], workspace_root: str | None = None) -> dict[str, str]:
+    """Reconstruct bounded file provenance for the current task only."""
+    root = Path(workspace_root).expanduser().resolve() if workspace_root else None
+    provenance: dict[str, str] = {}
+
+    def relative(value: str) -> str:
+        candidate = Path(value).expanduser()
+        if candidate.is_absolute() and root:
+            try:
+                return candidate.resolve().relative_to(root).as_posix()
+            except ValueError:
+                return candidate.as_posix()
+        return candidate.as_posix().lstrip("./")
+
+    artifact = artifact if isinstance(artifact, dict) else {}
+    for path, kind in (artifact.get("current_task_provenance") or {}).items():
+        if isinstance(path, str) and isinstance(kind, str):
+            provenance[relative(path)] = kind
+    for path in artifact.get("scaffold_created_paths") or []:
+        if isinstance(path, str):
+            provenance[relative(path)] = "CREATED_BY_CURRENT_TASK_SCAFFOLD"
+    for entry in artifact.get("file_manifest") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            continue
+        path = relative(entry["path"])
+        if entry.get("exists_before") is True and path not in provenance:
+            provenance[path] = "PREEXISTING_BEFORE_TASK"
+
+    for report in reports:
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        if typed.get("worktree_state") == "ROLLED_BACK":
+            continue
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, dict) or operation.get("tool") not in {
+                    "workspace_write", "workspace_write_normalized", "workspace_patch"}:
+                continue
+            if str(operation.get("status") or "").lower() not in {"success", "completed", "ok", "normalized"}:
+                continue
+            output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+            input_value = operation.get("input") if isinstance(operation.get("input"), dict) else {}
+            value = output.get("path") or input_value.get("path")
+            if not isinstance(value, str) or not value.strip():
+                continue
+            path = relative(value)
+            if output.get("created_by_current_task") is True:
+                provenance[path] = "CREATED_BY_CURRENT_TASK_IMPLEMENTATION"
+            elif path not in provenance:
+                provenance[path] = "MODIFIED_BY_CURRENT_TASK"
+    return provenance
+
+
 def _append_artifact_paths(final_text: str, reports: list[dict], workspace_root: str | None = None) -> str:
     paths = _artifact_paths_from_reports(reports, workspace_root)
     lines = ["", "成果物ファイル:"]
@@ -1377,6 +2520,49 @@ def _mcp_usage_rows(managed: dict, server_id: str) -> list[dict]:
             if isinstance(item, dict) and item.get("mcp_name") == server_id
             and item.get("status") == "PASS"
             and str(item.get("tool_name") or "") not in _MCP_LIFECYCLE_ONLY_TOOLS]
+
+
+def _mcp_readiness_state(managed: dict, server_id: str) -> dict[str, str]:
+    """Return one truthful readiness state for one required MCP provider."""
+    rows = [item for item in (managed.get("mcp_evidence") or [])
+            if isinstance(item, dict) and item.get("mcp_name") == server_id]
+    usage = _mcp_usage_rows(managed, server_id)
+    if usage:
+        return {"state": "PASS", "reason": "NONE"}
+    latest = rows[-1] if rows else {}
+    status = str(latest.get("status") or "PENDING")
+    if status in {"FAILED", "BLOCKED", "BLOCKED_NETWORK", "VERSION_CONFLICT"}:
+        return {"state": "FAILED", "reason": str(latest.get("error") or "MCP failure reason was not recorded")}
+    return {"state": "PENDING", "reason": "NOT_CHECKED"}
+
+
+def _mcp_display_name(server_id: str) -> str:
+    return {"animejs": "Anime.js", "shadcn": "shadcn", "playwright": "Playwright"}.get(server_id, server_id)
+
+
+def _required_mcp_checkpoint_message(task_id: str, *, continuation: str) -> str:
+    task = db.coding_task(task_id) or {}
+    required = _required_mcp_names(task)
+    states = {name: _mcp_readiness_state(task, name) for name in required}
+    passed = [_mcp_display_name(name) for name, state in states.items() if state["state"] == "PASS"]
+    pending = [_mcp_display_name(name) for name, state in states.items() if state["state"] == "PENDING"]
+    if pending:
+        prefix = (f"{ '、'.join(passed) or '実装' } MCP の事前検証が完了しました。"
+                  f"{ '、'.join(pending) } MCP の検証は次工程で実行します。")
+    else:
+        prefix = "リポジトリ確認・必須 MCP 検証・実装計画の保存が完了しました。"
+    return prefix + continuation
+
+
+def _required_mcp_failure_message(task_id: str, server_id: str, error: str) -> str:
+    task = db.coding_task(task_id) or {}
+    required = _required_mcp_names(task)
+    states = {name: _mcp_readiness_state(task, name) for name in required}
+    passed = [_mcp_display_name(name) for name, state in states.items()
+              if name != server_id and state["state"] == "PASS"]
+    passed_prefix = f"{ '、'.join(passed) } MCP の検証は成功しました。" if passed else ""
+    return (f"{passed_prefix}必須の {_mcp_display_name(server_id)} MCP 検証を実行できないため、"
+            f"タスクをブロックしました。原因: {error or 'UNKNOWN'}")
 
 
 def _final_acceptance_gaps(managed: dict, reports: list[dict]) -> list[str]:
@@ -1632,7 +2818,32 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
     """Run one approved task serially through the existing typed Runtime executor."""
     managed=db.coding_task(task_id)
     if not managed or managed["status"] not in {"QUEUED","RUNNING"} or managed["archived"] or managed["pause_requested"]: return ""
-    plan=managed.get("plan") or {}; phases=plan.get("phases",[])
+    plan=managed.get("plan") or {}
+    plan, dependency_changes = associate_dependency_requirements(plan, managed.get("requirements") or {})
+    if dependency_changes:
+        db.update_coding_task(task_id, plan=plan)
+        managed = {**managed, "plan": plan}
+        print(f"TASK_ID={task_id} DEPENDENCY_REQUIREMENT_PHASE_ASSOCIATION=RECOVERY_BOUNDARY "
+              f"CHANGES={json.dumps(dependency_changes, ensure_ascii=False)}",
+              file=__import__('sys').stderr, flush=True)
+    # The persisted plan is the final executable graph.  Any remaining cycle
+    # or namespace error must stop before scaffold, package installation, or
+    # implementation; intermediate planner diagnostics may be repaired or
+    # normalized before this boundary.
+    final_graph = graph_validation_diagnostics(plan)
+    if final_graph.get("errors"):
+        first = final_graph.get("first_error") or {}
+        reason = str(first.get("reason") or "invalid dependency graph")
+        print(f"TASK_ID={task_id} GRAPH_VALIDATION=FAIL FINAL_GRAPH_VALIDATION=FAIL GRAPH_FAIL_CLOSED=YES "
+              f"OFFENDING_PHASE_ID={first.get('offending_phase_id') or 'NONE'} "
+              f"OFFENDING_TASK_ID={first.get('offending_task_id') or 'NONE'} "
+              f"OFFENDING_DEPENDENCY_REF={first.get('offending_dependency_ref') or 'NONE'} "
+              f"GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'} "
+              f"DEPENDENCY_VALIDATION_REASON={reason}", file=__import__('sys').stderr, flush=True)
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_action="NONE",
+                              recovery_reason="FINAL_GRAPH_VALIDATION")
+        return "Coding Task is blocked: final dependency graph validation failed."
+    phases=plan.get("phases",[])
     implementation_artifact = plan.get("implementation_plan_artifact") if isinstance(plan, dict) else None
     if isinstance(implementation_artifact, dict) and implementation_artifact.get("target_root"):
         persisted_root = str(Path(str(implementation_artifact["target_root"])).expanduser().resolve())
@@ -1712,15 +2923,44 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         retry_context=_bounded_review_context(latest["structured_report"]) if latest else None
         if retry_context:
             previous=latest["structured_report"]
-            instruction=zero_mutation_retry_instruction(phase,previous,[row["structured_report"] for row in reports[:-1]],workspace_root)
+            previous_typed = previous.get("typed_execution_summary") if isinstance(previous.get("typed_execution_summary"), dict) else {}
+            previous_failure = str(previous_typed.get("failure_class") or "")
+            prior_attempt_progress = (previous.get("phase_progress") is True or
+                                      int(previous.get("accepted_mutations") or previous_typed.get("accepted_mutations") or 0) > 0 or
+                                      int(previous.get("files_written") or previous_typed.get("files_written") or 0) > 0)
+            instruction = "" if prior_attempt_progress else zero_mutation_retry_instruction(
+                phase, previous, [row["structured_report"] for row in reports[:-1]], workspace_root)
+            # A phase may have made real progress and still need another
+            # attempt.  In that case the old zero-write helper intentionally
+            # returned nothing, which left the next Implementer without a
+            # structured instruction to refresh its preimages.  Carry a
+            # bounded diagnostic for all current-worktree-sensitive retries.
+            if prior_attempt_progress or (not instruction and (previous_failure == "PREIMAGE_MISMATCH" or
+                                     previous_typed.get("worktree_state") == "ROLLED_BACK")):
+                instruction = (
+                    "The previous attempt changed or inspected the authorized worktree but did not complete this phase. "
+                    "Re-enumerate the current authorized files and rebuild every source hash and patch preimage from the live worktree before emitting operations. "
+                    "Do not reuse old_text or context from an earlier attempt; preserve successful prior mutations and address the remaining Done/Verify criteria."
+                )
+                if previous_failure == "PREIMAGE_MISMATCH":
+                    instruction += " The previous patch preimage failed; use the typed preimage_diagnostics to choose an exact unique current fragment or a complete write only when the target is a current-task-created file."
             if previous.get("implementation_result_kind") == "NARRATIVE_ONLY":
                 instruction=("Do not describe future steps. Execute the current phase now using the available "
                              "repository/file tool protocol. Return one or more valid file operations and then "
                              "authoritative changed-file and verification evidence.")
+            if previous_failure == "PACKAGE_JSON_OWNERSHIP_VIOLATION":
+                instruction = (
+                    "The previous typed operation was rejected as PACKAGE_JSON_OWNERSHIP_VIOLATION. "
+                    "PACKAGE_INSTALL owns package.json dependency and devDependency declarations, and the package installation already passed. "
+                    "Do not emit any patch or write operation for package.json dependencies or devDependencies; continue the remaining source/config work in the effective authorized scope. "
+                    "Treat package installation evidence as preserved and do not repeat PACKAGE_INSTALL."
+                )
             if instruction:
                 retry_context["diagnosis"]["retry_instruction"]=instruction
                 retry_context["diagnosis"]["specific_fix"]=instruction
-            retry_cause = "NARRATIVE_ONLY" if previous.get("implementation_result_kind") == "NARRATIVE_ONLY" else ("ZERO_WORKSPACE_MUTATION" if instruction else "PHASE_EVIDENCE_INCOMPLETE")
+            retry_cause = ("NARRATIVE_ONLY" if previous.get("implementation_result_kind") == "NARRATIVE_ONLY" else
+                           "PACKAGE_JSON_OWNERSHIP_VIOLATION" if previous_failure == "PACKAGE_JSON_OWNERSHIP_VIOLATION" else
+                           "ZERO_WORKSPACE_MUTATION" if instruction else "PHASE_EVIDENCE_INCOMPLETE")
             print(f"RETRY_CAUSE={retry_cause} RETRY_INSTRUCTION_KIND={'EXECUTION_BINDING' if retry_cause == 'NARRATIVE_ONLY' else 'ZERO_MUTATION' if instruction else 'PRIOR_DIAGNOSIS'} PREVIOUS_WORKSPACE_MUTATION_COUNT={workspace_mutation_count(previous)}",file=__import__('sys').stderr,flush=True)
         context_payload={"phase_id":phase["id"],"plan_revision":plan_revision,"attempt":attempt,
                          "prior_review":retry_context} if retry_context else {"phase_id":phase["id"],"plan_revision":plan_revision,"attempt":attempt}
@@ -1757,16 +2997,104 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                     db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",
                                           recovery_reason="REQUIRED_MCP_FAILED")
                     _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,decision="BLOCKED")
-                    print(f"TASK_ID={task_id} REQUIRED_MCP={server_id} MCP_USAGE=FAILED TASK_STATUS=BLOCKED",file=__import__('sys').stderr,flush=True)
-                    return f"Coding Task is blocked: required {server_id} MCP failed."
+                    print(f"TASK_ID={task_id} REQUIRED_MCP={server_id} MCP_USAGE=FAILED "
+                          f"MCP_FAILURE_REASON={error or 'UNKNOWN'} TASK_STATUS=BLOCKED",
+                          file=__import__('sys').stderr,flush=True)
+                    message = _required_mcp_failure_message(task_id, server_id, error or "UNKNOWN")
+                    _add_task_message_once(managed["conversation_id"], task_id, message)
+                    return message
             mcp_context.append(evidence)
-        phase_with_contract={**phase,"required_mcp":phase_mcp,"execution_expectations":_phase_execution_expectations(phase)}
+        phase_dependency_records = phase.get("dependency_requirements") if isinstance(phase.get("dependency_requirements"), list) else []
+        artifact_coverage = (implementation_artifact or {}).get("manifest_coverage") or {}
+        artifact_dependency_records = artifact_coverage.get("dependency_requirement_records") or ((artifact_coverage.get("requirement_types") or {}).get("DEPENDENCY_REQUIREMENT_PROVENANCE") or [])
+        # Phase ownership is the authorization boundary.  A global artifact
+        # contract may contain dependencies for another phase, so never pass
+        # the entire manifest list to the active Implementer.
+        dependency_records = phase_dependency_records or [item for item in artifact_dependency_records
+                                                           if isinstance(item, dict) and str(item.get("phase_id") or "") == str(phase.get("id"))]
+        dependency_requirements = dependency_requirement_specs(dependency_records)
+        package_install_operations = dependency_install_operations(dependency_records)
+        package_install_required = phase.get("requires_dependency_installation") is True
+        package_install_authorized = package_install_required and bool(dependency_requirements)
+        package_install_satisfied, package_install_evidence, resume_package_state = _reconcile_package_install_resume(
+            task_id, phase, plan_revision, workspace_root, dependency_records)
+        # Keep the legacy report scan as a compatibility fallback for old task
+        # rows whose workspace has not yet crossed the new resume boundary.
+        if not package_install_satisfied and resume_package_state is None:
+            package_install_satisfied = _phase_package_install_satisfied(task_id, phase["id"], plan_revision)
+            package_install_evidence = _phase_package_install_evidence(task_id, phase["id"], plan_revision)
+        package_json_config_mutation_allowed = bool(phase.get("package_json_config_mutation") is True)
+        package_json_owner = "PACKAGE_INSTALL" if package_install_authorized else "NONE"
+        package_json_mutation_classes = ["DEPENDENCY_DECLARATION", "DEV_DEPENDENCY_DECLARATION",
+                                         "SCRIPT_CONFIGURATION", "PROJECT_METADATA", "OTHER_CONFIG"]
+        package_json_dependency_mutation_allowed = not package_install_authorized
+        skip_reason = ("ALREADY_PASS" if package_install_satisfied else
+                       "NONE" if package_install_authorized else
+                       "NO_CANONICAL_DEPENDENCY_REQUIREMENTS" if not dependency_records else
+                       "PHASE_DEPENDENCY_INSTALLATION_NOT_REQUIRED")
+        print(f"TASK_ID={task_id} PHASE_ID={phase['id']} CANONICAL_DEPENDENCY_COUNT={len(artifact_dependency_records)} "
+              f"PHASE_DEPENDENCY_COUNT={len(dependency_records)} AUTHORIZED_PACKAGE_COUNT={len(dependency_requirements)} "
+              f"AUTHORIZED_PACKAGES={json.dumps(dependency_requirements, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+        print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PACKAGE_INSTALL_CAPABILITY_DETECTED={'YES' if package_install_authorized else 'NO'} "
+              f"PACKAGE_INSTALL_ACTION_PLANNED={'YES' if package_install_authorized and not package_install_satisfied else 'NO'} "
+              f"PACKAGE_INSTALL_ALREADY_SATISFIED={'YES' if package_install_satisfied else 'NO'} "
+              f"PACKAGE_INSTALL_SKIP_REASON={skip_reason}",
+              file=__import__('sys').stderr, flush=True)
+        print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PACKAGE_JSON_DEPENDENCY_OWNER={package_json_owner} "
+              f"DEPENDENCIES_ALREADY_SATISFIED={'YES' if package_install_satisfied else 'NO'} "
+              f"PACKAGE_JSON_DEPENDENCY_MUTATION_ALLOWED={'YES' if package_json_dependency_mutation_allowed else 'NO'} "
+              f"PACKAGE_JSON_EFFECTIVE_MUTATION_SCOPE={'CONFIG_ALLOWED' if package_json_config_mutation_allowed else 'DEPENDENCIES_EXCLUDED'}",
+              file=__import__('sys').stderr, flush=True)
+        phase_contract_metadata = {**phase, "required_mcp": phase_mcp,
+                                   "package_manager_executor": ("AUTHORIZED_PACKAGE_MANAGER"
+                                                                  if package_install_authorized
+                                                                  else None),
+                                   "authorized_package_requirements": dependency_requirements,
+                                   "authorized_package_requirement_records": dependency_records,
+                                   "package_install_operations": package_install_operations,
+                                   "package_install_required": package_install_authorized,
+                                   "package_install_satisfied": package_install_satisfied,
+                                   "package_install_evidence": package_install_evidence,
+                                   "package_json_dependency_owner": package_json_owner,
+                                   "package_json_mutation_classes": package_json_mutation_classes,
+                                   "package_json_dependency_mutation_allowed": package_json_dependency_mutation_allowed,
+                                   "dependencies_already_satisfied": package_install_satisfied,
+                                   "package_json_effective_mutation_scope": "EXCLUDE_PACKAGE_JSON_DEPENDENCY_DECLARATIONS" if package_install_authorized else "NORMAL_FILE_SCOPE"}
+        phase_with_contract={**phase_contract_metadata,"execution_expectations":_phase_execution_expectations(phase_contract_metadata)}
         expectations = phase_with_contract["execution_expectations"]
         print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PHASE_EXECUTION_MODE={expectations.get('execution_mode') or 'LEGACY'} "
               f"PHASE_EXECUTION_MODE_SOURCE={expectations.get('execution_mode_source')} "
               f"PHASE_EXECUTION_MODE_VALID={'YES' if expectations.get('execution_mode_valid') else 'NO'} "
               f"IMPLEMENTER_REQUIRED={'YES' if expectations.get('requires_repo_mutation') else 'NO'}",
               file=__import__('sys').stderr, flush=True)
+        executor_capability = phase_executor_capability(phase_with_contract)
+        if not executor_capability["executable"]:
+            missing = executor_capability["missing"]
+            reason = "PHASE_EXECUTOR_CAPABILITY_MISMATCH"
+            print(f"TASK_ID={task_id} PHASE_ID={phase['id']} PHASE_EXECUTOR_CAPABILITY=FAIL "
+                  f"REQUIRED_NOT_RUN_IDS={json.dumps([item['kind'] for item in missing], ensure_ascii=False)} "
+                  f"REQUIRED_NOT_RUN_KINDS={json.dumps([item['kind'] for item in missing], ensure_ascii=False)} "
+                  f"REQUIRED_NOT_RUN_EXECUTOR_CAPABILITY={json.dumps([item['executor'] for item in missing], ensure_ascii=False)} "
+                  "IMPLEMENTATION_DISPATCH=BLOCKED",
+                  file=__import__('sys').stderr, flush=True)
+            typed = {"state": "blocked", "error": reason, "failure_class": reason,
+                     "worktree_state": "UNCHANGED", "operations": [], "phase_progress": False,
+                     "required_not_run": missing}
+            report = {"phase_id": phase["id"], "attempt": attempt, "plan_revision": plan_revision,
+                      "status": "BLOCKED", "implemented": [], "changed_files": [],
+                      "test_executed": [], "test_pass": [], "test_fail": [],
+                      "build_executed": "NOT_RUN", "build_pass": "NOT_RUN",
+                      "errors": [reason], "blockers": [reason], "risks": [],
+                      "typed_execution_summary": typed, "execution_expectations": expectations,
+                      "implementation_result_kind": "BLOCKED_EXECUTOR_CAPABILITY",
+                      "attempted_mutations": 0, "accepted_mutations": 0, "rejected_mutations": 0,
+                      "files_written": 0, "rolled_back_mutations": 0, "final_worktree_mutations": 0,
+                      "phase_progress": False, "no_progress": True,
+                      "manager_decision": {"decision": "BLOCKED", "reason": reason}}
+            row = db.add_coding_phase_report(task_id, phase["id"], attempt, report, "PASS", time.time())
+            _set_subtask_state(task_id, phase["id"], "FAILED", attempt=attempt, report=report, decision="BLOCKED")
+            db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_action="NONE", recovery_reason=reason)
+            return "Coding Task is blocked: the phase requires an executor capability that OLCR does not provide."
         animejs_context = ((db.coding_task(task_id) or {}).get("requirements") or {}).get("animejs_project")
         animejs_safety = ("Anime.js version evidence: " + json.dumps(animejs_context, ensure_ascii=False) + "\n"
                           if isinstance(animejs_context, dict) else "")
@@ -1780,7 +3108,20 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                         "plan_revision":plan_revision,"attempt":attempt,
                         "implementation_scope_source":"PLAN_MANIFEST" if implementation_artifact else "APPROVED_SCOPE",
                         "target_root": implementation_artifact.get("target_root") if implementation_artifact else workspace_root,
-                        "file_manifest": implementation_artifact.get("file_manifest", []) if implementation_artifact else []}
+                        "file_manifest": implementation_artifact.get("file_manifest", []) if implementation_artifact else [],
+                        "dependency_requirements": dependency_records,
+                        "authorized_package_requirements": dependency_requirements,
+                        "package_install_evidence": package_install_evidence,
+                        "package_json_dependency_owner": package_json_owner,
+                        "package_json_mutation_classes": package_json_mutation_classes,
+                        "package_json_dependency_mutation_allowed": package_json_dependency_mutation_allowed,
+                        "dependencies_already_satisfied": package_install_satisfied,
+                        "package_install_status": "PASS" if package_install_satisfied else ("PLANNED" if package_install_authorized else "NOT_REQUIRED"),
+                        "package_json_config_mutation_allowed": package_json_config_mutation_allowed,
+                        "package_json_effective_mutation_scope": "EXCLUDE_PACKAGE_JSON_DEPENDENCY_DECLARATIONS" if package_install_authorized and not package_json_config_mutation_allowed else "NORMAL_FILE_SCOPE",
+                        "package_json_effective_mutation_scope_paths": sorted({str(item.get("path")) for item in (implementation_artifact or {}).get("file_manifest", [])
+                                                                                if isinstance(item, dict) and isinstance(item.get("path"), str)
+                                                                                and (package_json_config_mutation_allowed or item.get("path") != "package.json")})}
         phase_request=("Execute the approved coding phase now. Do not describe future steps. "
                        "Use the typed workspace file-operation protocol and produce authoritative changed-file and read-back evidence. "
                        "Do not expand scope or claim unrun verification.\n"
@@ -1813,7 +3154,20 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 print(f"TASK_ID={task_id} PHASE_EXECUTION_MODE=VERIFICATION_ONLY IMPLEMENTER_SKIPPED=NO IMPLEMENTER_SKIP_REASON=NO_TRUSTED_VERIFICATION_SPEC",
                       file=__import__('sys').stderr, flush=True)
             with model_slot():
-                execution, response=runtime.execute(phase_request,core_context=knowledge_context,workspace_root=workspace_root,managed_context={"managed_coding_task":True,"task_id":task_id,"operation_intent":"IMPLEMENTATION","global_no_write":False,"implementation_plan_artifact":implementation_artifact,"approved_scopes":managed.get("approved_scopes", []),"read_only_context":phase_contract["read_only_context"]})
+                execution, response=runtime.execute(phase_request,core_context=knowledge_context,workspace_root=workspace_root,managed_context={"managed_coding_task":True,"task_id":task_id,"operation_intent":"IMPLEMENTATION","global_no_write":False,"implementation_plan_artifact":implementation_artifact,"approved_scopes":managed.get("approved_scopes", []),"read_only_context":phase_contract["read_only_context"],
+                                                                                                                               "authorized_package_requirements": dependency_requirements,
+                                                                                                                               "authorized_package_requirement_records": dependency_records,
+                                                                                                                               "package_install_operations": package_install_operations,
+                                                                                                                               "package_install_required": package_install_authorized,
+                                                                                                                               "package_install_satisfied": package_install_satisfied,
+                                                                                                                               "prior_package_install_evidence": package_install_evidence,
+                                                                                                                               "package_json_dependency_owner": package_json_owner,
+                                                                                                                               "package_json_mutation_classes": package_json_mutation_classes,
+                                                                                                                               "package_json_dependency_mutation_allowed": package_json_dependency_mutation_allowed,
+                                                                                                                               "dependencies_already_satisfied": package_install_satisfied,
+                                                                                                                               "package_install_status": "PASS" if package_install_satisfied else ("PLANNED" if package_install_authorized else "NOT_REQUIRED"),
+                                                                                                                               "allow_package_json_file_mutation": package_json_config_mutation_allowed,
+                                                                                                                               "allow_explicit_package_manager_default": bool((managed.get("requirements") or {}).get("new_project_intent") and (managed.get("requirements") or {}).get("task_profile") == "FRONTEND_ONLY_MARKETING_SITE")})
         telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=settings.main_model))
         telemetry.record["tool_active_ms"] += sum(float(item.get("latency_ms") or 0) for item in execution.tool_executions if isinstance(item, dict))
         telemetry.record.setdefault("tool_categories", {})
@@ -1825,8 +3179,9 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
             elapsed_ms=call.get("latency_ms") if isinstance(call, dict) else None
             finished_at=time.time(); started_at=finished_at - (float(elapsed_ms or 0) / 1000)
             telemetry.add_call(phase_id=phase["id"], role="IMPLEMENTER", model=str(call.get("model") or settings.main_model), messages=[{"role":"user","content":phase_request}],
-                               result={key: call.get(key) for key in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms")},
-                               started=started_at, finished=finished_at, structured=True, thinking=False, success=call.get("status") == "success", failure_class=str(call.get("error") or "NONE"))
+                               result={key: call.get(key) for key in ("prompt_tokens","completion_tokens","latency_ms","total_duration","load_duration","prompt_eval_duration","eval_duration","load_duration_ms","request_options")},
+                               started=started_at, finished=finished_at, structured=True, thinking=False, success=call.get("status") == "success", failure_class=str(call.get("error") or "NONE"),
+                               model_provenance=_telemetry_provenance(str(call.get("model") or settings.main_model), "IMPLEMENTER"))
         report=_report_from_execution(phase_with_contract,attempt,execution,response)
         # A planner may legally combine an implementation criterion with a
         # test criterion in one phase.  Keep the implementation write scope
@@ -1897,6 +3252,11 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 return "Coding Task phase report could not be validated after one repair."
             db.update_coding_phase_report(report_row["id"],repaired,"PASS")
             report_row={**report_row,"structured_report":repaired,"validation_status":"PASS"}
+            repaired_evidence = _package_install_state_from_reports(task_id, phase["id"], plan_revision)
+            if repaired_evidence is not None:
+                current_task = db.coding_task(task_id) or {}
+                _persist_resume_package_state(task_id, phase["id"], plan_revision, repaired_evidence,
+                                              phase_cursor=current_task.get("current_phase_id") or phase["id"])
         if (db.coding_task(task_id) or {}).get("pause_requested"):
             if report_row["structured_report"].get("changed_files"):
                 _set_subtask_state(task_id,phase["id"],"PARTIAL",attempt=attempt,report=report_row["structured_report"])
@@ -1939,6 +3299,34 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
     return _replan_task(task_id,managed,completed,"unmet phase dependencies")
 
 _coding_scheduler_wake=threading.Event()
+_coding_scheduler_stop=threading.Event()
+_coding_scheduler_thread: threading.Thread | None = None
+
+
+def start_coding_scheduler() -> None:
+    """Start the process scheduler once, with explicit ownership."""
+    global _coding_scheduler_thread
+    thread = _coding_scheduler_thread
+    if thread is not None and thread.is_alive():
+        return
+    _coding_scheduler_stop.clear()
+    _coding_scheduler_wake.clear()
+    _coding_scheduler_thread = threading.Thread(target=_coding_scheduler, name="olcr-coding-scheduler", daemon=True)
+    _coding_scheduler_thread.start()
+
+
+def stop_coding_scheduler(timeout: float | None = None) -> None:
+    """Stop and join the scheduler before its DB/workspace resources are disposed."""
+    global _coding_scheduler_thread
+    _coding_scheduler_stop.set()
+    _coding_scheduler_wake.set()
+    thread = _coding_scheduler_thread
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout)
+        if thread.is_alive():
+            raise RuntimeError("coding scheduler did not stop before resource teardown")
+    _coding_scheduler_thread = None
+    _coding_scheduler_wake.clear()
 _runner_guard=threading.Lock()
 _active_runners:set[str]=set()
 
@@ -2053,10 +3441,25 @@ def _persisted_requirements(managed: dict) -> dict:
     if required <= set(requirements):
         # Add plural and verification fields to a task made by the preceding
         # schema without changing its user-derived MCP choices.
-        if "required_mcps" not in requirements or "required_verification" not in requirements:
+        if ("required_mcps" not in requirements or "required_verification" not in requirements or
+                "required_stack" not in requirements or "forbidden_stack" not in requirements or
+                "new_project_intent" not in requirements or "dependency_requirements" not in requirements):
+            profile = str(requirements.get("task_profile") or "")
             requirements = {**requirements,
                             "required_mcps": list(requirements.get("required_mcp") or []),
-                            "required_verification": requirements.get("required_verification") or []}
+                            "required_verification": requirements.get("required_verification") or [],
+                            "required_stack": (requirements.get("required_stack") or
+                                                (["Vite", "React", "TypeScript", "Tailwind", "shadcn", "Anime.js v4"]
+                                                 if profile == "FRONTEND_ONLY_MARKETING_SITE" else [])),
+                            "forbidden_stack": (requirements.get("forbidden_stack") or
+                                                 (["Next.js", "GSAP", "Framer Motion", "Three.js"]
+                                                  if profile == "FRONTEND_ONLY_MARKETING_SITE" else [])),
+                            "dependency_requirements": canonical_dependency_requirements({
+                                "required_stack": (requirements.get("required_stack") or
+                                                    (["Vite", "React", "TypeScript", "Tailwind", "shadcn", "Anime.js v4"]
+                                                     if profile == "FRONTEND_ONLY_MARKETING_SITE" else [])),
+                            }),
+                            "new_project_intent": bool(requirements.get("new_project_intent", False))}
             db.update_coding_task(managed["id"], requirements=requirements,
                                   required_mcp=requirements["required_mcps"])
         return requirements
@@ -2087,12 +3490,35 @@ def _planning_preflight_context(task_id: str, workspace_root: str | None) -> dic
     evidence = [{key: item.get(key) for key in ("mcp_name", "tool_name", "status", "purpose", "result_summary")}
                 for item in (task.get("mcp_evidence") or []) if isinstance(item, dict) and item.get("status") == "PASS"]
     scope_contract = _workspace_scope_contract(workspace_root)
-    return {"repo_summary": {"workspace_entries": paths}, "mutation_scope_contract": scope_contract,
+    state = workspace_state(workspace_root) if workspace_root else {
+        "source": "filesystem_snapshot", "root": None, "greenfield": False,
+        "project_state": "UNKNOWN", "file_count": 0, "entries": [], "files": [],
+    }
+    # Request intent and filesystem state are separate facts.  A resumed
+    # greenfield task may have partial files already, while an established
+    # repository must never become greenfield merely because the request says
+    # "build".  The deterministic completion helper applies the stricter
+    # project-state predicate when it decides whether CREATE is safe.
+    requirements = task.get("requirements") or {}
+    state["new_project_intent"] = bool(
+        requirements.get("new_project_intent") and
+        requirements.get("task_profile") in {"FRONTEND_ONLY_MARKETING_SITE", "GENERAL_CODING"} and
+        state.get("project_state") != "ESTABLISHED")
+    state["workspace_state"] = state.get("project_state", "UNKNOWN")
+    state["host_workspace_authorized"] = bool(workspace_root and valid_workspace(workspace_root))
+    state["host_authorized_root"] = str(Path(workspace_root).expanduser().resolve()) if state["host_workspace_authorized"] else None
+    state["project_type"] = requirements.get("task_profile") or "UNKNOWN"
+    return {"repo_summary": {"workspace_entries": paths, "workspace_files": state.get("files", [])[:100]},
+            "workspace_state": state, "mutation_scope_contract": scope_contract,
             "shadcn_mcp_evidence": [item for item in evidence if item["mcp_name"] == "shadcn"],
             "animejs_mcp_evidence": [item for item in evidence if item["mcp_name"] == "animejs"],
             "animejs_project": (task.get("requirements") or {}).get("animejs_project", {}),
-            "required_stack": ["React", "TypeScript", "Vite", "Tailwind CSS", "shadcn/ui"],
-            "constraints": ["Required MCP preflight is already complete.", "Do not emit repo inspection, MCP consultation, planning, or final reporting as a task phase."]}
+            "required_stack": list(requirements.get("required_stack") or []),
+            "forbidden_stack": list(requirements.get("forbidden_stack") or []),
+            "canonical_stack": {"required": list(requirements.get("required_stack") or []),
+                                "forbidden": list(requirements.get("forbidden_stack") or [])},
+            "constraints": ["Required MCP preflight is already complete.", "Do not emit repo inspection, MCP consultation, planning, or final reporting as a task phase.",
+                            "Use action=create for a missing file in a greenfield workspace; use action=modify only for an existing file; use action=delete only for an existing file."]}
 
 
 def _animejs_resource_diagnostics(resolution: dict, *, initialize: str = "NOT_RUN",
@@ -2295,6 +3721,9 @@ def _run_coding_planning(managed: dict) -> None:
     planner_input=(plan_prompt(managed["original_goal"],execution_mode,mutation_mode,policy["task_size"])+planning_suffix
                    + "\n[ORCHESTRATOR_PREFLIGHT_ALREADY_COMPLETED]\n"
                    + json.dumps(preflight, ensure_ascii=False, sort_keys=True)
+                   + "\n[CANONICAL_STACK_CONTRACT]\n"
+                   + json.dumps(preflight.get("canonical_stack") or {}, ensure_ascii=False, sort_keys=True)
+                   + "\nThe canonical stack contract is authoritative. Required technologies must be represented by the plan; forbidden technologies/frameworks must not appear in implementation goals, dependencies, configuration, or framework-specific structure.\n[/CANONICAL_STACK_CONTRACT]\n"
                    + ("\n[ATTACHMENT_BACKED_VISUAL_FIX]\nInspect the existing workspace and identify the observed target before writing. Keep the patch narrow; include runtime/browser verification and do not claim visual success without evidence.\n"
                       + json.dumps(requirements.get("attachment_evidence") or {}, ensure_ascii=False, sort_keys=True)
                       if requirements.get("visual_repair") else ""))
@@ -2307,11 +3736,19 @@ def _run_coding_planning(managed: dict) -> None:
         # A persisted task/workspace contract is the source of truth for file
         # roles.  Planner output can describe verification files, but cannot
         # promote them to writable implementation targets.
+        plan, canonicalization_changes = normalize_plan_artifact_paths(plan, requirements)
+        if canonicalization_changes:
+            print(f"TASK_ID={task_id} PLAN_ARTIFACT_PATH_CANONICALIZATION=YES "
+                  f"CHANGES={json.dumps(canonicalization_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
         plan = _bind_scope_contract(plan, _workspace_scope_contract(workspace_root))
         protected_scope_before_normalization = _plan_authorization_boundary(plan)
         original_phase_count=len(plan.get("phases") or [])
         if profile == "FRONTEND_ONLY_MARKETING_SITE":
             plan=normalize_task_graph(plan,profile,required_mcp)
+            plan, complexity_changes = repair_phase_complexity(plan)
+            if complexity_changes:
+                print(f"PLAN_PHASE_COMPLEXITY_AUTO_REPAIRED=YES CHANGES={json.dumps(complexity_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
             selected=(requirements.get("selected_mcps") or [])
             if selected and plan.get("tasks"):
                 plan["tasks"][0]["selected_mcp"] = selected
@@ -2322,7 +3759,42 @@ def _run_coding_planning(managed: dict) -> None:
             if not compact_errors:
                 plan=candidate
             print(f"NORMAL_PLAN_COMPACTION={'PASS' if len(plan.get('phases') or []) < original_phase_count else 'NOT_APPLICABLE'} ORIGINAL_PLAN_PHASE_COUNT={original_phase_count} COMPACTED_PLAN_PHASE_COUNT={len(plan.get('phases') or [])}",file=__import__('sys').stderr,flush=True)
+        plan, graph_changes, graph_diagnostics = reconcile_graph_references(plan, plan.get("graph_replacement_map"))
+        if graph_changes:
+            print(f"TASK_ID={task_id} GRAPH_REFERENCE_RECONCILIATION=PASS CHANGES={json.dumps(graph_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
+        if graph_diagnostics.get("errors"):
+            first = graph_diagnostics["first_error"] or {}
+            print(f"TASK_ID={task_id} GRAPH_VALIDATION=FAIL OFFENDING_PHASE_ID={first.get('offending_phase_id') or 'NONE'} "
+                  f"OFFENDING_TASK_ID={first.get('offending_task_id') or 'NONE'} "
+                  f"OFFENDING_DEPENDENCY_REF={first.get('offending_dependency_ref') or 'NONE'} "
+                  f"EXPECTED_REFERENCE_TYPE={first.get('expected_reference_type') or 'UNKNOWN'} "
+                  f"DEPENDENCY_VALIDATION_REASON={first.get('reason') or 'UNKNOWN'} "
+                  f"GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'}",
+                  file=__import__('sys').stderr, flush=True)
         plan = major_phase_plan(plan, policy)
+        plan, complexity_changes = repair_phase_complexity(plan)
+        if complexity_changes:
+            print(f"PLAN_PHASE_COMPLEXITY_AUTO_REPAIRED=YES CHANGES={json.dumps(complexity_changes, ensure_ascii=False)}", file=__import__('sys').stderr, flush=True)
+        plan, graph_changes, graph_diagnostics = reconcile_graph_references(plan, plan.get("graph_replacement_map"))
+        if graph_changes:
+            print(f"TASK_ID={task_id} GRAPH_REFERENCE_RECONCILIATION=POST_MAJOR_PHASE CHANGES={json.dumps(graph_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
+        if graph_diagnostics.get("errors"):
+            first = graph_diagnostics["first_error"] or {}
+            print(f"TASK_ID={task_id} GRAPH_VALIDATION=FAIL POST_MAJOR_PHASE=YES "
+                  f"OFFENDING_PHASE_ID={first.get('offending_phase_id') or 'NONE'} "
+                  f"OFFENDING_TASK_ID={first.get('offending_task_id') or 'NONE'} "
+                  f"OFFENDING_DEPENDENCY_REF={first.get('offending_dependency_ref') or 'NONE'} "
+                  f"EXPECTED_REFERENCE_TYPE={first.get('expected_reference_type') or 'UNKNOWN'} "
+                  f"GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'}",
+                  file=__import__('sys').stderr, flush=True)
+        plan, dependency_changes = associate_dependency_requirements(plan, requirements)
+        if dependency_changes:
+            print(f"DEPENDENCY_REQUIREMENT_PHASE_ASSOCIATION=PASS CHANGES={json.dumps(dependency_changes, ensure_ascii=False)} "
+                  f"CANONICAL_DEPENDENCY_COUNT={len(canonical_dependency_requirements(requirements))} "
+                  f"NORMALIZED_DEPENDENCY_COUNT={sum(len(p.get('dependency_requirements') or []) for p in plan.get('phases') or [])}",
+                  file=__import__('sys').stderr, flush=True)
         if requirements.get("visual_repair") and plan.get("phases"):
             # Visual completion is a separate evidence gate.  Bind the
             # browser MCP only to the final actionable phase so implementation
@@ -2371,19 +3843,209 @@ def _run_coding_planning(managed: dict) -> None:
                 db.add_message(managed["conversation_id"], "assistant", "実装対象のプロジェクトルートを確定できないため、実装は開始していません。", time.time(), str(uuid.uuid4()), task_id)
                 return
             artifact_requirements = {**requirements, "requirements_hash": _context_fingerprint(requirements)}
+            prepare_workspace = {
+                **(preflight.get("workspace_state") or {}),
+                "authorized_mutation": list((preflight.get("mutation_scope_contract") or {}).get("write_allowed") or []),
+            }
+            stack_details = stack_conformance(plan, artifact_requirements)
+            if stack_details["valid"]:
+                print(f"TASK_ID={task_id} PLAN_STACK_CONFORMANCE=PASS "
+                      f"EXPECTED_STACK={json.dumps(stack_details.get('expected_stack') or [], ensure_ascii=False)} "
+                      f"OBSERVED_STACK_SIGNALS={json.dumps(stack_details.get('observed_stack_signals') or [], ensure_ascii=False)} "
+                      "STACK_CONFLICTS=[]",
+                      file=__import__('sys').stderr, flush=True)
             try:
-                plan, artifact = prepare_implementation_plan(task_id, plan, canonical_root, artifact_requirements)
+                plan, artifact = prepare_implementation_plan(
+                    task_id, plan, canonical_root, artifact_requirements, prepare_workspace)
             except (OSError, ValueError, PermissionError) as exc:
-                print(f"TASK_ID={task_id} PLAN_PATH_VALIDATION=FAIL CANONICAL_TARGET_ROOT={canonical_root} ERROR_TYPE={type(exc).__name__} IMPLEMENTATION_STARTED=NO", file=__import__('sys').stderr, flush=True)
-                _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW", exc)
-                db.add_message(managed["conversation_id"], "assistant", "実装計画のファイル範囲を検証できないため、実装は開始していません。計画を修正して再開してください。", time.time(), str(uuid.uuid4()), task_id)
-                return
+                diagnostics = getattr(exc, "diagnostics", []) or []
+                stack_failure = isinstance(exc, PlanStackConformanceError)
+                if stack_failure:
+                    stack_details = getattr(exc, "diagnostics", {}) or {}
+                    print(f"TASK_ID={task_id} PLAN_STACK_CONFORMANCE=FAIL "
+                          f"EXPECTED_STACK={json.dumps(stack_details.get('expected_stack') or [], ensure_ascii=False)} "
+                          f"OBSERVED_STACK_SIGNALS={json.dumps(stack_details.get('observed_stack_signals') or [], ensure_ascii=False)} "
+                          f"STACK_CONFLICTS={json.dumps(stack_details.get('stack_conflicts') or [], ensure_ascii=False)} "
+                          "PLAN_MANIFEST_COVERAGE=NOT_RUN PLAN_PATH_VALIDATION=NOT_RUN "
+                          "SCAFFOLD_STARTED=NO IMPLEMENTATION_STARTED=NO",
+                          file=__import__('sys').stderr, flush=True)
+                    _transition_resumable(task_id, "PLAN_STACK_CONFORMANCE", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW", exc,
+                                          "PLAN_STACK_CONFORMANCE")
+                    _add_task_message_once(managed["conversation_id"], task_id, stack_conformance_message(stack_details))
+                    return
+                first_diagnostic = diagnostics[0] if diagnostics else {}
+                coverage_failure = isinstance(exc, PlanManifestCoverageError)
+                if coverage_failure:
+                    print(f"TASK_ID={task_id} PLAN_MANIFEST_COVERAGE=FAIL "
+                          f"MISSING_PLANNED_ARTIFACTS={json.dumps(exc.missing, ensure_ascii=False)} "
+                          "PLAN_PATH_VALIDATION=NOT_RUN SCAFFOLD_STARTED=NO IMPLEMENTATION_STARTED=NO",
+                          file=__import__('sys').stderr, flush=True)
+                code = (None if coverage_failure else
+                        first_diagnostic.get("path_validation_code") or path_validation_code(
+                            first_diagnostic.get("path_validation_reason") or str(exc)))
+                repaired = False
+                repair_no_progress = False
+                repair_progress: dict[str, Any] = {}
+                # Coverage is a planner contract defect, so give it one
+                # bounded manifest-only repair before surfacing a failure.
+                # The corrected candidate still traverses coverage first and
+                # PathGuard second; no scaffold can occur on the rejected
+                # candidate.
+                if coverage_failure:
+                    before_coverage = manifest_coverage(plan, artifact_requirements, prepare_workspace)
+                    completion_decision = deterministic_manifest_completion_diagnostics(
+                        plan, before_coverage, canonical_root, prepare_workspace)
+                    print(f"TASK_ID={task_id} DETERMINISTIC_COMPLETION_EVALUATED={'YES' if completion_decision['evaluated'] else 'NO'} "
+                          f"DETERMINISTIC_COMPLETION_ELIGIBLE={'YES' if completion_decision['eligible'] else 'NO'} "
+                          f"DETERMINISTIC_COMPLETION_CANDIDATE_COUNT={len(completion_decision.get('candidate_paths') or [])} "
+                          f"DETERMINISTIC_COMPLETION_CANDIDATE_PATHS={json.dumps(completion_decision.get('candidate_paths') or [], ensure_ascii=False)} "
+                          f"DETERMINISTIC_COMPLETION_ADDED_COUNT={len(completion_decision.get('added_paths') or [])} "
+                          f"DETERMINISTIC_COMPLETION_ADDED_PATHS={json.dumps(completion_decision.get('added_paths') or [], ensure_ascii=False)} "
+                          f"DETERMINISTIC_COMPLETION_REJECTED={json.dumps([item for item in completion_decision.get('candidate_diagnostics') or [] if item.get('authorization_result') == 'REJECTED'], ensure_ascii=False)} "
+                          f"DETERMINISTIC_COMPLETION_SKIP_REASON={completion_decision['skip_reason']}",
+                          file=__import__('sys').stderr, flush=True)
+                    deterministic_candidate, additions = deterministic_manifest_completion(
+                        plan, before_coverage, canonical_root, prepare_workspace)
+                    if deterministic_candidate:
+                        try:
+                            plan, artifact = prepare_implementation_plan(
+                                task_id, deterministic_candidate, canonical_root, artifact_requirements,
+                                prepare_workspace)
+                            artifact = {**artifact, "manifest_source": "DETERMINISTIC_COMPLETION"}
+                            plan["implementation_plan_artifact"] = artifact
+                            repaired = True
+                            repair_progress = manifest_repair_progress(
+                                before_coverage, artifact.get("manifest_coverage") or {})
+                            print(f"TASK_ID={task_id} MANIFEST_REPAIR_CLASSIFICATION={repair_progress['classification']} "
+                                  f"DETERMINISTIC_MANIFEST_COMPLETION=YES "
+                                  f"DETERMINISTIC_COMPLETION_ADDED_COUNT={len(additions)} "
+                                  f"DETERMINISTIC_COMPLETION_ADDED_PATHS={json.dumps(additions, ensure_ascii=False)} "
+                                  f"DETERMINISTIC_COMPLETION_CANDIDATE_COUNT={len(completion_decision.get('candidate_paths') or [])} "
+                                  f"DETERMINISTIC_COMPLETION_CANDIDATE_PATHS={json.dumps(completion_decision.get('candidate_paths') or [], ensure_ascii=False)} "
+                                  f"DETERMINISTIC_COMPLETION_SKIP_REASON=NONE "
+                                  f"ADDED_ARTIFACTS={json.dumps(additions, ensure_ascii=False)} "
+                                  "PLAN_MANIFEST_COVERAGE=PASS PLAN_PATH_VALIDATION=PASS SCAFFOLD_STARTED=READY",
+                                  file=__import__('sys').stderr, flush=True)
+                        except (OSError, TypeError, ValueError, PermissionError):
+                            repaired = False
+                    if repaired:
+                        pass
+                    else:
+                        # Model repair is used only when deterministic
+                        # completion cannot prove authorization and artifact
+                        # identity from the existing contract.
+                        repair_prompt = (
+                            "Return corrected JSON for the same coding plan. This is a bounded manifest coverage repair. "
+                            "Keep technology, dependency, and MCP descriptions as semantic requirements; only concrete "
+                            "repository-relative filesystem artifacts belong in file_manifest. Preserve the selected "
+                            "workspace, phase contract, and required MCPs. Ensure every concrete implementation artifact "
+                            "required by the phases is represented, without adding paths outside the workspace.\n" +
+                            json.dumps({"missing_artifacts": exc.missing, "invalid_diagnostics": diagnostics[:8],
+                                        "current_manifest": plan.get("file_manifest") or [],
+                                        "canonical_stack": {"required": requirements.get("required_stack") or [],
+                                                            "forbidden": requirements.get("forbidden_stack") or []},
+                                        "stack_conflicts": [], "plan": plan,
+                                        "workspace_state": prepare_workspace}, ensure_ascii=False))
+                        candidate, _ = _generate_plan(task_id, managed["original_goal"], repair_prompt,
+                                                      "QWEN_PLAN_MANIFEST_REPAIR", requirements, recovery=True)
+                        if candidate:
+                            candidate = _bind_scope_contract(candidate, _workspace_scope_contract(workspace_root))
+                            candidate_coverage = manifest_coverage(candidate, artifact_requirements, prepare_workspace)
+                            repair_progress = manifest_repair_progress(before_coverage, candidate_coverage)
+                            print(f"TASK_ID={task_id} MANIFEST_REPAIR_CLASSIFICATION={repair_progress['classification']} "
+                                  f"MISSING_ARTIFACTS_BEFORE={json.dumps(repair_progress['missing_artifacts_before'], ensure_ascii=False)} "
+                                  f"MISSING_ARTIFACTS_AFTER={json.dumps(repair_progress['missing_artifacts_after'], ensure_ascii=False)} "
+                                  f"MANIFEST_PATHS_BEFORE={json.dumps(repair_progress['manifest_paths_before'], ensure_ascii=False)} "
+                                  f"MANIFEST_PATHS_AFTER={json.dumps(repair_progress['manifest_paths_after'], ensure_ascii=False)}",
+                                  file=__import__('sys').stderr, flush=True)
+                            repair_no_progress = repair_progress["classification"] == "REPAIR_NO_CHANGE"
+                            try:
+                                plan, artifact = prepare_implementation_plan(
+                                    task_id, candidate, canonical_root, artifact_requirements,
+                                    prepare_workspace)
+                                repaired = True
+                            except (OSError, TypeError, ValueError, PermissionError) as repair_exc:
+                                if isinstance(repair_exc, PlanManifestCoverageError):
+                                    repair_no_progress = repair_progress["classification"] == "REPAIR_NO_CHANGE"
+                                repaired = False
+                # Give a missing-target mismatch one bounded planner repair.
+                # The repaired manifest is still checked against the same
+                # canonical root and existence rules before any write.
+                if not coverage_failure and code == "MISSING_MODIFY_TARGET":
+                    repair_prompt = (
+                        "Return corrected JSON for the same coding plan. This is a bounded file-operation repair. "
+                        "Use action=create for missing targets in the confirmed greenfield workspace and action=modify "
+                        "only for files present in workspace_state. Preserve scope, phases and MCP requirements; do not "
+                        "add paths outside the selected workspace.\n" + json.dumps({
+                            "workspace_state": preflight.get("workspace_state"),
+                            "invalid_diagnostics": diagnostics[:8], "plan": plan}, ensure_ascii=False))
+                    candidate, _ = _generate_plan(task_id, managed["original_goal"], repair_prompt,
+                                                  "QWEN_PLAN_PATH_REPAIR", requirements, recovery=True)
+                    if candidate:
+                        candidate = _bind_scope_contract(candidate, _workspace_scope_contract(workspace_root))
+                        try:
+                            plan, artifact = prepare_implementation_plan(
+                                task_id, candidate, canonical_root, artifact_requirements,
+                                preflight.get("workspace_state"))
+                            repaired = True
+                            print(f"TASK_ID={task_id} PLAN_PATH_REPAIR=PASS REPAIR_CODE={code} IMPLEMENTATION_STARTED=READY", file=__import__('sys').stderr, flush=True)
+                        except (OSError, TypeError, ValueError, PermissionError):
+                            repaired = False
+                if not repaired:
+                    # Retain the rejected plan and bounded structured
+                    # diagnostics for a later recovery action.
+                    pending_plan = dict(plan)
+                    if diagnostics:
+                        pending_plan["path_validation_diagnostics"] = diagnostics[:16]
+                        db.update_coding_task(task_id, pending_plan=pending_plan)
+                    if coverage_failure and repair_no_progress:
+                        print(" ".join([
+                            f"TASK_ID={task_id}", "MANIFEST_REPAIR_NO_PROGRESS=YES",
+                            f"MANIFEST_REPAIR_CLASSIFICATION={repair_progress.get('classification','REPAIR_NO_CHANGE')}",
+                            f"MISSING_ARTIFACTS_BEFORE={json.dumps(repair_progress.get('missing_artifacts_before', []), ensure_ascii=False)}",
+                            f"MISSING_ARTIFACTS_AFTER={json.dumps(repair_progress.get('missing_artifacts_after', []), ensure_ascii=False)}",
+                            "PLAN_MANIFEST_COVERAGE=FAIL", "PLAN_PATH_VALIDATION=NOT_RUN",
+                            "SCAFFOLD_STARTED=NO", "IMPLEMENTATION_STARTED=NO",
+                        ]), file=__import__('sys').stderr, flush=True)
+                    elif coverage_failure:
+                        print(" ".join([
+                            f"TASK_ID={task_id}", "PLAN_MANIFEST_COVERAGE=FAIL", "PLAN_PATH_VALIDATION=NOT_RUN",
+                            f"CANONICAL_TARGET_ROOT={canonical_root}", f"ERROR_TYPE={type(exc).__name__}",
+                            f"MISSING_PLANNED_ARTIFACTS={json.dumps(exc.missing, ensure_ascii=False)}",
+                            "SCAFFOLD_STARTED=NO", "IMPLEMENTATION_STARTED=NO",
+                        ]), file=__import__('sys').stderr, flush=True)
+                    else:
+                        print(" ".join([
+                            f"TASK_ID={task_id}", "PLAN_PATH_VALIDATION=FAIL",
+                            f"CANONICAL_TARGET_ROOT={canonical_root}",
+                            f"ERROR_TYPE={type(exc).__name__}",
+                            f"OFFENDING_PLAN_PATH={first_diagnostic.get('offending_plan_path', 'UNKNOWN')}",
+                            f"OFFENDING_PLAN_FIELD={first_diagnostic.get('offending_plan_field', 'UNKNOWN')}",
+                            f"OFFENDING_PHASE={first_diagnostic.get('offending_phase', 'UNKNOWN')}",
+                            f"PATH_VALIDATION_REASON={first_diagnostic.get('path_validation_reason', str(exc))}",
+                            "IMPLEMENTATION_STARTED=NO",
+                        ]), file=__import__('sys').stderr, flush=True)
+                    recovery_reason = ("PLAN_MANIFEST_REPAIR_NO_PROGRESS" if repair_no_progress else
+                                       "PLAN_MANIFEST_COVERAGE" if coverage_failure else "PLAN_PATH_VALIDATION")
+                    _transition_resumable(task_id, "IMPLEMENTATION_PREPARE", "RECOVERABLE_INTERNAL", "RECOVERY_REVIEW", exc,
+                                          recovery_reason)
+                    message = (manifest_repair_no_progress_message() if repair_no_progress else
+                               manifest_coverage_message(replan=True) if coverage_failure else
+                               path_validation_message(code, replan=(code == "MISSING_MODIFY_TARGET")))
+                    _add_task_message_once(managed["conversation_id"], task_id, message)
+                    return
             print(" ".join([f"TASK_ID={task_id}", "IMPLEMENTATION_PLAN_PERSISTED=YES", "IMPLEMENTATION_PLAN_LOCATION=task_state:coding_tasks.plan_json",
                              f"CANONICAL_TARGET_ROOT={artifact['target_root']}", "PLAN_PATH_VALIDATION=PASS",
+                             "PLAN_MANIFEST_COVERAGE=PASS",
+                             f"PLAN_MANIFEST_COVERAGE_VALID={'YES' if (artifact.get('manifest_coverage') or {}).get('valid') else 'NO'}",
+                             f"MISSING_PLANNED_ARTIFACTS={json.dumps((artifact.get('manifest_coverage') or {}).get('missing_paths') or [], ensure_ascii=False)}",
+                             f"PHASE_MUTATION_SCOPE_COMPLETE={'YES' if (artifact.get('manifest_coverage') or {}).get('phase_mutation_scope_complete') else 'NO'}",
+                             f"MISSING_IMPLEMENTATION_PATHS={json.dumps((artifact.get('manifest_coverage') or {}).get('missing_implementation_paths') or [], ensure_ascii=False)}",
                              f"FILE_MANIFEST_COUNT={artifact['file_manifest_count']}",
                              f"FILE_MANIFEST_CREATE_COUNT={artifact['file_manifest_create_count']}",
                              f"FILE_MANIFEST_MODIFY_COUNT={artifact['file_manifest_modify_count']}",
                              f"FILE_MANIFEST_DELETE_COUNT={artifact['file_manifest_delete_count']}",
+                             f"READ_ONLY_MANIFEST_COUNT={len(artifact.get('read_only_manifest') or [])}",
                              f"SCAFFOLD_CREATED_COUNT={artifact['scaffold_created_count']}",
                              f"SCAFFOLD_SKIPPED_EXISTING_COUNT={artifact['scaffold_skipped_existing_count']}",
                              f"PATHGUARD_ALLOWED_ROOTS={artifact['target_root']}", "PATHGUARD_TARGET_ROOT_MATCH=YES" ]), file=__import__('sys').stderr, flush=True)
@@ -2416,14 +4078,21 @@ def _run_coding_planning(managed: dict) -> None:
             response=("計画の作成が完了しました。承認済みの依頼範囲で実装と検証を継続します。\n\n実装計画\n"
                       + "\n".join(f"Phase {i} / {len(plan['phases'])}\n{p['goal']}\n確認: " + ", ".join(p['verify']) for i,p in enumerate(plan["phases"],1)))
             if checkpoint:
-                response = "リポジトリ確認・必須 MCP 検証・実装計画の保存が完了しました。続行すると次の工程を開始します。\n\n" + "\n".join(p["goal"] for p in plan["phases"][1:])
+                response = _required_mcp_checkpoint_message(
+                    task_id,
+                    continuation="続行すると次の工程を開始します。\n\n" +
+                    "\n".join(p["goal"] for p in plan["phases"][1:]))
     db.add_message(managed["conversation_id"],"assistant",response,time.time(),str(uuid.uuid4()),task_id)
 
 def _coding_scheduler() -> None:
-    while True:
+    while not _coding_scheduler_stop.is_set():
         _coding_scheduler_wake.wait()
         _coding_scheduler_wake.clear()
+        if _coding_scheduler_stop.is_set():
+            break
         while (managed:=db.next_queued_coding_task()):
+            if _coding_scheduler_stop.is_set():
+                break
             try:
                 if managed.get("activity") == "QWEN_PLANNING" or not managed.get("plan"):
                     _run_coding_planning(managed)
@@ -2438,7 +4107,7 @@ def _coding_scheduler() -> None:
                 _transition_resumable(managed["id"],stage,"RECOVERABLE_INTERNAL","RECOVERY_REVIEW",exc)
                 print(f"TASK_ID={managed['id']} FAILURE_STAGE={stage} ERROR_TYPE={type(exc).__name__} NEXT_TASK_ACTION=RESUME_REQUIRED TASK_STATUS=RESUMABLE TASK_ACTIVITY=NONE",file=__import__('sys').stderr,flush=True)
 
-threading.Thread(target=_coding_scheduler,name="olcr-coding-scheduler",daemon=True).start()
+start_coding_scheduler()
 
 @app.post("/api/projects")
 def create_project(value: ProjectInput):
@@ -2910,9 +4579,26 @@ ROUTER_DECISION_SCHEMA = {
 
 def _external_router_candidate(message: str) -> bool:
     """Return true only for unresolved requests that plausibly need a provider."""
+    if _external_data_prohibited(message):
+        return False
     return bool(re.search(
         r"(?:search|look\s*up|find|lookup|research|latest|current|news|weather|forecast|exchange\s*rate|currency|temperature|"
         r"検索|調べ|探して|最新|ニュース|天気|気温|為替|論文|データを取得|外部データ|API)", message, re.I,
+    ))
+
+
+def _external_data_prohibited(message: str) -> bool:
+    """Detect an explicit request to keep a diagnostic turn local.
+
+    Negative wording must not become provider intent merely because it names
+    external data, APIs, or the web while describing what the assistant must
+    avoid.
+    """
+    value = message or ""
+    return bool(re.search(
+        r"(?:\b(?:do\s+not|don't|never|without|no)\b.{0,48}\b(?:external\s+data|external\s+sources?|web|internet|mcp|apis?|providers?|network)\b|"
+        r"(?:外部データ|外部情報|外部ソース|web|ウェブ|インターネット|ネット|MCP|API).{0,24}(?:使わない|使用しない|取得しない|アクセスしない|禁止|不要|しないで|なし))",
+        value, re.I,
     ))
 
 
@@ -3228,14 +4914,17 @@ def chat(value: ChatInput):
                    "mime_type":str(attachment_meta.get("mime_type") or attachment_meta.get("mimeType") or "application/octet-stream")[:120]}]
                  if attachment_meta else None)
     control_event = bool(re.fullmatch(r"\s*(?:再開(?:して)?|resume|続行(?:して)?|continue)\s*", value.message, re.IGNORECASE))
-    has_managed_task = any(task.get("status") in {"RESUMABLE", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
+    execution_intent = str(value.execution_intent or "").strip().upper()
+    resume_metadata = bool(value.resume_control or value.resume_task_id or
+                           execution_intent in {"RESUME", "RESUME_CODING_TASK", "CONTINUE_CODING_TASK"})
+    has_managed_task = any(task.get("status") in {"RESUMABLE", "BLOCKED", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
                            for task in db.coding_tasks(conversation_id))
     # Continue/resume is an orchestrator control event, not semantic coding
     # content. Keep it out of the transcript and project-goal context when a
     # managed task is present.
-    if not (control_event and has_managed_task):
+    if not ((control_event or resume_metadata) and has_managed_task):
         db.add_message(conversation_id,"user",value.message,time.time(),source_message_id,blocks=user_blocks)
-    conversation_project_state=_conversation_project_context(conversation_id, project_id, "" if (control_event and has_managed_task) else value.message)
+    conversation_project_state=_conversation_project_context(conversation_id, project_id, "" if ((control_event or resume_metadata) and has_managed_task) else value.message)
     attachment_evidence=attachment_repair_evidence(
         attachment_meta, value.message,
         project_scoped=bool(conversation_project_state.get("workspace_path")),
@@ -3322,6 +5011,34 @@ def chat(value: ChatInput):
     active_task=active_candidates[0] if len(active_candidates) == 1 else None
     resumable_task=resumable_candidates[0] if len(resumable_candidates) == 1 else None
     protected_task=next((task for task in managed_tasks if task["status"] == "RESUMABLE" and task.get("pending_authorization")),None)
+    # Explicit resume metadata is an exclusive control-plane route.  It is
+    # evaluated before classification so the continuation cannot also enter
+    # Normal Brain or create a second task from the same input.
+    if resume_metadata:
+        requested = next((task for task in managed_tasks
+                          if value.resume_task_id and task.get("id") == value.resume_task_id), None)
+        resumable = [task for task in managed_tasks if resumable_continuation_eligible(task)]
+        blocked_candidates = [task for task in managed_tasks if task.get("status") == "BLOCKED"]
+        if requested and requested.get("status") == "BLOCKED":
+            return _resume_coding_task_control(requested, source="EXPLICIT_CHAT_METADATA_BLOCKED")
+        if requested and requested not in resumable:
+            response = "指定された Coding Task は安全に再開できません。"
+            db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()), requested["id"])
+            return {"conversation_id": conversation_id, "coding_task_id": requested["id"], "response": response, "sources": []}
+        candidates = [requested] if requested else resumable + blocked_candidates
+        if len(candidates) != 1:
+            response = ("再開できる Coding Task が見つかりません。" if not candidates else
+                        "複数の回復可能な Coding Task があるため、対象を選択してください。")
+            print(f"RESUME_REQUEST_SOURCE=EXPLICIT_CHAT_METADATA RESUME_SAME_TASK=NO "
+                  f"CODING_ROUTE={'NO_RESUMABLE_TASK' if not candidates else 'TASK_SELECTION_REQUIRED'} "
+                  "NORMAL_BRAIN_INVOKED=NO CONTINUATION_INPUT_SEPARATED=YES",
+                  file=__import__('sys').stderr, flush=True)
+            db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()),
+                           candidates[0]["id"] if candidates else None)
+            return {"conversation_id": conversation_id,
+                    "coding_task_id": candidates[0]["id"] if candidates else None,
+                    "response": response, "sources": []}
+        return _resume_coding_task_control(candidates[0], source="EXPLICIT_CHAT_METADATA")
     if resume_request and protected_task:
         response="保護された操作の承認待ちです。「続行」だけでは承認されません。"
         db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),protected_task["id"])
@@ -3338,20 +5055,21 @@ def chat(value: ChatInput):
         db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),active_task["id"])
         return {"conversation_id":conversation_id,"coding_task_id":active_task["id"],"response":response,"sources":[]}
     if resume_request and resumable_task:
-        replan_epoch_resume = _begin_human_recovery_epoch(resumable_task)
-        queued=db.enqueue_coding_task(resumable_task["id"]); _coding_scheduler_wake.set()
-        print(f"CONTINUE_CONSUMED_AS_CONTROL_EVENT=YES CONTINUE_SAVED_AS_USER_CHAT_CONTENT=NO TASK_ID={resumable_task['id']} RESUME_SAME_TASK=YES RESUME_REQUESTED=true RESUME_ACCEPTED=true STATUS_BEFORE_RESUME=RESUMABLE TASK_STATUS_AFTER_RESUME=QUEUED TASK_ACTIVITY_AFTER_RESUME=QWEN_IMPLEMENTATION PLAN_REVISION_BEFORE={resumable_task.get('plan_revision',0)} PLAN_REVISION_AFTER={queued.get('plan_revision',resumable_task.get('plan_revision',0)) if queued else resumable_task.get('plan_revision',0)} USER_VISIBLE_MESSAGE_EMITTED_AFTER_RESUME=NO MESSAGE_ORIGIN=HOST_STATUS ASSISTANT_MESSAGE_PERSISTED=NO RECOVERY_ACTION={resumable_task.get('recovery_action','NONE')} RECOVERY_REASON={resumable_task.get('recovery_reason','NONE')} RECOVERY_EPOCH={queued.get('recovery_epoch',0) if queued else resumable_task.get('recovery_epoch',0)} REPLAN_COUNT_FOR_NEW_EPOCH={queued.get('replan_count_in_epoch','unchanged') if queued else 'unchanged'} NEXT_TASK_ACTION=QUEUE_FIFO",file=__import__('sys').stderr,flush=True)
-        # Resume acknowledgement is a control-plane event only. The progress
-        # panel observes the queued/running task; no ordinary assistant turn
-        # is created before the next checkpoint, blocker, or final report.
-        return {"conversation_id":conversation_id,"coding_task_id":resumable_task["id"],"response":"","progress_event":{"type":"coding_task_progress","origin":"HOST_STATUS","task_id":resumable_task["id"],"status":"QUEUED"},"sources":[]}
+        result = _resume_coding_task_control(resumable_task, source="EXPLICIT_CHAT_COMMAND")
+        print(f"CONTINUE_CONSUMED_AS_CONTROL_EVENT=YES CONTINUE_SAVED_AS_USER_CHAT_CONTENT=NO "
+              f"MESSAGE_ORIGIN=HOST_STATUS ASSISTANT_MESSAGE_PERSISTED=NO "
+              f"PLAN_REVISION_BEFORE={resumable_task.get('plan_revision',0)} "
+              f"PLAN_REVISION_AFTER={result.get('plan_revision',resumable_task.get('plan_revision',0))}",
+              file=__import__('sys').stderr, flush=True)
+        return result
     blocked=next((task for task in managed_tasks if task["status"]=="BLOCKED"),None)
     control_message=bool(re.search(r"(?:次に進んで|続けて|このtaskを進めて|どうなってる|状態(?:確認)?|今どこ|進捗)",value.message,re.I))
     if blocked and resume_request:
-        response=_blocked_task_user_message(blocked)
-        print(f"MANAGED_INPUT_ROUTED=true CODING_TASK_ID={blocked['id']} CODING_ROUTE=BLOCKED_TASK_CONTINUE_REJECTED NORMAL_RUNTIME_FALLBACK=false",file=__import__('sys').stderr,flush=True)
-        db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),blocked["id"])
-        return {"conversation_id":conversation_id,"coding_task_id":blocked["id"],"response":response,"sources":[]}
+        print(f"MANAGED_INPUT_ROUTED=true CODING_TASK_ID={blocked['id']} CODING_ROUTE=BLOCKED_TASK_REVALIDATION NORMAL_RUNTIME_FALLBACK=false",file=__import__('sys').stderr,flush=True)
+        result = _revalidate_blocked_task(blocked, source="EXPLICIT_CHAT_COMMAND_BLOCKED")
+        if result.get("response"):
+            db.add_message(conversation_id, "assistant", result["response"], time.time(), str(uuid.uuid4()), blocked["id"])
+        return result
     if blocked and control_message:
         response=_blocked_task_user_message(blocked)
         print(f"MANAGED_INPUT_ROUTED=true CODING_TASK_ID={blocked['id']} CODING_ROUTE=BLOCKED_TASK_CONTROL NORMAL_RUNTIME_FALLBACK=false",file=__import__('sys').stderr,flush=True)
@@ -3397,6 +5115,7 @@ def chat(value: ChatInput):
         db.update_coding_task(task_id,requirements=requirements,execution_mode=requirements["execution_mode"],task_profile=requirements["task_profile"],required_mcp=requirements["required_mcp"])
         norm_diag=requirements.get("normalization_diagnostics") or {}
         valid=bool(norm_diag.get("canonical_requirements_valid"))
+        print(f"REQUIREMENT_CONTRADICTION={norm_diag.get('requirement_contradiction','NO')} CONFLICT_COUNT={norm_diag.get('conflict_count',0)} CONFLICTING_SEMANTIC_KEYS={json.dumps(norm_diag.get('conflicting_semantic_keys',[]), ensure_ascii=False)} REQUIRED_SOURCE={json.dumps(norm_diag.get('required_source'), ensure_ascii=False, sort_keys=True)} FORBIDDEN_SOURCE={json.dumps(norm_diag.get('forbidden_source'), ensure_ascii=False, sort_keys=True)} CONFLICT_REASON={norm_diag.get('conflict_reason','')} ACTIVE_REQUIRED_CAPABILITIES={json.dumps(norm_diag.get('active_required_capabilities',[]), ensure_ascii=False)} ACTIVE_FORBIDDEN_CAPABILITIES={json.dumps(norm_diag.get('active_forbidden_capabilities',[]), ensure_ascii=False)} IGNORED_NON_CONTROL_EVIDENCE_COUNT={norm_diag.get('ignored_non_control_evidence_count',0)} CONFLICT_DETAILS={json.dumps(norm_diag.get('conflict_details',[]), ensure_ascii=False, sort_keys=True)}", file=__import__('sys').stderr, flush=True)
         print(f"TASK_ID={task_id} TASK_CREATED=true REQUIREMENTS_NORMALIZED=PASS CANONICAL_REQUIREMENTS_VALID={'PASS' if valid else 'FAIL'} ATTACHMENT_EVIDENCE_AVAILABLE={'YES' if attachment_evidence.get('available') else 'NO'} FIX_TARGET_SOURCE={requirements.get('attachment_evidence',{}).get('target_source','NONE')} CURRENT_USER_TEXT_HASH={norm_diag.get('current_user_text_hash','')} NORMALIZER_CONTROL_INPUT_HASH={norm_diag.get('normalizer_control_input_hash','')} MODEL_CONTEXT_HASH={norm_diag.get('model_context_hash','')} NORMALIZER_INPUT_CHAR_COUNT={norm_diag.get('normalizer_input_char_count',0)} CURRENT_USER_TEXT_CHAR_COUNT={norm_diag.get('current_user_text_char_count',0)} PROJECT_CONTEXT_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('project_context_added_before_normalization') else 'NO'} CONVERSATION_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('conversation_history_added_before_normalization') else 'NO'} ASSISTANT_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('assistant_history_added_before_normalization') else 'NO'} RAW_REQUEST_HASH={norm_diag.get('raw_request_hash','')} SCOPED_INPUT_HASH={norm_diag.get('scoped_input_hash','')} CANONICAL_REQUIREMENTS_HASH={norm_diag.get('canonical_requirements_hash','')} CODING_MUTATION_MODE={requirements['mutation_mode']} FIX_REASON={requirements['fix_reason']} FIX_SCOPE_EXPANDED=NO FIX_ESCALATED_TO_IMPLEMENTATION=NO REQUIRED_CAPABILITIES={json.dumps(requirements['required_capabilities'])} FORBIDDEN_CAPABILITIES={json.dumps(requirements['forbidden_capabilities'])} REQUIRED_MCPS={json.dumps(requirements['required_mcps'])} CAPABILITY_PROVENANCE={json.dumps(norm_diag.get('capability_provenance', []), ensure_ascii=False, sort_keys=True)}",file=__import__('sys').stderr,flush=True)
         if not valid:
             db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_action="NONE", recovery_reason="INVALID_REQUIREMENTS")
@@ -3438,7 +5157,9 @@ def chat(value: ChatInput):
     # current-data request down the normal-chat path.
     requested_wikipedia = bool(re.search(r"(?:wikipedia|wiki|ウィキペディア)", value.message, re.I) and not re.search(r"wikidata", value.message, re.I))
     explicit_web_request = bool(re.search(r"(?:web検索|webで|ネットで|インターネットで|search the web|search web)", value.message, re.I)) and not requested_wikipedia
+    external_data_prohibited = _external_data_prohibited(value.message)
     print(f"EXPLICIT_SEARCH_DETECTED={'YES' if explicit_web_request or requested_wikipedia else 'NO'} REQUESTED_SOURCE={'WIKIPEDIA' if requested_wikipedia else 'GENERIC_WEB' if explicit_web_request else 'NONE'}", file=__import__('sys').stderr, flush=True)
+    print(f"EXTERNAL_DATA_ROUTING_PROHIBITED={'YES' if external_data_prohibited else 'NO'}", file=__import__('sys').stderr, flush=True)
     structured_data_request = bool(re.search(r"(?:構造化データ|structured data|構造化された|データを使って|確認してください|比較|ランキング|人口\s*\d+万人以上|(?:首都|人口|通貨|主要言語).*(?:まとめ|教えて|調べ))", value.message, re.I))
     route_source = "none"
     explicit_provider_override = False
@@ -3447,12 +5168,12 @@ def chat(value: ChatInput):
         # strongly recognizable capabilities.  The optional model router may
         # fill gaps, but it must not override a known route (for example a
         # translation sentence that contains the word "weather").
-        tool_request = None if explicit_web_request else route_external_tool(value.message)
+        tool_request = None if explicit_web_request or external_data_prohibited else route_external_tool(value.message)
         if tool_request is not None:
             route_source = "deterministic"
             explicit_provider_override = True
             print(f"EXPLICIT_PROVIDER_OVERRIDE=YES API_ROUTER_USED=NO SELECTED_SEARCH_PROVIDER={tool_request[0]}", file=__import__('sys').stderr, flush=True)
-        if tool_request is None and not explicit_web_request and _external_router_candidate(value.message):
+        if tool_request is None and not explicit_web_request and not external_data_prohibited and _external_router_candidate(value.message):
             tool_request = router_decision(value.message)
             if tool_request is not None:
                 route_source = "model"
@@ -3472,7 +5193,7 @@ def chat(value: ChatInput):
     except RouterUnavailable:
         # Deterministic provider routes remain usable when the optional router
         # model is unavailable; the compiler still validates every field.
-        tool_request = route_external_tool(value.message)
+        tool_request = None if external_data_prohibited else route_external_tool(value.message)
         route_source = "deterministic_fallback"
         print(f"ROUTER_MODEL_FALLBACK=DETERMINISTIC TOOL_SELECTED={tool_request[0] if tool_request else 'NONE'}", file=__import__('sys').stderr, flush=True)
     if tool_request:
@@ -3647,13 +5368,39 @@ def stream_chat(value: ChatInput):
     existing=db.conversation(conversation_id)
     if not existing: raise HTTPException(404,"conversation not found")
     if existing["project_id"] != project_id: raise HTTPException(403,"conversation does not belong to project")
+    # The streaming endpoint is a presentation transport, not a second
+    # Coding Orchestrator.  A continuation must be consumed by the same
+    # exclusive control-plane handler as /api/chat; otherwise a short input
+    # such as 「続行」 can fall through to Normal Brain and expose free-form
+    # Implementer prose (or hidden reasoning) as the task result.
+    stream_control_event = bool(re.fullmatch(r"\s*(?:再開(?:して)?|resume|続行(?:して)?|continue)\s*", value.message, re.IGNORECASE))
+    stream_resume_metadata = bool(value.resume_control or value.resume_task_id or
+                                  str(value.execution_intent or "").strip().upper() in {"RESUME", "RESUME_CODING_TASK", "CONTINUE_CODING_TASK"})
+    managed_tasks = db.coding_tasks(conversation_id)
+    has_managed_task = any(task.get("status") in {"RESUMABLE", "BLOCKED", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
+                           for task in managed_tasks)
+    if (stream_control_event or stream_resume_metadata) and has_managed_task:
+        result = chat(value)
+        response = _sanitize_user_visible_assistant_text(str(result.get("response") or ""))
+        task_id = result.get("coding_task_id")
+        progress = result.get("progress_event") or {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                                       "task_id": task_id, "status": "QUEUED"}
+        def control_events():
+            yield "data: " + json.dumps({"type": "meta", "task_id": task_id, "conversation_id": conversation_id}) + "\n\n"
+            if response:
+                yield "data: " + json.dumps({"type": "chunk", "text": response}, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({"type": "done", "task": progress, "response_owner": "CODING_ORCHESTRATOR"}, ensure_ascii=False) + "\n\n"
+        print(f"STREAM_CONTROL_EVENT=YES CODING_TASK_ID={task_id or 'NONE'} NORMAL_BRAIN_INVOKED=NO "
+              "RAW_MODEL_RESPONSE_EMITTED_TO_USER=NO RESPONSE_OWNER=CODING_ORCHESTRATOR",
+              file=__import__("sys").stderr, flush=True)
+        return StreamingResponse(control_events(), media_type="text/event-stream")
     db.add_message(conversation_id,"user",value.message,time.time(),str(uuid.uuid4()))
     _conversation_project_context(conversation_id, project_id, value.message)
     # The streaming endpoint used to check local retrieval before source-
     # specific providers, which made "search on wikipedia ..." serialize a
     # retrieval envelope as assistant prose. Keep this terminal provider path
     # aligned with /api/chat.
-    stream_tool_request = route_external_tool(value.message)
+    stream_tool_request = None if _external_data_prohibited(value.message) else route_external_tool(value.message)
     if stream_tool_request and stream_tool_request[0] in REGISTRY:
         stream_tool_id, stream_arguments = stream_tool_request
         try:
@@ -3719,7 +5466,7 @@ def stream_chat(value: ChatInput):
     db.save_task(task,conversation_id)
     event=threading.Event(); cancel_events[task.id]=event
     def events():
-        full=""; started=time.perf_counter(); prompt_tokens=None; completion_tokens=None; control_frame_seen=False
+        full=""; emitted_visible=""; started=time.perf_counter(); prompt_tokens=None; completion_tokens=None
         yield "data: "+json.dumps({"type":"meta","task_id":task.id,"conversation_id":conversation_id})+"\n\n"
         try:
             stream=runtime.model.generate(messages,settings.main_model,stream=True)
@@ -3731,10 +5478,19 @@ def stream_chat(value: ChatInput):
                 if part.get("prompt_tokens") is not None: prompt_tokens=part["prompt_tokens"]
                 if part.get("completion_tokens") is not None: completion_tokens=part["completion_tokens"]
                 if text:
-                    control_frame_seen = control_frame_seen or "[ACTIVE_CODING_TASK_STATE]" in full
-                    if not control_frame_seen:
-                        safe_chunk=_sanitize_user_visible_assistant_text(text)
-                        if safe_chunk: yield "data: "+json.dumps({"type":"chunk","text":safe_chunk})+"\n\n"
+                    # Render only the visible channel from the accumulated
+                    # response.  Accumulation is required because a streamed
+                    # provider can split <think>...</think> or a control
+                    # frame across arbitrary chunks; sanitizing each chunk in
+                    # isolation would allow hidden content through.
+                    visible=_sanitize_user_visible_assistant_text(full)
+                    if visible.startswith(emitted_visible):
+                        delta=visible[len(emitted_visible):]
+                    else:
+                        delta=visible
+                    if delta:
+                        emitted_visible=visible
+                        yield "data: "+json.dumps({"type":"chunk","text":delta}, ensure_ascii=False)+"\n\n"
             if task.state is TaskState.GENERATING: task.transition(TaskState.COMPLETED)
             task.model_calls.append({"model":settings.main_model,"prompt_tokens":prompt_tokens,"completion_tokens":completion_tokens,"latency_ms":(time.perf_counter()-started)*1000,"status":"cancelled" if task.state is TaskState.CANCELLED else "success"})
             db.save_task(task)

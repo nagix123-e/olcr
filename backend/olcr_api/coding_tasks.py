@@ -15,8 +15,28 @@ from .capability_scope import capability_evidence
 _SLOT = threading.Lock()
 MAX_RETRIES_PER_PHASE = 2
 MAX_SUBSTANTIAL_REPLANS_PER_TASK = 2
+# Epoch budgets remain useful for ordinary recovery UX, but these task-global
+# bounds prevent Continue/epoch churn from becoming an unbounded model loop.
+TASK_GLOBAL_REPLAN_LIMIT = 4
+TASK_GLOBAL_PLAN_REPAIR_LIMIT = 4
+TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT = 8
+# A blocker may be reopened only a small, explicit number of times.  This is
+# separate from the normal replan epoch so Continue cannot turn a terminal
+# blocker into an unbounded retry loop.
+MAX_BLOCKER_REOPEN_EPOCHS = 2
 MAX_TASKS_PER_PHASE = 15
 MAX_CORRECTIVE_RETRIES = 3
+
+
+def _graph_reference_fingerprint(error: Mapping[str, Any]) -> str:
+    """Return a stable fingerprint for one unresolved graph reference."""
+    payload = {
+        "error_kind": str(error.get("error_kind") or ""),
+        "owner_id": str(error.get("offending_phase_id") or error.get("offending_task_id") or ""),
+        "dependency_ref": str(error.get("offending_dependency_ref") or ""),
+        "expected_reference_type": str(error.get("expected_reference_type") or ""),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
 # Phase execution intent is deliberately separate from the task-level
 # execution_mode (NORMAL/HEAVY_BATCHED).  It is optional in the persisted
@@ -27,6 +47,207 @@ PHASE_EXECUTION_MODES = (
     "VERIFICATION_ONLY",
     "IMPLEMENTATION_AND_VERIFICATION",
 )
+
+# This is the only canonical mapping from the selected frontend stack to a
+# package-manager requirement.  The planner may describe implementation work
+# in prose, but runtime authorization is derived from this typed contract (or
+# an equivalent typed contract supplied by a trusted caller), never from a
+# package name invented by the Implementer.
+_CANONICAL_DEPENDENCY_CATALOG = (
+    # The Vite profile is a complete executable project profile, rather than
+    # a one-name-to-one-package transcription of the user-visible stack.
+    # ``shadcn`` is intentionally absent: its bundled MCP is a capability and
+    # its official CLI is an initializer, neither is a project dependency.
+    ("Vite", "vite", None, "DEV_PACKAGE", "devDependencies"),
+    ("Vite", "@vitejs/plugin-react", None, "DEV_PACKAGE", "devDependencies"),
+    ("React", "react", None, "RUNTIME_PACKAGE", "dependencies"),
+    ("React", "react-dom", None, "RUNTIME_PACKAGE", "dependencies"),
+    ("React", "@types/react", None, "DEV_PACKAGE", "devDependencies"),
+    ("React", "@types/react-dom", None, "DEV_PACKAGE", "devDependencies"),
+    ("TypeScript", "typescript", None, "DEV_PACKAGE", "devDependencies"),
+    ("Tailwind", "tailwindcss", None, "DEV_PACKAGE", "devDependencies"),
+    ("Tailwind", "@tailwindcss/vite", None, "DEV_PACKAGE", "devDependencies"),
+    ("Anime.js v4", "animejs", "4", "RUNTIME_PACKAGE", "dependencies"),
+)
+
+
+def canonical_technology_requirements(requirements: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """Expose semantic technologies without pretending each is an npm package."""
+    requirements = requirements if isinstance(requirements, Mapping) else {}
+    selected = {str(item).strip().lower() for item in (requirements.get("required_stack") or [])}
+    result: list[dict[str, Any]] = []
+    if "shadcn" in selected:
+        result.append({"technology": "shadcn", "semantic_type": "MCP_MANAGED_TOOLING",
+                       "mcp_requirement": "shadcn", "cli_action": "shadcn@latest init -t vite",
+                       "package": None, "source_requirement": "required_stack"})
+    for stack_name, package, version_range, semantic_type, dependency_kind in _CANONICAL_DEPENDENCY_CATALOG:
+        if stack_name.lower() in selected or (stack_name == "Anime.js v4" and "anime.js" in selected):
+            result.append({"technology": stack_name, "semantic_type": semantic_type, "package": package,
+                           "version_range": version_range, "dependency_kind": dependency_kind,
+                           "source_requirement": "required_stack"})
+    return result
+
+
+def canonical_dependency_requirements(requirements: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """Return the trusted structured dependency contract for one task.
+
+    Existing persisted tasks may not have the new field yet, so the selected
+    canonical stack is used as a deterministic migration source.  No phase
+    prose is inspected here.
+    """
+    requirements = requirements if isinstance(requirements, Mapping) else {}
+    supplied = requirements.get("dependency_requirements")
+    rows: list[dict[str, Any]] = []
+    if isinstance(supplied, list):
+        for item in supplied:
+            if not isinstance(item, Mapping):
+                continue
+            package = str(item.get("package") or item.get("name") or "").strip()
+            if not package:
+                continue
+            # Migrate the old stack-derived shadcn alias out of the package
+            # channel.  An explicitly requested, unrelated scoped package is
+            # still retained; only the canonical shadcn provenance is special.
+            if package == "@shadcn/ui" and str(item.get("canonical_stack_provenance") or "").lower() == "shadcn":
+                continue
+            record = {
+                "package": package,
+                "version_range": (str(item.get("version_range") or item.get("version") or "").strip() or None),
+                "semantic_type": str(item.get("semantic_type") or "RUNTIME_PACKAGE"),
+                "dependency_kind": str(item.get("dependency_kind") or "dependencies"),
+                "source_requirement": str(item.get("source_requirement") or "dependency_requirements"),
+                "canonical_stack_provenance": str(item.get("canonical_stack_provenance") or "trusted_requirement"),
+                "phase_id": (str(item.get("phase_id")).strip() if item.get("phase_id") else None),
+                "authorization_status": str(item.get("authorization_status") or "AUTHORIZED"),
+            }
+            if record not in rows:
+                rows.append(record)
+        if rows:
+            return rows
+    selected = {str(item).strip().lower() for item in (requirements.get("required_stack") or [])}
+    for stack_name, package, version_range, semantic_type, dependency_kind in _CANONICAL_DEPENDENCY_CATALOG:
+        if stack_name.lower() in selected or (stack_name == "Anime.js v4" and "anime.js" in selected):
+            rows.append({
+                "package": package,
+                "version_range": version_range,
+                "semantic_type": semantic_type,
+                "dependency_kind": dependency_kind,
+                "source_requirement": "required_stack",
+                "canonical_stack_provenance": stack_name,
+                "phase_id": None,
+                "authorization_status": "AUTHORIZED",
+            })
+    return rows
+
+
+def dependency_requirement_specs(records: list[Mapping[str, Any]] | None) -> list[str]:
+    """Convert trusted records to package-manager specs without losing records."""
+    specs: list[str] = []
+    for item in records or []:
+        if not isinstance(item, Mapping):
+            continue
+        package = str(item.get("package") or "").strip()
+        version = str(item.get("version_range") or "").strip()
+        if not package:
+            continue
+        spec = f"{package}@{version}" if version else package
+        if spec not in specs:
+            specs.append(spec)
+    return specs
+
+
+def dependency_install_operations(records: list[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """Group trusted packages into the fixed executor's two safe install modes."""
+    operations: list[dict[str, Any]] = []
+    for dependency_kind in ("dependencies", "devDependencies"):
+        packages = dependency_requirement_specs([
+            item for item in (records or []) if isinstance(item, Mapping)
+            and str(item.get("dependency_kind") or "dependencies") == dependency_kind
+        ])
+        if packages:
+            operations.append({"operation_type": "PACKAGE_INSTALL", "dependency_kind": dependency_kind,
+                               "packages": packages})
+    return operations
+
+
+def dependency_requirement_names(records_or_specs: list[Any] | None) -> list[str]:
+    """Return package names for declaration checks while retaining versioned specs."""
+    names: list[str] = []
+    for item in records_or_specs or []:
+        if isinstance(item, Mapping):
+            name = str(item.get("package") or "").strip()
+        else:
+            value = str(item or "").strip()
+            if value.startswith("@"):
+                slash = value.find("/")
+                marker = value.find("@", 1)
+                name = value[:marker] if marker > slash > 0 else value
+            else:
+                name = value.split("@", 1)[0]
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def associate_dependency_requirements(plan: dict[str, Any], requirements: Mapping[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
+    """Attach the canonical dependency contract to exactly one implementation phase.
+
+    Explicit phase assignments remain authoritative.  Otherwise the owner is
+    the first typed dependency phase, a phase that owns package.json, or the
+    first mutation-capable phase.  Verification phases can never own install
+    work.
+    """
+    if not isinstance(plan, dict):
+        return plan, []
+    requirements = requirements if isinstance(requirements, Mapping) else {}
+    records = canonical_dependency_requirements(requirements)
+    if not records:
+        return plan, []
+    phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)]
+    phase_by_id = {str(item.get("id")): item for item in phases if item.get("id")}
+    implementation = [item for item in phases if item.get("execution_mode") != "VERIFICATION_ONLY"
+                     and item.get("kind") != "ORCHESTRATOR_BLUEPRINT"]
+    if not implementation:
+        return plan, []
+    explicit_ids = [str(item.get("id")) for item in implementation if item.get("requires_dependency_installation") is True]
+    explicit_record_assignment = any(item.get("phase_id") for item in records)
+    # A selected stack is also used to describe established projects.  Only a
+    # greenfield/new-project contract or an explicit phase/record assignment
+    # authorizes a new install; existing projects keep their prior behavior.
+    if not requirements.get("new_project_intent") and not explicit_ids and not explicit_record_assignment:
+        return plan, []
+    assigned_ids = {str(item.get("phase_id")) for item in records if item.get("phase_id") and str(item.get("phase_id")) in phase_by_id}
+    owner_id = (explicit_ids[0] if explicit_ids else
+                next((str(item.get("id")) for item in implementation
+                      if re.search(r"package(?:\.json)?|dependenc|install|initialize|セットアップ|依存|パッケージ", " ".join([str(item.get("goal") or ""), *map(str, item.get("done") or [])]), re.I)), None) or
+                str(implementation[0].get("id")))
+    if not assigned_ids:
+        assigned_ids = {owner_id}
+    # A phase explicitly named by a trusted requirement remains the owner;
+    # unassigned requirements are attached to the deterministic owner.
+    normalized: list[dict[str, Any]] = []
+    for record in records:
+        phase_id = str(record.get("phase_id")) if record.get("phase_id") in phase_by_id else owner_id
+        if phase_id not in assigned_ids:
+            phase_id = owner_id
+        normalized.append({**record, "phase_id": phase_id, "authorization_status": "AUTHORIZED"})
+    by_phase: dict[str, list[dict[str, Any]]] = {}
+    for record in normalized:
+        by_phase.setdefault(record["phase_id"], []).append(record)
+    changes: list[str] = []
+    for phase in phases:
+        phase_id = str(phase.get("id"))
+        owned = by_phase.get(phase_id, [])
+        if owned:
+            if phase.get("requires_dependency_installation") is not True:
+                phase["requires_dependency_installation"] = True
+                changes.append(f"{phase_id}:requires_dependency_installation=true")
+            if phase.get("dependency_requirements") != owned:
+                phase["dependency_requirements"] = owned
+                changes.append(f"{phase_id}:dependency_requirements={len(owned)}")
+        elif phase.get("dependency_requirements"):
+            phase.pop("dependency_requirements", None)
+    return ({**plan, "phases": phases}, changes) if changes else (plan, [])
 
 _STRUCTURAL_SIGNALS = {
     "new_application": r"(?:新しい|new).{0,24}(?:アプリ|application|feature)",
@@ -319,6 +540,9 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
     dependency_policy = ("MINIMAL" if re.search(
         r"(?:unnecessary|unrelated|不要(?:な)?|関係ない|無関係).{0,32}(?:dependenc|依存)",
         scoped_text, re.I) else "UNSPECIFIED")
+    required_stack = ( ["Vite", "React", "TypeScript", "Tailwind", "shadcn", "Anime.js v4"]
+                       if profile["TASK_PROFILE"] == "FRONTEND_ONLY_MARKETING_SITE" else [])
+    dependency_requirements = canonical_dependency_requirements({"required_stack": required_stack})
     return {"required_capabilities": profile["REQUIRED_CAPABILITIES"],
             "forbidden_capabilities": profile["FORBIDDEN_CAPABILITIES"],
             "task_profile": profile["TASK_PROFILE"],
@@ -332,6 +556,17 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
             "dependency_policy": dependency_policy,
             "forbidden_technologies": sorted({item["capability"] for item in capability_evidence(text, _STRUCTURAL_SIGNALS)
                 if item["category"] == "technology" and item["active_for_control"] and item["polarity"] == "forbidden"}),
+            # This is a typed planning contract.  Keep it separate from the
+            # free-form goal so a Planner cannot silently select a framework
+            # that contradicts the user's canonical stack.
+            "required_stack": required_stack,
+            "technology_requirements": canonical_technology_requirements({"required_stack": required_stack}),
+            "dependency_requirements": dependency_requirements,
+            "forbidden_stack": (["Next.js", "GSAP", "Framer Motion", "Three.js"]
+                                if profile["TASK_PROFILE"] == "FRONTEND_ONLY_MARKETING_SITE" else []),
+            "new_project_intent": bool(re.search(
+                r"(?:greenfield|new\s+project|from\s+scratch|新規(?:プロジェクト|サイト|アプリ)|ゼロから|作成|構築|build|create|implement)",
+                scoped_text, re.I)),
             "mutation_mode": mutation_mode,
             "fix_reason": fix_reason,
             "attachment_evidence": dict(evidence),
@@ -378,6 +613,24 @@ def normalize_coding_requirements(raw_request: str | Mapping[str, Any], context:
     raw_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     model_context_json = json.dumps(model_context, ensure_ascii=False, sort_keys=True, default=str)
     provenance = _capability_provenance(raw, result)
+    active_required = sorted({item["capability"] for item in provenance
+                              if item.get("active_for_control") and item.get("category") == "capability" and item.get("polarity") == "required"})
+    active_forbidden = sorted({item["capability"] for item in provenance
+                               if item.get("active_for_control") and item.get("category") == "capability" and item.get("polarity") == "forbidden"})
+    conflicting = sorted(set(active_required) & set(active_forbidden))
+    conflict_details = []
+    for key in conflicting:
+        required = next(item for item in provenance if item.get("active_for_control") and item.get("category") == "capability" and item.get("polarity") == "required" and item.get("capability") == key)
+        forbidden = next(item for item in provenance if item.get("active_for_control") and item.get("category") == "capability" and item.get("polarity") == "forbidden" and item.get("capability") == key)
+        conflict_details.append({
+            "conflict_id": f"{key}:required-forbidden",
+            "semantic_key": key,
+            "required_value": True,
+            "forbidden_value": True,
+            "required_source": required,
+            "forbidden_source": forbidden,
+            "conflict_reason": "ACTIVE_CURRENT_REQUIREMENT_AND_PROHIBITION",
+        })
     result["normalization_diagnostics"] = {
         "raw_request_hash": raw_hash,
         "current_user_text_hash": raw_hash,
@@ -387,8 +640,18 @@ def normalize_coding_requirements(raw_request: str | Mapping[str, Any], context:
         "current_user_text_char_count": len(raw),
         "scoped_input_hash": hashlib.sha256(scoped.encode("utf-8")).hexdigest(),
         "canonical_requirements_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
-        "canonical_requirements_valid": not bool(set(result["required_capabilities"]) & set(result["forbidden_capabilities"])),
+        "canonical_requirements_valid": not bool(conflicting),
         "capability_provenance": provenance,
+        "requirement_contradiction": "YES" if conflicting else "NO",
+        "conflict_count": len(conflicting),
+        "conflicting_semantic_keys": conflicting,
+        "active_required_capabilities": active_required,
+        "active_forbidden_capabilities": active_forbidden,
+        "conflict_details": conflict_details,
+        "conflict_reason": (conflict_details[0]["conflict_reason"] if conflict_details else ""),
+        "required_source": (conflict_details[0]["required_source"] if conflict_details else None),
+        "forbidden_source": (conflict_details[0]["forbidden_source"] if conflict_details else None),
+        "ignored_non_control_evidence_count": sum(1 for item in provenance if not item.get("active_for_control")),
         "typed_project_metadata_present": bool(typed_context),
         "project_context_added_before_normalization": False,
         "conversation_history_added_before_normalization": False,
@@ -452,8 +715,9 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
     is one consolidated final phase, so repeated semantic phases cannot grow
     with planner wording.
     """
-    phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)
-              and not _is_final_report_phase(item)
+    source_phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)]
+    phases = [dict(item) for item in source_phases
+              if not _is_final_report_phase(item)
               and not _is_orchestration_preflight_phase(item)]
     if profile != "FRONTEND_ONLY_MARKETING_SITE" or not phases:
         normalized = {**plan, "phases": phases}
@@ -468,28 +732,80 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
         implementation, verification = phases[:1], phases[1:]
     merged = _merge_static_phases(implementation)
     merged["id"] = "p1"
+    # The frontend profile has already separated implementation and browser
+    # verification rows.  Preserve a typed mode at that boundary even when an
+    # older planner omitted the optional field; this is structural
+    # normalization, not a second text heuristic.
+    if merged.get("execution_mode") not in PHASE_EXECUTION_MODES:
+        merged["execution_mode"] = "IMPLEMENTATION"
     merged["dependencies"] = []
     merged["acceptance_contract"] = ["FRONTEND_STACK", "MARKETING_STRUCTURE"]
     normalized = [merged]
+    phase_replacements = {
+        str(item.get("id")): "p1" for item in implementation if item.get("id")
+    }
     if verification:
         final = _merge_static_phases(verification)
         final["id"] = "p2"
+        if final.get("execution_mode") not in PHASE_EXECUTION_MODES:
+            final["execution_mode"] = "VERIFICATION_ONLY"
         final["goal"] = "Consolidated browser verification: desktop, mobile, navigation, responsive, console, and accessibility smoke"
         final["dependencies"] = [merged["id"]]
         normalized.append(final)
+        phase_replacements.update({str(item.get("id")): "p2" for item in verification if item.get("id")})
     elif "playwright" in required_mcp:
         normalized.append({"id": "p2", "goal": "Consolidated browser verification: desktop, mobile, navigation, responsive, console, and accessibility smoke",
                            "status": "pending", "done": ["Playwright browser verification completed"],
                            "verify": ["desktop, mobile, navigation, responsive, console, and accessibility smoke pass"],
-                           "dependencies": [merged["id"]], "risks": ["browser verification may expose a bounded correction"]})
+                           "dependencies": [merged["id"]], "risks": ["browser verification may expose a bounded correction"],
+                           "execution_mode": "VERIFICATION_ONLY"})
+    # Removed orchestration-only rows have an explicit semantic replacement:
+    # preflight belongs to the implementation owner and a synthetic report
+    # belongs to the final verification owner. This prevents stale edges from
+    # being dropped while keeping the executable order unchanged.
+    normalized_by_id = {str(item.get("id")): item for item in normalized}
+    for source in source_phases:
+        source_id = str(source.get("id")) if source.get("id") else ""
+        if not source_id or source_id in phase_replacements:
+            continue
+        if _is_orchestration_preflight_phase(source):
+            phase_replacements[source_id] = "p1"
+        elif _is_final_report_phase(source):
+            phase_replacements[source_id] = "p2" if "p2" in normalized_by_id else "p1"
+    # Merging phases proves that edges between merged members are internal and
+    # can disappear. References to removed entities have no such proof, so
+    # retain them on the replacement owner and let validation fail closed.
+    for source in source_phases:
+        owner = phase_replacements.get(str(source.get("id")))
+        target = normalized_by_id.get(owner) if owner else None
+        if target is None:
+            continue
+        for dependency in source.get("dependencies") or []:
+            replacement = phase_replacements.get(str(dependency))
+            if replacement is None:
+                if str(dependency) not in target["dependencies"]:
+                    target["dependencies"].append(str(dependency))
+            elif replacement != owner and replacement not in target["dependencies"]:
+                target["dependencies"].append(replacement)
     tasks = []
+    task_replacements: dict[str, str] = {}
     for index, phase in enumerate(normalized):
         phase_mcp = [name for name in required_mcp if (name == "playwright") == (index == len(normalized) - 1 and _is_browser_verification_phase(phase))]
         if index == 0:
             phase_mcp = [name for name in required_mcp if name != "playwright"]
         phase["required_mcp"] = phase_mcp
-        tasks.append(_phase_task(phase, f"{phase['id']}-task", [tasks[-1]["task_id"]] if tasks else [], phase_mcp))
-    return {**plan, "phases": normalized, "tasks": tasks}
+        task_id = f"{phase['id']}-task"
+        tasks.append(_phase_task(phase, task_id, [tasks[-1]["task_id"]] if tasks else [], phase_mcp))
+        source_tasks = [item for item in (plan.get("tasks") or []) if isinstance(item, dict)
+                        and str(item.get("phase_id")) in {str(source.get("id")) for source in implementation + verification}]
+        for source_task in source_tasks:
+            source_phase = str(source_task.get("phase_id"))
+            if phase_replacements.get(source_phase) == phase["id"] and source_task.get("task_id"):
+                task_replacements[str(source_task["task_id"])] = task_id
+    result = {**plan, "phases": normalized, "tasks": tasks}
+    if phase_replacements or task_replacements:
+        result["graph_replacement_map"] = {"phase_ids": phase_replacements, "task_ids": task_replacements}
+    return result
 
 
 def derive_task_graph(plan: dict[str, Any], required_mcp: list[str] | None = None) -> dict[str, Any]:
@@ -507,6 +823,233 @@ def derive_task_graph(plan: dict[str, Any], required_mcp: list[str] | None = Non
         phase_mcp = sorted(required & set(phase.get("required_mcp") or []))
         tasks.append(_phase_task(phase, f"{phase.get('id')}-task", [tasks[-1]["task_id"]] if tasks else [], phase_mcp))
     return {**plan, "tasks": tasks}
+
+
+def graph_validation_diagnostics(plan: Any) -> dict[str, Any]:
+    """Return structured phase/task graph evidence without changing the graph.
+
+    Phase and task identifiers are separate namespaces.  This function is
+    deliberately read-only so callers can report the exact owner and
+    reference before deciding whether a deterministic replacement is safe.
+    """
+    phases = [item for item in (plan.get("phases") or []) if isinstance(item, dict)] if isinstance(plan, dict) else []
+    tasks = [item for item in (plan.get("tasks") or []) if isinstance(item, dict)] if isinstance(plan, dict) else []
+    phase_ids = [str(item.get("id")) for item in phases if item.get("id") is not None]
+    task_ids = [str(item.get("task_id")) for item in tasks if item.get("task_id") is not None]
+    phase_set, task_set = set(phase_ids), set(task_ids)
+    errors: list[dict[str, Any]] = []
+
+    for phase in phases:
+        owner = str(phase.get("id") or "")
+        for dependency in phase.get("dependencies") or []:
+            ref = str(dependency)
+            if ref in phase_set:
+                continue
+            ref_kind = "TASK_ID" if ref in task_set else "UNKNOWN_ID"
+            errors.append({
+                "error_kind": "UNKNOWN_PHASE_DEPENDENCY" if ref_kind == "UNKNOWN_ID" else "TASK_ID_IN_PHASE_DEPENDENCY",
+                "offending_phase_id": owner,
+                "offending_task_id": None,
+                "offending_dependency_ref": ref,
+                "expected_reference_type": "PHASE_ID",
+                "dependency_ref_kind": ref_kind,
+                "known_phase_ids": list(phase_ids),
+                "known_task_ids": list(task_ids),
+                "reason": ("phase dependency references a task ID; phase and task namespaces are separate"
+                           if ref_kind == "TASK_ID" else "phase dependency is not declared in the normalized phase IDs"),
+            })
+
+    for task in tasks:
+        owner = str(task.get("task_id") or "")
+        phase_id = task.get("phase_id")
+        if phase_id is not None and str(phase_id) not in phase_set:
+            ref = str(phase_id)
+            errors.append({
+                "error_kind": "UNKNOWN_TASK_PHASE_ID",
+                "offending_phase_id": None,
+                "offending_task_id": owner,
+                "offending_dependency_ref": ref,
+                "expected_reference_type": "PHASE_ID",
+                "dependency_ref_kind": "TASK_PHASE_ID",
+                "known_phase_ids": list(phase_ids),
+                "known_task_ids": list(task_ids),
+                "reason": "task phase_id does not identify a declared phase",
+            })
+        for dependency in task.get("depends_on") or []:
+            ref = str(dependency)
+            if ref in task_set:
+                continue
+            ref_kind = "PHASE_ID" if ref in phase_set else "UNKNOWN_ID"
+            errors.append({
+                "error_kind": "PHASE_ID_IN_TASK_DEPENDENCY" if ref_kind == "PHASE_ID" else "UNKNOWN_TASK_DEPENDENCY",
+                "offending_phase_id": str(task.get("phase_id")) if task.get("phase_id") is not None else None,
+                "offending_task_id": owner,
+                "offending_dependency_ref": ref,
+                "expected_reference_type": "TASK_ID",
+                "dependency_ref_kind": ref_kind,
+                "known_phase_ids": list(phase_ids),
+                "known_task_ids": list(task_ids),
+                "reason": ("task dependency references a phase ID; phase and task namespaces are separate"
+                           if ref_kind == "PHASE_ID" else "task dependency is not declared in the normalized task IDs"),
+            })
+
+    def add_cycle_error(rows: list[dict[str, Any]], owner_key: str, dependency_key: str,
+                        error_kind: str, expected: str) -> None:
+        by_id = {str(row.get(owner_key)): row for row in rows if row.get(owner_key) is not None}
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        emitted: set[str] = set()
+
+        def visit(node: str) -> None:
+            if node in visiting:
+                if node not in emitted:
+                    emitted.add(node)
+                    errors.append({
+                        "error_kind": error_kind,
+                        "offending_phase_id": node if owner_key == "id" else None,
+                        "offending_task_id": node if owner_key == "task_id" else None,
+                        "offending_dependency_ref": node,
+                        "expected_reference_type": expected,
+                        "dependency_ref_kind": expected,
+                        "known_phase_ids": list(phase_ids),
+                        "known_task_ids": list(task_ids),
+                        "reason": "dependency graph contains a cycle",
+                    })
+                return
+            if node in visited or node not in by_id:
+                return
+            visiting.add(node)
+            for dependency in by_id[node].get(dependency_key) or []:
+                ref = str(dependency)
+                if ref in by_id:
+                    visit(ref)
+            visiting.remove(node)
+            visited.add(node)
+
+        for node in by_id:
+            visit(node)
+
+    add_cycle_error(phases, "id", "dependencies", "PHASE_DEPENDENCY_CYCLE", "PHASE_ID")
+    add_cycle_error(tasks, "task_id", "depends_on", "TASK_DEPENDENCY_CYCLE", "TASK_ID")
+
+    for error in errors:
+        error["fingerprint"] = _graph_reference_fingerprint(error)
+    first = errors[0] if errors else None
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "first_error": first,
+        "declared_phase_ids": phase_ids,
+        "declared_task_ids": task_ids,
+        "known_phase_ids": phase_ids,
+        "known_task_ids": task_ids,
+    }
+
+
+def reconcile_graph_references(plan: dict[str, Any], replacement_map: Mapping[str, Any] | None = None) -> tuple[dict[str, Any], list[str], dict[str, Any]]:
+    """Rewrite only references covered by an explicit normalization mapping.
+
+    Unknown references remain present and therefore fail validation.  This is
+    intentionally fail-closed: deleting a dependency could change execution
+    ordering, while a recorded old-to-new mapping proves the intended edge.
+    """
+    if not isinstance(plan, dict):
+        return plan, [], graph_validation_diagnostics(plan)
+    mapping = replacement_map if isinstance(replacement_map, Mapping) else {}
+    phase_map = mapping.get("phase_ids") if isinstance(mapping.get("phase_ids"), Mapping) else {}
+    task_map = mapping.get("task_ids") if isinstance(mapping.get("task_ids"), Mapping) else {}
+    phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)]
+    tasks = [dict(item) for item in (plan.get("tasks") or []) if isinstance(item, dict)]
+    changes: list[str] = []
+    phase_ids = {str(item.get("id")) for item in phases if item.get("id") is not None}
+    task_ids = {str(item.get("task_id")) for item in tasks if item.get("task_id") is not None}
+    for phase in phases:
+        values = []
+        for dependency in phase.get("dependencies") or []:
+            ref = str(dependency)
+            replacement = phase_map.get(ref)
+            if replacement is not None and str(replacement) in phase_ids:
+                ref = str(replacement)
+                changes.append(f"phase:{phase.get('id')}:{dependency}->{ref}")
+            values.append(ref)
+        phase["dependencies"] = list(dict.fromkeys(values))
+    for task in tasks:
+        values = []
+        for dependency in task.get("depends_on") or []:
+            ref = str(dependency)
+            replacement = task_map.get(ref)
+            if replacement is not None and str(replacement) in task_ids:
+                ref = str(replacement)
+                changes.append(f"task:{task.get('task_id')}:{dependency}->{ref}")
+            values.append(ref)
+        task["depends_on"] = list(dict.fromkeys(values))
+        phase_ref = task.get("phase_id")
+        if phase_ref is not None and str(phase_ref) in phase_map and str(phase_map[str(phase_ref)]) in phase_ids:
+            replacement = str(phase_map[str(phase_ref)])
+            if replacement != str(phase_ref):
+                changes.append(f"task-phase:{task.get('task_id')}:{phase_ref}->{replacement}")
+                task["phase_id"] = replacement
+    candidate = {**plan, "phases": phases}
+    if "tasks" in plan:
+        candidate["tasks"] = tasks
+    return candidate, sorted(set(changes)), graph_validation_diagnostics(candidate)
+
+
+def normalize_replan_graph(plan: dict[str, Any], required_mcp: list[str] | None = None) -> tuple[dict[str, Any], list[str]]:
+    """Repair only mechanically stale graph references during recovery.
+
+    Only references covered by an explicit old-to-new replacement mapping are
+    rewritten. Unknown dependencies remain unresolved so callers can fail
+    closed or spend the bounded schema-repair call with exact evidence.
+    """
+    if not isinstance(plan, dict):
+        return plan, []
+    changes: list[str] = []
+    phases = [dict(p) for p in (plan.get("phases") or []) if isinstance(p, dict)]
+    phase_ids = {str(p.get("id")) for p in phases if p.get("id")}
+    candidate = {**plan, "phases": phases}
+    tasks = plan.get("tasks")
+    valid_shape = isinstance(tasks, list) and len(tasks) == len(phases) and all(
+        isinstance(t, dict) and t.get("phase_id") in phase_ids for t in tasks)
+    if not valid_shape or validate_task_graph(tasks, max_tasks=max(len(phases), MAX_TASKS_PER_PHASE)):
+        candidate = derive_task_graph(candidate, required_mcp)
+        changes.append("rebuilt_one_task_per_phase")
+    else:
+        candidate["tasks"] = [dict(task) for task in tasks]
+    candidate, rewrites, diagnostics = reconcile_graph_references(candidate, plan.get("graph_replacement_map"))
+    changes.extend(rewrites)
+    if diagnostics["errors"]:
+        changes.append("unresolved_graph_dependencies")
+    return candidate, sorted(set(changes))
+
+
+def ensure_explicit_phase_execution_modes(plan: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Materialize safe typed modes for newly generated/replanned phases.
+
+    Persisted legacy plans remain compatible because callers opt into this
+    helper only at canonical planner boundaries.  A missing mode is treated as
+    mutation-capable by default; only typed verification metadata can select
+    ``VERIFICATION_ONLY``.  No phase prose is inspected here.
+    """
+    if not isinstance(plan, dict):
+        return plan, []
+    changes: list[str] = []
+    phases: list[dict[str, Any]] = []
+    for phase_value in plan.get("phases") or []:
+        if not isinstance(phase_value, dict):
+            phases.append(phase_value)
+            continue
+        phase = dict(phase_value)
+        if "execution_mode" not in phase:
+            typed_read_only = (
+                phase.get("requires_repo_mutation") is False and
+                bool(phase.get("verify")) and
+                set(str(item).lower() for item in (phase.get("required_mcp") or [])) <= {"playwright"}
+            )
+            phase["execution_mode"] = "VERIFICATION_ONLY" if typed_read_only else "IMPLEMENTATION"
+            changes.append(f"{phase.get('id', 'UNKNOWN')}:{phase['execution_mode']}")
+        phases.append(phase)
+    return {**plan, "phases": phases}, changes
 
 
 def frontend_stack_acceptance(workspace_root: str | None) -> bool:
@@ -554,6 +1097,13 @@ def resumable_continuation_eligible(task: dict[str, Any]) -> bool:
 
 
 def workspace_mutation_count(report: dict[str, Any]) -> int:
+    typed = report.get("typed_execution_summary") if isinstance(report, dict) else {}
+    if isinstance(report, dict) and "final_worktree_mutations" in report:
+        return int(report.get("final_worktree_mutations") or 0)
+    if isinstance(typed, dict) and "final_worktree_mutations" in typed:
+        return int(typed.get("final_worktree_mutations") or 0)
+    # Legacy reports predate the normalized-event marker and have no final
+    # worktree count, so retain their historical event interpretation.
     return sum(op.get("tool") in {"workspace_write", "workspace_write_normalized", "workspace_patch", "workspace_delete", "workspace_remove"}
                for op in _successful_typed_operations(report))
 
@@ -621,6 +1171,12 @@ def _merge_static_phases(phases: list[dict[str, Any]]) -> dict[str, Any]:
         # A merge of unlike typed intents must fall back to the legacy
         # mutation-capable path until a planner supplies a fresh contract.
         merged.pop("execution_mode", None)
+    for key in ("requires_repo_mutation", "requires_dependency_installation", "package_json_config_mutation"):
+        if any(phase.get(key) is True for phase in phases):
+            merged[key] = True
+    merged_mcp = _merge_texts([phase.get("required_mcp") for phase in phases])
+    if merged_mcp:
+        merged["required_mcp"] = merged_mcp
     return merged
 
 
@@ -650,6 +1206,10 @@ def compact_normal_plan(plan: dict[str, Any], goal: str) -> dict[str, Any]:
         compacted_phases.append({**last, "status": "pending", "dependencies": [merged["id"]]})
 
     compacted = {**plan, "phases": compacted_phases}
+    phase_replacements = {
+        str(phase.get("id")): str(merged.get("id"))
+        for phase in implementation_rows if phase.get("id") and merged.get("id")
+    }
     tasks = plan.get("tasks")
     if isinstance(tasks, list):
         by_phase = {str(task.get("phase_id")): task for task in tasks if isinstance(task, dict)}
@@ -670,17 +1230,30 @@ def compact_normal_plan(plan: dict[str, Any], goal: str) -> dict[str, Any]:
             "done_condition": _merge_texts([task.get("done_condition") for task in source_tasks]),
         }
         compacted_tasks = [merged_task]
+        task_replacements = {
+            str(task.get("task_id")): str(merged_task.get("task_id"))
+            for task in source_tasks if isinstance(task, dict) and task.get("task_id")
+        }
         if final_verification:
             final_task = by_phase.get(str(last.get("id")))
             if final_task is None:
                 return plan
             compacted_tasks.append({**final_task, "depends_on": [merged_task["task_id"]]})
         compacted["tasks"] = compacted_tasks
+    else:
+        task_replacements = {}
+    if final_verification and last.get("id"):
+        phase_replacements[str(last["id"])] = str(last["id"])
+    compacted["graph_replacement_map"] = {"phase_ids": phase_replacements, "task_ids": task_replacements}
     return compacted
 
 
 _EXPLICIT_NON_CODING = re.compile(
-    r"(?:これは\s*(?:コーディング|coding)\s*タスクではありません|(?:コーディング|実装)はしないでください|コード(?:を)?変更は不要です|計画だけ(?:を)?(?:作って|作成|してください)|設計だけ(?:を)?(?:して|してください)|do\s+not\s+implement(?!\s*:)|do\s+not\s+modify\s+code|planning\s+only|design\s+only)",
+    r"(?:これは\s*(?:コーディング|coding)\s*タスクではありません|(?:コーディング|実装)(?:(?:は)?しない|を行わない)でください|コード(?:を)?変更は不要です|(?:ファイル|コード)を(?:変更|編集|修正)しないでください|計画だけ(?:を)?(?:作って|作成|してください)|設計だけ(?:を)?(?:して|してください)|do\s+not\s+implement(?!\s*:)|do\s+not\s+(?:modify|change|edit)\s+(?:code|files?|the\s+(?:code|files?))|planning\s+only|design\s+only)",
+    re.I,
+)
+_LOCAL_DIAGNOSTIC_INTENT = re.compile(
+    r"(?:inspect|inspection|diagnos(?:e|is|tic)?|audit|investigat(?:e|ion)|read[ -]?only|locally\s+persisted|local(?:ly)?\s+(?:stored|persisted)|task\s+state|local\s+task|ローカル|永続(?:化)?|タスク状態|診断|調査|読み取り専用|確認(?:だけ|のみ))",
     re.I,
 )
 _PLANNING_INTENT = re.compile(
@@ -700,7 +1273,7 @@ def _mutation_intent(text: str, planning_intent: bool) -> bool:
     scope is present, only a second, concrete execution instruction can turn
     it into a Coding Task.
     """
-    value = re.sub(r"\bdo\s+not\s+(?:implement|modify\s+code)\b", "", (text or "").strip(), flags=re.I)
+    value = re.sub(r"\bdo\s+not\s+(?:implement|modify|change|edit)\s+(?:code|files?|the\s+(?:code|files?))\b", "", (text or "").strip(), flags=re.I)
     direct = re.compile(
         r"(?:実装(?:して|してください|しろ|する|を開始)|修正(?:して|してください|しろ|する)|変更(?:して|してください|しろ|する)|追加(?:して|してください|しろ|する)|削除(?:して|してください|しろ|する)|書き換え(?:て|てください|る)|コードを書いて(?:ください)?|ソースコードを作成|置き換え(?:て|てください|る)|ファイルを(?:作成|変更|書き換え)|repo(?:に|の).{0,80}(?:実装|修正|変更|追加|削除)|この計画を(?:実装|実行)(?:して|してください)?|(?:implement|create|build|fix|modify|update|rewrite|delete|add)\s+(?:this|the|a|an|our|my)?\s*(?:repo(?:sitory)?|project|app|application|feature|code|file|plan)|(?:implement|fix|modify|update|rewrite|delete|add)\s+(?:this|the)\s+(?:plan|code|file|feature)|execute\s+(?:the\s+)?(?:implementation|plan)|change\s+this|edit\s+this)",
         re.I,
@@ -722,6 +1295,7 @@ def coding_classification_diagnostics(text: str, *, project_scoped: bool = False
     value = (text or "").strip()
     planning = bool(_PLANNING_INTENT.search(value))
     explicit_non_coding = bool(_EXPLICIT_NON_CODING.search(value))
+    local_diagnostic = bool(_LOCAL_DIAGNOSTIC_INTENT.search(value))
     mutation = _mutation_intent(value, planning)
     explicit_execution_intent = execution_intent == "coding_mutation"
     # A screenshot/report tied to an existing workspace can express a repair
@@ -747,7 +1321,7 @@ def coding_classification_diagnostics(text: str, *, project_scoped: bool = False
     elif explicit_non_coding and mutation:
         classification, reason = "AMBIGUOUS", "CONTRADICTORY_MUTATION_AND_NON_CODING_SCOPE"
     elif explicit_non_coding:
-        classification, reason = "NON_CODING", "EXPLICIT_NON_CODING_SCOPE"
+        classification, reason = ("NON_CODING", "LOCAL_DIAGNOSTIC_READ_ONLY") if local_diagnostic else ("NON_CODING", "EXPLICIT_NON_CODING_SCOPE")
     elif planning and not mutation:
         classification, reason = "NON_CODING", "DESIGN_PLANNING"
     elif mutation:
@@ -855,8 +1429,9 @@ def classify_waiting_input(text: str) -> str:
 
 def plan_schema() -> dict[str, Any]:
     """Canonical JSON Schema shared by validation prompts and Ollama format mode."""
-    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"},"minItems":1},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"execution_mode":{"type":"string","enum":list(PHASE_EXECUTION_MODES)}},"required":["id","goal","status","done","verify","dependencies","risks"],"additionalProperties":False}
-    task = {"type":"object", "properties":{"task_id":{"type":"string"},"phase_id":{"type":"string"},"goal":{"type":"string"},"domain":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}},"required_context":{"type":"array","items":{"type":"string"}},"required_mcp":{"type":"array","items":{"type":"string"}},"change_scope":{"type":"array","items":{"type":"string"}},"verification":{"type":"array","items":{"type":"string"}},"done_condition":{"type":"array","items":{"type":"string"}},"retry_state":{"type":"object"}}, "required":["task_id","phase_id","goal","domain","depends_on","required_context","required_mcp","change_scope","verification","done_condition","retry_state"], "additionalProperties":False}
+    dependency_record={"type":"object","properties":{"package":{"type":"string"},"version_range":{"type":["string","null"]},"semantic_type":{"type":"string","enum":["RUNTIME_PACKAGE","DEV_PACKAGE","CLI_TOOL","PROJECT_INITIALIZER","MCP_MANAGED_TOOLING","CONFIGURATION_ONLY_REQUIREMENT"]},"dependency_kind":{"type":"string","enum":["dependencies","devDependencies"]},"source_requirement":{"type":"string"},"canonical_stack_provenance":{"type":"string"},"phase_id":{"type":["string","null"]},"authorization_status":{"type":"string"}},"required":["package","source_requirement","canonical_stack_provenance","authorization_status"],"additionalProperties":False}
+    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"},"minItems":1},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"execution_mode":{"type":"string","enum":list(PHASE_EXECUTION_MODES)},"requires_repo_mutation":{"type":"boolean"},"requires_dependency_installation":{"type":"boolean"},"package_json_config_mutation":{"type":"boolean"},"dependency_requirements":{"type":"array","items":dependency_record},"required_mcp":{"type":"array","items":{"type":"string"}},"selected_mcp":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":{"type":"object"}}},"required":["id","goal","status","done","verify","dependencies","risks","execution_mode"],"additionalProperties":False}
+    task = {"type":"object", "properties":{"task_id":{"type":"string"},"phase_id":{"type":"string"},"goal":{"type":"string"},"domain":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}},"required_context":{"type":"array","items":{"type":"string"}},"required_mcp":{"type":"array","items":{"type":"string"}},"selected_mcp":{"type":"array","items":{"type":"string"}},"change_scope":{"type":"array","items":{"type":"string"}},"verification":{"type":"array","items":{"type":"string"}},"done_condition":{"type":"array","items":{"type":"string"}},"retry_state":{"type":"object"}}, "required":["task_id","phase_id","goal","domain","depends_on","required_context","required_mcp","change_scope","verification","done_condition","retry_state"], "additionalProperties":False}
     manifest_entry={"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["create","modify","delete"]},"role":{"type":"string"},"required":{"type":"boolean"},"owner_phase":{"type":"string"}},"required":["path","action"],"additionalProperties":False}
     return {"type":"object","properties":{"schema_version":{"type":"integer","const":1},"original_goal":{"type":"string"},"scope":{"type":"object","properties":{"allowed":{"type":"array","items":{"type":"string"}},"forbidden":{"type":"array","items":{"type":"string"}}},"required":["allowed","forbidden"],"additionalProperties":False},"assumptions":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":manifest_entry,"maxItems":100},"phases":{"type":"array","items":phase,"minItems":1,"maxItems":8},"tasks":{"type":"array","items":task,"maxItems":15},"max_retries_per_phase":{"type":"integer","const":2},"requires_user_approval":{"type":"boolean","const":True}},"required":["schema_version","original_goal","scope","assumptions","phases","max_retries_per_phase","requires_user_approval"],"additionalProperties":False}
 
@@ -902,6 +1477,10 @@ def validate_plan(value: Any, goal: str) -> list[str]:
         if contract_errors:
             return contract_errors
     if any(dep not in ids for phase in value["phases"] for dep in phase["dependencies"]): return ["unknown phase dependency"]
+    graph_diagnostics = graph_validation_diagnostics(value)
+    first_graph_error = graph_diagnostics.get("first_error") or {}
+    if first_graph_error.get("error_kind") == "PHASE_DEPENDENCY_CYCLE":
+        return ["phase dependency cycle"]
     if "tasks" in value:
         task_phase_ids=[task.get("phase_id") for task in value["tasks"]]
         if any(not isinstance(phase_id,str) or phase_id not in ids for phase_id in task_phase_ids):
@@ -937,12 +1516,60 @@ def phase_execution_contract_errors(phase: Mapping[str, Any]) -> list[str]:
         )
         if any(phase.get(key) is True for key in contradictory):
             return ["verification-only phase contradicts mutation metadata"]
+        # Browser/devtools MCPs are verification evidence, not mutation
+        # metadata.  Permit them on verification-only phases while keeping
+        # implementation MCPs (shadcn/animejs/etc.) fail-closed.
+        verification_mcps = {"playwright"}
+        mcp_values = list(phase.get("required_mcp") or []) + list(phase.get("selected_mcp") or [])
+        if any(str(server).lower() not in verification_mcps for server in mcp_values):
+            return ["verification-only phase has implementation MCP metadata"]
         for entry in phase.get("file_manifest") or []:
             if isinstance(entry, Mapping) and entry.get("action") in {"create", "modify", "delete"}:
                 return ["verification-only phase contains a mutation manifest entry"]
     if mode == "IMPLEMENTATION_AND_VERIFICATION" and not phase.get("verify"):
         return ["implementation-and-verification phase requires verification criteria"]
     return []
+
+
+def repair_phase_complexity(plan: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Repair only the safe internal verification-criteria omission.
+
+    Normalization can merge a verification phase after the Planner schema has
+    already passed.  Supplying a typed criterion keeps that internal repair
+    bounded; execution still needs authoritative verification evidence before
+    the phase can pass.
+    """
+    if not isinstance(plan, dict):
+        return plan, []
+    changes: list[str] = []
+    phases: list[dict[str, Any]] = []
+    for value in plan.get("phases") or []:
+        if not isinstance(value, dict):
+            phases.append(value)
+            continue
+        phase = dict(value)
+        if phase.get("execution_mode") == "VERIFICATION_ONLY" and not phase.get("verify"):
+            phase["verify"] = ["read-only verification evidence collected"]
+            changes.append(f"{phase.get('id', 'UNKNOWN')}:added_verification_criterion")
+        phases.append(phase)
+    return ({**plan, "phases": phases}, changes) if changes else (plan, [])
+
+
+def phase_executor_capability(phase: Mapping[str, Any]) -> dict[str, Any]:
+    """Check typed phase actions against the executors OLCR actually has."""
+    missing: list[dict[str, str]] = []
+    if phase.get("requires_dependency_installation") is True:
+        # A package.json write alone is never installation evidence.  The
+        # typed package executor is available only when the phase carries a
+        # canonical package authorization contract.
+        executor = phase.get("package_manager_executor")
+        authorized = phase.get("authorized_package_requirements")
+        if executor != "AUTHORIZED_PACKAGE_MANAGER" or not authorized:
+            missing.append({"kind": "DEPENDENCY_INSTALLATION", "executor": "PACKAGE_MANAGER_COMMAND", "reason": "NO_AUTHORIZED_PACKAGE_MANAGER_EXECUTOR"})
+    available = ["STRUCTURED_FILE_OPERATIONS", "READ_ONLY_VERIFICATION_COMMAND", "ALLOWLISTED_MCP_TOOLS"]
+    if phase.get("package_manager_executor") == "AUTHORIZED_PACKAGE_MANAGER" and phase.get("authorized_package_requirements"):
+        available.append("AUTHORIZED_PACKAGE_MANAGER")
+    return {"executable": not missing, "missing": missing, "available": available}
 
 
 def validate_fix_plan_quality(value: Any, requirements: Mapping[str, Any] | None = None) -> list[str]:
@@ -1062,6 +1689,15 @@ def _criterion_satisfied(criterion: str, report: dict[str, Any], typed: dict[str
             return True, False
 
     lower = criterion.lower()
+    if any(token in lower for token in ("install", "dependency", "npm", "package manager", "パッケージ", "依存")):
+        package_installs = [op for op in successful_ops
+                            if str(op.get("tool") or "") == "package_install"
+                            and str(op.get("status") or "").lower() in {"success", "completed", "ok"}]
+        if package_installs and all((op.get("output") or {}).get("exit_code") == 0 for op in package_installs):
+            return True, False
+        # A package.json mutation is intentionally insufficient evidence.  A
+        # missing package_install event is a required action that was not run.
+        return False, not any(str(op.get("tool") or "") == "package_install" for op in successful_ops)
     if any(token in lower for token in ("test", "pytest", "cargo check", "typecheck", "build")):
         if report.get("test_fail") or report.get("build_pass") in {"FAIL", "NOT_RUN"}:
             return False, report.get("build_pass") == "NOT_RUN"
@@ -1148,6 +1784,20 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
     aggregate_typed = {"operations": successful_ops, "state": report.get("typed_execution_summary", {}).get("state") if isinstance(report.get("typed_execution_summary"), dict) else ""}
     done_flags = [_criterion_satisfied(item, report, aggregate_typed, successful_ops, file_state) for item in done]
     verify_flags = [_criterion_satisfied(item, report, aggregate_typed, successful_ops, file_state) for item in verify]
+    required_not_run_ids = [f"DONE:{index + 1}" for index, flag in enumerate(done_flags) if flag[1]]
+    required_not_run_ids.extend(f"VERIFY:{index + 1}" for index, flag in enumerate(verify_flags) if flag[1])
+    required_not_run_kinds = [item.split(":", 1)[0] for item in required_not_run_ids]
+    required_not_run_executor_capability = []
+    for criterion, flag in [*zip(done, done_flags), *zip(verify, verify_flags)]:
+        if not flag[1]:
+            continue
+        lower = criterion.lower()
+        if any(token in lower for token in ("install", "dependency", "npm", "package")):
+            required_not_run_executor_capability.append("PACKAGE_MANAGER_COMMAND")
+        elif any(token in lower for token in ("build", "test", "pytest", "typecheck", "playwright", "browser")):
+            required_not_run_executor_capability.append("VERIFICATION_COMMAND_OR_MCP")
+        else:
+            required_not_run_executor_capability.append("TYPED_PHASE_EXECUTOR")
     done_satisfied = [item for item, (ok, _) in zip(done, done_flags) if ok]
     verify_satisfied = [item for item, (ok, _) in zip(verify, verify_flags) if ok]
     done_unmet = [item for item, (ok, _) in zip(done, done_flags) if not ok]
@@ -1190,6 +1840,9 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
             "allowed_decisions": allowed, "file_state": file_state,
             "successful_typed_operation_count": len(successful_ops), "required_mcp": required_mcp,
             "used_mcp": sorted(used_mcp), "missing_mcp": missing_mcp,
+            "required_not_run_ids": required_not_run_ids,
+            "required_not_run_kinds": sorted(set(required_not_run_kinds)),
+            "required_not_run_executor_capability": sorted(set(required_not_run_executor_capability)),
             "acceptance": acceptance_results, "missing_acceptance": missing_acceptance}
 
 
@@ -1300,13 +1953,21 @@ def plan_prompt(goal: str, execution_mode: str = "NORMAL", mutation_mode: str = 
             '{"schema_version":1,"original_goal":"<goal>","scope":{"allowed":["..."],"forbidden":["..."]},"assumptions":[],"phases":[{"id":"p1","goal":"...","status":"pending","done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],"max_retries_per_phase":2,"requires_user_approval":true}. '
             "Schema: {schema_version:1,original_goal:string,scope:{allowed:[string],forbidden:[string]},assumptions:[string],"
             "phases:[{id:string,goal:string,status:'pending',done:[string],verify:[string],dependencies:[string],risks:[string],execution_mode:'IMPLEMENTATION|VERIFICATION_ONLY|IMPLEMENTATION_AND_VERIFICATION'}],"
-            "file_manifest:[{path:string,action:'create|modify|delete',role:string,required:boolean,owner_phase:string}] when concrete files are known,"
+            "file_manifest:[{path:string,action:'create|modify|delete',role:string,required:boolean,owner_phase:string}] when concrete files are known. The orchestrator preflight supplies a bounded workspace_state filesystem snapshot: action=create is for a missing target in a confirmed greenfield/new-project workspace, action=modify requires the target to already exist, and action=delete requires the target to already exist. Never infer that a conventional Vite path exists from its name; do not use read-only evidence as a mutable target. "
             "max_retries_per_phase:2,requires_user_approval:true}. " + mode_instruction + (" For LARGE tasks, file_manifest is required: list every intended file with a relative path and action before implementation; do not use broad directory globs." if task_size == "LARGE" else "") + " Include a tasks array with exactly one task per phase. "
             "Set execution_mode explicitly for every new phase. Use IMPLEMENTATION when repository mutation is required; VERIFICATION_ONLY only when no mutation, artifact creation, installation, migration, MCP mutation, external side effect, authorization-sensitive side effect, or write operation is required and deterministic verification is available; use IMPLEMENTATION_AND_VERIFICATION when both mutation and deterministic verification are required. Never infer this field from verification command tokens."
-            "Every task must have a unique task_id and phase_id exactly matching its phase id; task dependencies must mirror the phase dependencies. Goal: "+goal)
+            "Every task must have a unique task_id and phase_id exactly matching its phase id; task dependencies must mirror the phase dependencies. "
+            "When a phase needs dependency installation, set requires_dependency_installation:true; PACKAGE_INSTALL owns dependency declarations in package.json. "
+            "Set package_json_config_mutation:true only for an explicitly requested non-install script/config change. "
+            "MUTATION_SCOPE_MODEL=EXACT_FILE_MANIFEST. The file_manifest is the complete mutable authorization contract. "
+            "CANONICAL_STACK_PROFILE=VITE_REACT_FRONTEND_WHEN_FRONTEND_PROFILE. "
+            "CANONICAL_BOOTSTRAP_ARTIFACTS=index.html,src/main.tsx,src/App.tsx,src/index.css when the confirmed stack is Vite/React. "
+            "REQUIRE_ALL_IMPLEMENTATION_FILES_IN_MANIFEST=true. Every concrete file referenced by a phase or task must be present in file_manifest before scaffold; unknown semantic names never authorize a guessed path. "
+            "For componentized or sectioned UI work, enumerate every implementation-created file explicitly in file_manifest (for example src/components/Hero.tsx); do not rely on the Implementer to invent paths. Goal: "+goal)
 
 
-def plan_repair_prompt(goal: str, invalid: str, errors: list[str] | None = None) -> str:
+def plan_repair_prompt(goal: str, invalid: str, errors: list[str] | None = None,
+                       graph_diagnostics: Mapping[str, Any] | None = None) -> str:
     return ("Return only corrected JSON for the existing read-only coding plan. Do not add work, edit files, "
             "or change the original goal. Correct schema and formatting only. JSON object only: no markdown, fence, "
             "preamble, or trailing explanation. Required schema is exactly: "
@@ -1317,6 +1978,8 @@ def plan_repair_prompt(goal: str, invalid: str, errors: list[str] | None = None)
             "Preserve or repair each phase execution_mode explicitly; do not infer it from goal or verification command text. "
             "Keep 1-8 unique phases, preserve intended scope and phase meaning. Original goal: " + goal +
             "\nValidator errors: " + json.dumps(errors or [], ensure_ascii=False) +
+            "\nGraph diagnostics (authoritative; repair the exact reference and preserve namespaces): " +
+            json.dumps(graph_diagnostics or {}, ensure_ascii=False, sort_keys=True) +
             "\nInvalid draft: " + invalid[:12000])
 
 

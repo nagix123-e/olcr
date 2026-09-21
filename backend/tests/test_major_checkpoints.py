@@ -243,6 +243,17 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
         self.assertEqual("RESUMABLE", after["status"])
         self.assertTrue(after["approved_scopes"])
 
+    def test_final_graph_cycle_fails_closed_before_execution(self):
+        saved = self.prepare()
+        cyclic = copy.deepcopy(saved["plan"])
+        cyclic["phases"][0]["dependencies"] = [cyclic["phases"][1]["id"]]
+        api.db.update_coding_task("task", plan=cyclic, status="QUEUED")
+        with patch.object(api.runtime, "execute", side_effect=AssertionError("must stop before implementation")):
+            response = api._run_managed_task("task", self.tmp.name)
+        self.assertIn("final dependency graph validation failed", response)
+        self.assertEqual("BLOCKED", api.db.coding_task("task")["status"])
+        self.assertEqual("FINAL_GRAPH_VALIDATION", api.db.coding_task("task")["recovery_reason"])
+
     def test_replan_cannot_reintroduce_a_giant_unfinished_phase(self):
         saved = self.prepare()
         replacement = copy.deepcopy(saved["plan"])

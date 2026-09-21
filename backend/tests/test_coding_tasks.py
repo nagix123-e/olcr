@@ -1,9 +1,12 @@
+import io
+import json
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from contextlib import redirect_stderr
 
 from fastapi.testclient import TestClient
 
@@ -13,7 +16,12 @@ from olcr_api.coding_tasks import (coding_candidate, extract_plan_json, manager_
                                    validate_plan, evaluate_phase, classify_waiting_input, coding_action_intent,
                                    compact_normal_plan, classify_coding_request, coding_classification_diagnostics,
                                    classify_mutation_mode, plan_prompt, canonical_coding_requirements,
-                                   normalize_coding_requirements)
+                                   normalize_coding_requirements, canonical_dependency_requirements, canonical_technology_requirements,
+                                   dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements,
+                                   phase_execution_contract_errors,
+                                   normalize_replan_graph, ensure_explicit_phase_execution_modes,
+                                   phase_executor_capability, repair_phase_complexity,
+                                   graph_validation_diagnostics, reconcile_graph_references)
 from olcr_api.db import Database
 from olcr_api.models import Route, Task, TaskState
 
@@ -40,6 +48,18 @@ class CodingTaskDatabaseTests(unittest.TestCase):
         self.assertEqual("IMPLEMENTATION", classify_mutation_mode("HeroにAnime.jsのアニメーションを新しく追加して")[0])
         self.assertIn("exactly one phase", plan_prompt("ボタンが動かないので直して", mutation_mode="FIX"))
 
+    def test_verification_only_missing_criteria_gets_bounded_internal_repair(self):
+        value, changes = repair_phase_complexity({"phases": [{"id": "p1", "execution_mode": "VERIFICATION_ONLY",
+                                                               "done": ["check complete"], "verify": []}]})
+        self.assertEqual(["read-only verification evidence collected"], value["phases"][0]["verify"])
+        self.assertEqual(["p1:added_verification_criterion"], changes)
+        self.assertEqual([], phase_execution_contract_errors(value["phases"][0]))
+
+    def test_plan_prompt_declares_exact_file_manifest_contract(self):
+        prompt = plan_prompt("Build a componentized Vite React site", task_size="LARGE")
+        self.assertIn("MUTATION_SCOPE_MODEL=EXACT_FILE_MANIFEST", prompt)
+        self.assertIn("REQUIRE_ALL_IMPLEMENTATION_FILES_IN_MANIFEST=true", prompt)
+
     def test_requirement_normalization_ignores_future_fix_and_descriptive_architecture(self):
         request="""# Current Task
 This initial task is IMPLEMENTATION, not FIX. ReactでOLCRの新しいmarketing websiteを作成する。
@@ -58,6 +78,49 @@ backend/databaseの失敗も検証する。"""
         self.assertEqual("FRONTEND_ONLY_MARKETING_SITE", requirements["task_profile"])
         self.assertEqual("NORMAL", requirements["execution_mode"])
         self.assertEqual(["animejs", "shadcn", "playwright"], requirements["required_mcps"])
+
+    def test_canonical_dependencies_are_structured_and_assigned_to_active_phase(self):
+        requirements = canonical_coding_requirements(
+            "Create a Vite React TypeScript Tailwind shadcn Anime.js v4 marketing site from scratch."
+        )
+        records = canonical_dependency_requirements(requirements)
+        self.assertEqual(10, len(records))
+        self.assertIn("animejs@4", dependency_requirement_specs(records))
+        self.assertEqual(["animejs@4", "react", "react-dom"], sorted(
+            spec for spec in dependency_requirement_specs(records) if spec in {"animejs@4", "react", "react-dom"}))
+        technologies = canonical_technology_requirements(requirements)
+        shadcn = next(item for item in technologies if item["technology"] == "shadcn")
+        self.assertEqual("MCP_MANAGED_TOOLING", shadcn["semantic_type"])
+        self.assertIsNone(shadcn["package"])
+        self.assertNotIn("@shadcn/ui", dependency_requirement_specs(records))
+        operations = dependency_install_operations(records)
+        self.assertEqual(["dependencies", "devDependencies"], [item["dependency_kind"] for item in operations])
+        plan_value = {"phases": [
+            {"id": "p1", "goal": "Implement the application", "status": "pending",
+             "done": ["files"], "verify": ["checks"], "dependencies": [], "risks": [],
+             "execution_mode": "IMPLEMENTATION"},
+            {"id": "p2", "goal": "Browser verification", "status": "pending",
+             "done": ["browser"], "verify": ["browser"], "dependencies": ["p1"], "risks": [],
+             "execution_mode": "VERIFICATION_ONLY"},
+        ]}
+        normalized, changes = associate_dependency_requirements(plan_value, requirements)
+        self.assertTrue(changes)
+        self.assertEqual(10, len(normalized["phases"][0]["dependency_requirements"]))
+        self.assertTrue(normalized["phases"][0]["requires_dependency_installation"])
+        self.assertNotIn("dependency_requirements", normalized["phases"][1])
+
+    def test_dependency_requirements_with_explicit_phase_do_not_run_in_other_phase(self):
+        requirements = {"dependency_requirements": [{"package": "react", "source_requirement": "required_stack",
+                                                        "canonical_stack_provenance": "React", "phase_id": "p2"}]}
+        plan_value = {"phases": [
+            {"id": "p1", "goal": "Implement files", "status": "pending", "done": ["files"],
+             "verify": ["checks"], "dependencies": [], "risks": [], "execution_mode": "IMPLEMENTATION"},
+            {"id": "p2", "goal": "Install dependencies", "status": "pending", "done": ["install"],
+             "verify": ["checks"], "dependencies": ["p1"], "risks": [], "execution_mode": "IMPLEMENTATION"},
+        ]}
+        normalized, _ = associate_dependency_requirements(plan_value, requirements)
+        self.assertNotIn("dependency_requirements", normalized["phases"][0])
+        self.assertEqual("p2", normalized["phases"][1]["dependency_requirements"][0]["phase_id"])
 
     def test_normalizer_structured_input_isolates_typed_project_and_history(self):
         normalized = normalize_coding_requirements({
@@ -103,6 +166,57 @@ backend/databaseの失敗も検証する。"""
         self.assertFalse(report_has_authoritative_failure(report,plan("fix sample")["phases"][0]))
         self.assertTrue(report_has_authoritative_failure({**report,"status":"FAIL"},plan("fix sample")["phases"][0]))
         self.assertTrue(report_has_authoritative_failure(report,{**plan("fix sample")["phases"][0],"verify":["run test"]}))
+
+    def test_canonical_phase_modes_are_materialized_without_text_inference(self):
+        value, changes = ensure_explicit_phase_execution_modes({"phases": [
+            {"id": "p1", "goal": "arbitrary", "done": ["done"], "verify": ["check"], "dependencies": [], "risks": []},
+            {"id": "p2", "goal": "arbitrary", "done": ["done"], "verify": ["check"], "dependencies": [], "risks": [],
+             "requires_repo_mutation": False, "required_mcp": ["playwright"]},
+        ]})
+        self.assertEqual(["IMPLEMENTATION", "VERIFICATION_ONLY"], [item["execution_mode"] for item in value["phases"]])
+        self.assertEqual(["p1:IMPLEMENTATION", "p2:VERIFICATION_ONLY"], changes)
+
+    def test_dependency_installation_requires_an_authorized_executor(self):
+        capability = phase_executor_capability({"requires_dependency_installation": True})
+        self.assertFalse(capability["executable"])
+        self.assertEqual("PACKAGE_MANAGER_COMMAND", capability["missing"][0]["executor"])
+
+    def test_no_dependency_contract_does_not_assign_package_installation(self):
+        plan_value = {"phases": [{"id": "p1", "goal": "Fix a source file", "status": "pending",
+                                   "done": ["file fixed"], "verify": ["read back"], "dependencies": [],
+                                   "risks": [], "execution_mode": "IMPLEMENTATION"}]}
+        normalized, changes = associate_dependency_requirements(plan_value, {"required_stack": []})
+        self.assertEqual([], changes)
+        self.assertNotIn("requires_dependency_installation", normalized["phases"][0])
+
+    def test_required_not_run_reports_typed_ids_and_executor_capability(self):
+        phase = {"id": "p1", "done": ["npm install completed"],
+                 "verify": ["build passes"], "dependencies": [], "risks": []}
+        report = {"phase_id": "p1", "plan_revision": 0, "status": "NOT_RUN",
+                  "errors": [], "blockers": [], "test_fail": [],
+                  "test_executed": [], "build_executed": "NOT_RUN", "build_pass": "NOT_RUN"}
+        evidence = evaluate_phase(phase, report)
+        self.assertEqual(["DONE:1", "VERIFY:1"], evidence["required_not_run_ids"])
+        self.assertEqual(["DONE", "VERIFY"], evidence["required_not_run_kinds"])
+        self.assertEqual(["PACKAGE_MANAGER_COMMAND", "VERIFICATION_COMMAND_OR_MCP"],
+                         evidence["required_not_run_executor_capability"])
+
+    def test_package_json_edit_does_not_claim_dependency_installation(self):
+        phase = {"id": "p1", "done": ["npm install completed"], "verify": ["dependencies available"]}
+        report = {"phase_id": "p1", "plan_revision": 0, "status": "PASS", "errors": [],
+                  "blockers": [], "test_fail": [], "test_executed": [],
+                  "build_executed": "NOT_RUN", "build_pass": "NOT_RUN",
+                  "typed_execution_summary": {"operations": [{
+                      "tool": "workspace_write", "status": "success",
+                      "output": {"path": "package.json"}}]}}
+        evidence = evaluate_phase(phase, report)
+        self.assertFalse(evidence["phase_complete"])
+        self.assertIn("npm install completed", evidence["done_unmet"])
+        installed = {**report, "typed_execution_summary": {"operations": [{
+            "tool": "package_install", "status": "success",
+            "output": {"path": "package.json", "exit_code": 0}}]}}
+        installed_evidence = evaluate_phase(phase, installed)
+        self.assertEqual(1, installed_evidence["done_satisfied"])
 
     def test_static_site_is_normal_and_empty_dedicated_verify_is_valid(self):
         request="Create a simple two-page static HTML website using index.html, links.html and styles.css, with responsive accessibility. No framework, backend, database, or dependencies."
@@ -339,6 +453,24 @@ class CodingTaskApiTests(unittest.TestCase):
         self.assertTrue(facts["explicit_non_coding"])
         self.assertFalse(facts["mutation_intent"])
 
+    def test_local_diagnostic_negations_are_read_only_and_non_coding(self):
+        request = "Do not implement. Do not modify files. Do not use MCP. Do not use web access. Do not fetch external data. Inspect only locally persisted OLCR task state."
+        facts = coding_classification_diagnostics(request)
+        self.assertEqual("NON_CODING", facts["classification"])
+        self.assertEqual("LOCAL_DIAGNOSTIC_READ_ONLY", facts["reason"])
+        self.assertFalse(facts["mutation_intent"])
+        self.assertFalse(coding_candidate(request))
+
+    def test_local_diagnostic_does_not_route_external_data(self):
+        request = "Do not implement. Do not modify files. Do not use MCP. Do not use web access. Do not fetch external data. Inspect only locally persisted OLCR task state."
+        execution = Task(request, route=Route.DIRECT, state=TaskState.COMPLETED)
+        with patch.object(api, "route_external_tool", side_effect=AssertionError("external matcher called")), \
+             patch.object(api, "router_decision", side_effect=AssertionError("external router called")), \
+             patch.object(api.runtime, "execute", return_value=(execution, "ローカルのタスク状態を確認しました")):
+            response = self.client.post("/api/chat", json={"project_id": self.project, "message": request})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("ローカルのタスク状態を確認しました", response.json()["response"])
+
     def test_mutation_requests_remain_coding_and_contradictions_are_ambiguous(self):
         self.assertEqual("CODING", classify_coding_request("この機能を実装して"))
         self.assertEqual("CODING", classify_coding_request("このReact画面を修正して"))
@@ -525,6 +657,55 @@ class CodingTaskApiTests(unittest.TestCase):
         finally: api.runtime=old_runtime
         self.assertEqual([],validate_plan(parsed,goal))
         self.assertEqual(2,len(fake.model.calls));self.assertEqual(plan_schema(),fake.model.calls[0]);self.assertEqual(plan_schema(),fake.model.calls[1])
+
+    def test_schema_repair_same_graph_error_is_bounded_and_reported(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="graph-no-progress"; goal="fix sample"
+        invalid=plan(goal)
+        invalid["phases"][1]["dependencies"]=["missing-phase"]
+        class Model:
+            def __init__(self): self.calls=0
+            def generate(self,messages,model,think=False,**kwargs):
+                self.calls += 1
+                return {"text":json.dumps(invalid)}
+        class Runtime: pass
+        fake=Runtime(); fake.model=Model()
+        api.db.create_coding_task(task_id,conversation,goal,"PLANNING","QWEN_PLANNING",None,time.time())
+        old_runtime=api.runtime; api.runtime=fake
+        output=io.StringIO()
+        try:
+            with redirect_stderr(output):
+                parsed,_=api._generate_plan(task_id,goal,"planning","QWEN_PLANNING")
+        finally:
+            api.runtime=old_runtime
+        self.assertIsNone(parsed)
+        self.assertEqual(2,fake.model.calls)
+        self.assertIn("OFFENDING_PHASE_ID=p2",output.getvalue())
+        self.assertIn("OFFENDING_DEPENDENCY_REF=missing-phase",output.getvalue())
+        self.assertIn("PLAN_SCHEMA_REPAIR_NO_PROGRESS=YES",output.getvalue())
+
+    def test_deterministic_graph_repair_avoids_schema_repair_call(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="graph-deterministic-repair"; goal="fix sample"
+        repaired=plan(goal)
+        repaired["phases"][1]["dependencies"]=["old-p1"]
+        repaired["graph_replacement_map"]={"phase_ids":{"old-p1":"p1"},"task_ids":{}}
+        class Model:
+            def __init__(self): self.calls=0
+            def generate(self,messages,model,think=False,**kwargs):
+                self.calls += 1
+                return {"text":json.dumps(repaired)}
+        class Runtime: pass
+        fake=Runtime(); fake.model=Model()
+        api.db.create_coding_task(task_id,conversation,goal,"PLANNING","QWEN_PLANNING",None,time.time())
+        old_runtime=api.runtime; api.runtime=fake
+        try:
+            parsed,_=api._generate_plan(task_id,goal,"planning","QWEN_PLANNING")
+        finally:
+            api.runtime=old_runtime
+        self.assertIsNotNone(parsed)
+        self.assertEqual(1,fake.model.calls)
+        self.assertEqual(["p1"],parsed["phases"][1]["dependencies"])
     def test_task_id_is_returned_before_scheduler_model_work_and_pause_is_resumable(self):
         with patch.object(api._coding_scheduler_wake,"set") as wake:
             response=self.client.post("/api/chat",json={"project_id":self.project,"message":"このリポジトリを修正して"})
@@ -740,6 +921,80 @@ class CodingTaskApiTests(unittest.TestCase):
         self.assertEqual("WAITING_FOR_USER",saved["status"])
         self.assertEqual("REPLAN_INEFFECTIVE",saved["recovery_reason"])
 
+    def test_ineffective_non_structural_replan_does_not_advance_phase_cursor(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="ineffective-non-structural-replan"; goal="fix sample"; current=plan(goal)
+        api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
+        class Model:
+            def generate(self,messages,model,think=False): return {"text":__import__("json").dumps(current)}
+        class Runtime: model=Model()
+        old_runtime=api.runtime; api.runtime=Runtime()
+        try:
+            result=api._replan_task(task_id,api.db.coding_task(task_id),set(),"retry limit reached")
+        finally: api.runtime=old_runtime
+        saved=api.db.coding_task(task_id)
+        self.assertIn("再計画では問題を解消できませんでした",result)
+        self.assertEqual("WAITING_FOR_USER",saved["status"])
+        self.assertEqual("p1",saved["current_phase_id"])
+        self.assertEqual("REPLAN_INEFFECTIVE",saved["recovery_reason"])
+
+    def test_repeated_zero_write_scope_rejection_terminates_without_replanning(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="zero-progress-scope"; goal="fix sample"; current=plan(goal)
+        api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
+        for attempt in (0, 1):
+            report={
+                "phase_id":"p1", "attempt":attempt, "status":"FAIL", "implemented":[], "changed_files":[],
+                "test_executed":[], "test_pass":[], "test_fail":[], "build_executed":"NOT_RUN", "build_pass":"NOT_RUN",
+                "errors":["target outside authorized mutation scope"], "blockers":[], "risks":[],
+                "attempted_mutations":1, "accepted_mutations":0, "rejected_mutations":1, "files_written":0,
+                "phase_progress":False, "no_progress":True,
+                "typed_execution_summary":{
+                    "state":"failed", "error":"target outside authorized mutation scope",
+                    "operations":[{"tool":"operation_rejection", "status":"rejected", "input":{"path":"tests/test_math.py"}, "output":{"failure":"target outside authorized mutation scope"}}],
+                    "rejected_operations":[{"category":"OPERATION_SCHEMA_SEMANTIC_ERROR", "path":"tests/test_math.py", "reason":"target outside authorized mutation scope"}],
+                    "accepted_mutations":0, "files_written":0, "phase_progress":False,
+                },
+                "manager_decision":{"decision":"RETRY","reason":"scope rejection"},
+            }
+            api.db.add_coding_phase_report(task_id,"p1",attempt,report,"PASS",time.time())
+        result=api._replan_task(task_id,api.db.coding_task(task_id) or {},set(),"retry limit reached")
+        saved=api.db.coding_task(task_id)
+        self.assertIn("no filesystem progress",result)
+        self.assertEqual("BLOCKED",saved["status"])
+        self.assertEqual("NO_PROGRESS",saved["recovery_reason"])
+
+    def test_malformed_replans_consume_bounded_task_recovery_budget(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="bounded-malformed-replans"; goal="fix sample"; current=plan(goal)
+        api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
+        with patch.object(api, "_generate_plan", return_value=(None, None)):
+            first=api._replan_task(task_id,api.db.coding_task(task_id),set(),"implementation failed")
+            saved_first=api.db.coding_task(task_id)
+            second=api._replan_task(task_id,saved_first,set(),"implementation failed")
+            saved_second=api.db.coding_task(task_id)
+            third=api._replan_task(task_id,saved_second,set(),"implementation failed")
+        self.assertIn("could not be validated", first)
+        self.assertIn("could not be validated", second)
+        self.assertIn("replan limit", third)
+        self.assertEqual(2,saved_second["replan_count_in_epoch"])
+
+    def test_different_zero_progress_failure_fingerprints_still_block_recovery(self):
+        conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id="different-zero-progress"; goal="fix sample"; current=plan(goal)
+        api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
+        for attempt, category in enumerate(("OPERATION_SCHEMA_SEMANTIC_ERROR", "PREIMAGE_MISMATCH")):
+            report={"phase_id":"p1", "attempt":attempt, "status":"FAIL", "changed_files":[],
+                    "errors":[category], "phase_progress":False, "accepted_mutations":0,
+                    "files_written":0, "manager_decision":{"decision":"RETRY"},
+                    "typed_execution_summary":{"state":"failed", "worktree_state":"UNCHANGED",
+                        "failure_class":category, "accepted_mutations":0, "files_written":0,
+                        "phase_progress":False, "rejected_operations":[]}}
+            api.db.add_coding_phase_report(task_id,"p1",attempt,report,"PASS",time.time())
+        result=api._replan_task(task_id,api.db.coding_task(task_id),set(),"retry limit reached")
+        self.assertIn("no filesystem progress",result)
+        self.assertEqual("NO_PROGRESS",api.db.coding_task(task_id)["recovery_reason"])
+
     def test_continuous_authorized_plan_requeues_without_plan_approval(self):
         conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
         task_id="continuous-plan"; goal="このrepoを確認して実装と検証まで連続して進めてください。途中確認は不要です。"
@@ -800,6 +1055,66 @@ class CodingTaskApiTests(unittest.TestCase):
         self.assertEqual(task_id,response.json()["coding_task_id"])
         self.assertEqual("QUEUED",api.db.coding_task(task_id)["status"])
         self.assertTrue(wake.called)
+
+    def test_verification_only_allows_playwright_but_rejects_mutation_mcp(self):
+        phase = {"execution_mode": "VERIFICATION_ONLY", "verify": ["browser smoke"], "required_mcp": ["playwright"]}
+        self.assertEqual([], phase_execution_contract_errors(phase))
+        self.assertEqual(["verification-only phase has implementation MCP metadata"],
+                         phase_execution_contract_errors({**phase, "required_mcp": ["animejs"]}))
+
+    def test_graph_diagnostics_identify_unknown_phase_dependency_and_namespace(self):
+        value = {"phases": [{"id": "p1", "dependencies": ["missing"], "goal": "implement"}],
+                 "tasks": [{"task_id": "t1", "phase_id": "p1", "depends_on": [], "goal": "implement"}]}
+        diagnostics = graph_validation_diagnostics(value)
+        self.assertFalse(diagnostics["valid"])
+        error = diagnostics["first_error"]
+        self.assertEqual("p1", error["offending_phase_id"])
+        self.assertEqual("missing", error["offending_dependency_ref"])
+        self.assertEqual("PHASE_ID", error["expected_reference_type"])
+        self.assertEqual(["p1"], diagnostics["declared_phase_ids"])
+        self.assertEqual(["t1"], diagnostics["declared_task_ids"])
+        self.assertTrue(error["fingerprint"])
+
+        task_ref = {"phases": [{"id": "p1", "dependencies": ["t1"], "goal": "implement"}],
+                    "tasks": [{"task_id": "t1", "phase_id": "p1", "depends_on": [], "goal": "implement"}]}
+        task_error = graph_validation_diagnostics(task_ref)["first_error"]
+        self.assertEqual("TASK_ID", task_error["dependency_ref_kind"])
+        self.assertEqual("TASK_ID_IN_PHASE_DEPENDENCY", task_error["error_kind"])
+
+    def test_graph_replacement_map_rewrites_references_without_dropping_unknown_edges(self):
+        value = {"phases": [{"id": "new-p1", "dependencies": []},
+                             {"id": "new-p2", "dependencies": ["old-p1"]}],
+                 "tasks": [{"task_id": "new-t1", "phase_id": "new-p1", "depends_on": []},
+                            {"task_id": "new-t2", "phase_id": "new-p2", "depends_on": ["old-t1"]}]}
+        normalized, changes, diagnostics = reconcile_graph_references(
+            value, {"phase_ids": {"old-p1": "new-p1"}, "task_ids": {"old-t1": "new-t1"}})
+        self.assertIn("phase:new-p2:old-p1->new-p1", changes)
+        self.assertIn("task:new-t2:old-t1->new-t1", changes)
+        self.assertEqual(["new-p1"], normalized["phases"][1]["dependencies"])
+        self.assertEqual(["new-t1"], normalized["tasks"][1]["depends_on"])
+        self.assertTrue(diagnostics["valid"])
+
+    def test_graph_cycle_is_rejected_after_reference_validation(self):
+        value = plan("cycle")
+        value["phases"][0]["dependencies"]=["p2"]
+        value["phases"][1]["dependencies"]=["p1"]
+        diagnostics = graph_validation_diagnostics(value)
+        self.assertEqual("PHASE_DEPENDENCY_CYCLE", diagnostics["first_error"]["error_kind"])
+        self.assertEqual(["phase dependency cycle"], validate_plan(value, "cycle"))
+
+    def test_replan_graph_preserves_unmapped_stale_dependencies_and_rebuilds_tasks(self):
+        value = {"phases": [{"id": "p1", "dependencies": ["missing"], "goal": "implement",
+                              "execution_mode": "IMPLEMENTATION"},
+                             {"id": "p2", "dependencies": ["p1"], "goal": "verify",
+                              "execution_mode": "VERIFICATION_ONLY"}],
+                 "tasks": [{"task_id": "stale", "phase_id": "p1", "depends_on": ["gone"]}]}
+        normalized, changes = normalize_replan_graph(value, ["playwright"])
+        self.assertIn("unresolved_graph_dependencies", changes)
+        self.assertIn("rebuilt_one_task_per_phase", changes)
+        self.assertEqual(["missing"], normalized["phases"][0]["dependencies"])
+        self.assertEqual({"p1", "p2"}, {item["phase_id"] for item in normalized["tasks"]})
+        self.assertEqual(["IMPLEMENTATION", "VERIFICATION_ONLY"],
+                         [item["execution_mode"] for item in normalized["phases"]])
 
 
 if __name__ == "__main__": unittest.main()

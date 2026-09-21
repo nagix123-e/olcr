@@ -2,7 +2,8 @@
 import re
 from copy import deepcopy
 
-from .coding_tasks import _current_task_text, _architecture_clauses, _phase_task, _merge_texts
+from .coding_tasks import (_current_task_text, _architecture_clauses, _phase_task, _merge_texts,
+                           PHASE_EXECUTION_MODES)
 
 
 def task_continuation_policy(goal: str, requirements: dict) -> dict:
@@ -101,6 +102,8 @@ def major_phase_plan(plan: dict, policy: dict) -> dict:
                 "done": routed["done"]["implementation"] or ["Approved deliverables implemented"],
                 "verify": routed["verify"]["implementation"] or ["Focused implementation checks pass"],
                 "required_mcp": [m for m in phase["required_mcp"] if m != "playwright"]}
+        if work.get("execution_mode") not in PHASE_EXECUTION_MODES:
+            work["execution_mode"] = "IMPLEMENTATION"
         # Mixed prose may be indivisible. Its original contract remains in the
         # blueprint; dispatch gets an explicit lifecycle boundary instead.
         if "inspection" in phase_lifecycle_stages(work) or "finalization" in phase_lifecycle_stages(work):
@@ -117,8 +120,14 @@ def major_phase_plan(plan: dict, policy: dict) -> dict:
             result[key] = _merge_texts([row.get(key) for row in rows])
         result["graph_context"] = {key: _merge_texts([row.get("graph_context", {}).get(key) for row in rows]) for key in ("required_context", "change_scope")}
         modes = {row.get("execution_mode") for row in rows if row.get("execution_mode") is not None}
-        if not (len(modes) == 1 and all(row.get("execution_mode") is not None for row in rows)):
-            result.pop("execution_mode", None)
+        if len(modes) == 1 and all(row.get("execution_mode") in PHASE_EXECUTION_MODES for row in rows):
+            result["execution_mode"] = next(iter(modes))
+        elif any(row.get("execution_mode") in {"IMPLEMENTATION_AND_VERIFICATION"} for row in rows):
+            result["execution_mode"] = "IMPLEMENTATION_AND_VERIFICATION"
+        else:
+            # Merged work rows are mutation-capable by construction.  Keep a
+            # valid explicit mode when older planner rows omitted it.
+            result["execution_mode"] = "IMPLEMENTATION"
         return result
 
     # Retain coherent deliverables. Only coalesce adjacent work when necessary
@@ -131,11 +140,14 @@ def major_phase_plan(plan: dict, policy: dict) -> dict:
         "goal": "Consolidated verification of the approved deliverables and focused corrections",
         "done": _merge_texts([p.get("done") for p in normalized]),
         "verify": _merge_texts([p.get("verify") for p in normalized]), "risks": [], "required_mcp": []}
+    final["execution_mode"] = "VERIFICATION_ONLY"
+    final["required_mcp"] = [m for m in _merge_texts([final.get("required_mcp")]) if m == "playwright"]
     phases = normalized + [final]
     blueprint = {"id": "major-blueprint", "kind": "ORCHESTRATOR_BLUEPRINT",
                  "goal": "Repository context, required MCP evidence and implementation blueprint",
                  "done": ["Validated implementation blueprint persisted with preflight evidence"],
-                 "verify": ["Blueprint and preflight evidence recorded"], "dependencies": [], "status": "pending", "risks": []}
+                 "verify": ["Blueprint and preflight evidence recorded"], "dependencies": [], "status": "pending", "risks": [],
+                 "execution_mode": "VERIFICATION_ONLY"}
     result = [blueprint]
     for index, phase in enumerate(phases, 1):
         result.append({**phase, "id": f"major-{index}", "dependencies": [result[-1]["id"]], "status": "pending"})

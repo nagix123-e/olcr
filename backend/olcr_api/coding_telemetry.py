@@ -84,13 +84,18 @@ class CodingTelemetry:
             "peak_memory_bytes": _rss(), "process_rss_start": _rss(), "process_rss_peak": _rss(), "process_rss_end": None,
             "swap_used_start": _swap(), "swap_used_end": None, "swap_delta_bytes": None, "calls": [], "phases": [],
             "prefix_cache_eligible": False, "prefix_cache_observed": "UNKNOWN", "stable_prefix_fingerprint": "", "stable_prefix_reuse_bytes": 0,
+            "model_provenance": {}, "request_options": {}, "request_options_observed": "UNKNOWN",
+            "coding_planner_model_effective": "UNKNOWN", "coding_planner_model_source": "UNKNOWN",
+            "coding_implementer_model_effective": "UNKNOWN", "coding_implementer_model_source": "UNKNOWN",
+            "application_main_model": "UNKNOWN", "application_main_model_used_for_coding": "UNKNOWN",
         }
         self._last_prefix = ""
         self._last_sections: dict[str, dict[str, Any]] = {}
         self._load_metric_seen = False
 
     def add_call(self, *, phase_id: str | None, role: str, model: str, messages: list[dict[str, Any]], result: dict[str, Any] | None,
-                 started: float, finished: float, structured: bool, thinking: bool, success: bool, failure_class: str = "NONE") -> dict[str, Any]:
+                 started: float, finished: float, structured: bool, thinking: bool, success: bool, failure_class: str = "NONE",
+                 model_provenance: dict[str, Any] | None = None) -> dict[str, Any]:
         result = result if isinstance(result, dict) else {}
         for key in ("model_runtime", "model_engine", "model_quantization"):
             if result.get(key): self.record[{"model_runtime":"model_runtime","model_engine":"model_engine","model_quantization":"model_quantization"}[key]] = result[key]
@@ -108,7 +113,25 @@ class CodingTelemetry:
               "stable_prefix_sections": [name for name in sections if name != "dynamic_context" and sections[name]["bytes"]], "stable_prefix_bytes": stable_bytes,
               "dynamic_suffix_bytes": sections["dynamic_context"]["bytes"], "structured_output_requested": structured, "thinking_requested": thinking,
               "success": bool(success), "failure_class": failure_class, "provider_metadata": {key: result.get(key) for key in ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration") if key in result},
+              "request_options": result.get("request_options", {"status": "NOT_RECORDED"}),
+              "model_provenance": model_provenance or result.get("model_provenance", {}),
               "prefix_fingerprint_match": stable_match, "prompt_sections": sections}
+        if call["request_options"] != {"status": "NOT_RECORDED"}:
+            self.record["request_options_observed"] = "YES"
+            self.record.setdefault("request_options", {})[role] = call["request_options"]
+        if call["model_provenance"]:
+            role_provenance = dict(call["model_provenance"])
+            role_provenance.setdefault("role", role)
+            self.record.setdefault("model_provenance", {})[role] = role_provenance
+            if role == "PLANNER":
+                self.record["coding_planner_model_effective"] = role_provenance.get("effective_model", "UNKNOWN")
+                self.record["coding_planner_model_source"] = role_provenance.get("source", "UNKNOWN")
+            if role == "IMPLEMENTER":
+                self.record["coding_implementer_model_effective"] = role_provenance.get("effective_model", "UNKNOWN")
+                self.record["coding_implementer_model_source"] = role_provenance.get("source", "UNKNOWN")
+            if role in {"PLANNER", "IMPLEMENTER"}:
+                self.record["application_main_model"] = role_provenance.get("application_main_model", "UNKNOWN")
+                self.record["application_main_model_used_for_coding"] = role_provenance.get("application_main_model_used_for_coding", "UNKNOWN")
         prompt_duration=result.get("prompt_eval_duration"); eval_duration=result.get("eval_duration")
         call["ttft_ms"]="NOT_AVAILABLE"
         call["prefill_tokens_per_sec"]=(input_tokens / (prompt_duration / 1_000_000_000)) if isinstance(input_tokens, (int,float)) and isinstance(prompt_duration, (int,float)) and prompt_duration > 0 else "NOT_AVAILABLE"

@@ -46,6 +46,45 @@ class ImplementationExecutionContractTests(unittest.TestCase):
         self.assertEqual("EXECUTED", report["implementation_result_kind"])
         self.assertEqual("PASS", report["status"])
 
+    def test_rejected_operation_is_typed_as_zero_progress(self):
+        task = Task("implementation")
+        task.transition(TaskState.ROUTING)
+        task.route = Route.IMPLEMENTATION
+        task.transition(TaskState.EXECUTING)
+        task.error = "target outside authorized mutation scope"
+        task.tool_executions.append({
+            "tool": "operation_rejection", "status": "rejected",
+            "input": {"op": "write", "path": "tests/test_math.py", "failure_class": "OPERATION_SCHEMA_SEMANTIC_ERROR"},
+            "output": {"failure": task.error, "authorized": False, "worktree_state": "UNCHANGED"},
+        })
+        task.transition(TaskState.FAILED)
+        report = api._report_from_execution(PHASE, 0, task, "")
+        self.assertEqual(1, report["attempted_mutations"])
+        self.assertEqual(0, report["accepted_mutations"])
+        self.assertEqual(1, report["rejected_mutations"])
+        self.assertEqual(0, report["files_written"])
+        self.assertTrue(report["no_progress"])
+        self.assertEqual("tests/test_math.py", report["typed_execution_summary"]["rejected_operations"][0]["path"])
+
+    def test_rolled_back_writes_are_not_final_mutation_progress(self):
+        task = Task("implementation")
+        task.transition(TaskState.ROUTING)
+        task.route = Route.IMPLEMENTATION
+        task.transition(TaskState.EXECUTING)
+        task.tool_executions.extend([
+            {"tool": "workspace_write", "status": "success", "output": {"path": "src/index.css"}},
+            {"tool": "operation_application_failure", "status": "failure",
+             "input": {"failure_class": "PREIMAGE_MISMATCH"},
+             "output": {"worktree_state": "ROLLED_BACK", "failure": "patch precondition failed"}},
+        ])
+        task.error = "patch precondition failed"
+        task.transition(TaskState.FAILED)
+        report = api._report_from_execution(PHASE, 0, task, "")
+        self.assertEqual(1, report["rolled_back_mutations"])
+        self.assertEqual(0, report["final_worktree_mutations"])
+        self.assertEqual([], report["changed_files"])
+        self.assertTrue(report["no_progress"])
+
     def test_browser_only_phase_is_explicitly_read_only(self):
         phase = {**PHASE, "goal": "browser verification", "done": ["browser checked"]}
         expectations = api._phase_execution_expectations(phase)

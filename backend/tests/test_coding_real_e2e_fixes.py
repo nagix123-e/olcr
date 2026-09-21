@@ -156,6 +156,33 @@ class ContinuationTests(unittest.TestCase):
         self.assertEqual('p2', api.db.coding_task('task')['current_phase_id'])
         self.assertEqual(1, api.db.coding_task('task')['retry_count'])
 
+    def test_manager_retry_after_progress_refreshes_live_preimages(self):
+        self.task('MANAGER_DECISION')
+        report = {'phase_id': 'p2', 'attempt': 0, 'plan_revision': 0, 'status': 'FAIL',
+                  'errors': ['patch precondition failed'],
+                  'manager_decision': {'decision': 'RETRY', 'reason': 'recoverable'},
+                  'accepted_mutations': 1, 'files_written': 1, 'phase_progress': True,
+                  'typed_execution_summary': {
+                      'state': 'failed', 'failure_class': 'PREIMAGE_MISMATCH',
+                      'worktree_state': 'ROLLED_BACK', 'accepted_mutations': 1,
+                      'files_written': 1, 'phase_progress': True,
+                      'preimage_diagnostics': [{
+                          'path': 'links.html', 'preimage_failure_reason': 'STALE_OLD_TEXT',
+                          'executor_actual_hash': 'actual', 'expected_old_hash': 'expected'}],
+                      'operations': []}}
+        api.db.add_coding_phase_report('task', 'p2', 0, report, 'PASS', time.time())
+        with patch.object(api._coding_scheduler_wake, 'set'):
+            self.client.post('/api/chat', json={'message': '続行', 'conversation_id': 'conversation', 'project_id': 'project'})
+        with patch.object(api, 'coding_knowledge_context_for_subtask', return_value=''), \
+             patch.object(api.runtime, 'execute', side_effect=RuntimeError('captured implementation')) as execute:
+            with self.assertRaisesRegex(RuntimeError, 'captured implementation'):
+                api.run_managed_task('task', self.tmp.name)
+        request = execute.call_args.args[0]
+        self.assertIn('Re-enumerate the current authorized files', request)
+        self.assertIn('rebuild every source hash and patch preimage from the live worktree', request)
+        self.assertIn('preimage_diagnostics', request)
+        self.assertIn('preserve successful prior mutations', request)
+
     def test_resume_cannot_bypass_exhausted_retry_budget(self):
         self.task('MANAGER_DECISION')
         for attempt in range(3):

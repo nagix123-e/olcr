@@ -14,6 +14,7 @@ from olcr_api.models import Task
 
 class ProjectContextTests(unittest.TestCase):
     def setUp(self):
+        api.start_coding_scheduler()
         self.tmp = tempfile.TemporaryDirectory(dir="/private/tmp")
         self.old_db = api.db
         api.db = Database(str(Path(self.tmp.name) / "context.sqlite")); api.db.initialize()
@@ -24,11 +25,20 @@ class ProjectContextTests(unittest.TestCase):
         self.client = TestClient(api.app)
 
     def tearDown(self):
+        api.stop_coding_scheduler()
         api.db = self.old_db
         self.tmp.cleanup()
+        api.start_coding_scheduler()
 
     def send(self, conversation, project, message, **extra):
         return self.client.post("/api/chat", json={"conversation_id": conversation, "project_id": project, "message": message, **extra})
+
+    def test_scheduler_shutdown_is_joinable_and_idempotent(self):
+        api.stop_coding_scheduler()
+        self.assertIsNone(api._coding_scheduler_thread)
+        api.stop_coding_scheduler()
+        api.start_coding_scheduler()
+        self.assertTrue(api._coding_scheduler_thread.is_alive())
 
     def test_context_survives_reload_and_is_used_for_image_follow_up(self):
         with patch.object(api.runtime, "execute", return_value=(Task("first"), "noted")):

@@ -80,7 +80,9 @@ class BenchmarkProfileTests(unittest.TestCase):
         self.assertEqual("HEAVY_BATCHED", task_profile("React frontend + FastAPI backend + SQLite database")["EXECUTION_MODE"])
 
     def test_full_benchmark_prompt_keeps_backend_and_database_forbidden(self):
-        requirements = canonical_coding_requirements(BENCHMARK)
+        requirements = {**canonical_coding_requirements(BENCHMARK),
+                         "required_mcps": ["animejs", "shadcn", "playwright"],
+                         "required_mcp": ["animejs", "shadcn", "playwright"]}
         self.assertEqual(["frontend"], requirements["required_capabilities"])
         self.assertEqual(["backend", "database"], requirements["forbidden_capabilities"])
         self.assertEqual("FRONTEND_ONLY_MARKETING_SITE", requirements["task_profile"])
@@ -222,6 +224,51 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertEqual("複数の回復可能な Coding Task があるため、対象を選択してください。", response.json()["response"])
         wake.assert_not_called()
 
+    def test_ordinary_chat_does_not_auto_resume_resumable_task(self):
+        task = api.db.create_coding_task("ordinary-chat", "conversation", "fix repository", "RESUMABLE", "NONE", plan("fix repository"), time.time())
+        execution = Task("normal chat", route=Route.NEURAL, state=TaskState.COMPLETED)
+        with patch.object(api.runtime, "execute", return_value=(execution, "43 is ordinary chat")) as brain, \
+             patch.object(api._coding_scheduler_wake, "set") as wake:
+            response = self.client.post("/api/chat", json={"project_id": "project", "conversation_id": "conversation", "message": "43"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("43 is ordinary chat", response.json()["response"])
+        brain.assert_called_once()
+        wake.assert_not_called()
+        self.assertEqual("RESUMABLE", api.db.coding_task(task["id"])["status"])
+
+    def test_explicit_resume_metadata_has_exclusive_coding_route(self):
+        task = api.db.create_coding_task("metadata-resume", "conversation", "canonical implementation requirements", "RESUMABLE", "NONE", plan("canonical implementation requirements"), time.time())
+        with patch.object(api.runtime, "execute", side_effect=AssertionError("normal brain intercepted")), \
+             patch.object(api._coding_scheduler_wake, "set") as wake:
+            response = self.client.post("/api/chat", json={"project_id": "project", "conversation_id": "conversation",
+                                                             "message": "43", "resume_control": True,
+                                                             "resume_task_id": task["id"]})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(task["id"], response.json()["coding_task_id"])
+        self.assertEqual("", response.json()["response"])
+        self.assertEqual("QUEUED", api.db.coding_task(task["id"])["status"])
+        self.assertEqual("canonical implementation requirements", api.db.coding_task(task["id"])["original_goal"])
+        wake.assert_called_once()
+
+    def test_resume_does_not_replay_manifest_no_progress_or_duplicate_pause_message(self):
+        task = api.db.create_coding_task("no-progress-resume", "conversation", "canonical website", "RESUMABLE", "NONE", plan("canonical website"), time.time())
+        api.db.update_coding_task(task["id"], recovery_reason="PLAN_MANIFEST_REPAIR_NO_PROGRESS",
+                                  recovery_action="RECOVERY_REVIEW")
+        pause = "実装計画の成果物不足を自動修復できなかったため、安全のため実装を開始せず、タスクを一時停止しました。元の計画と不足成果物を確認してから再開してください。"
+        api.db.add_message("conversation", "assistant", pause, time.time(), "pause-once", task["id"])
+        before = len([item for item in (api.db.conversation("conversation") or {}).get("messages", [])
+                      if item.get("task_id") == task["id"]])
+        with patch.object(api.runtime, "execute", side_effect=AssertionError("normal brain intercepted")), \
+             patch.object(api._coding_scheduler_wake, "set") as wake:
+            response = self.client.post("/api/chat", json={"project_id": "project", "conversation_id": "conversation", "message": "続行"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("", response.json()["response"])
+        self.assertEqual("RESUMABLE", api.db.coding_task(task["id"])["status"])
+        after = len([item for item in (api.db.conversation("conversation") or {}).get("messages", [])
+                     if item.get("task_id") == task["id"]])
+        self.assertEqual(before, after)
+        wake.assert_not_called()
+
     def test_required_mcp_unavailable_stops_before_planner(self):
         task = api.db.create_coding_task("required-mcp", "conversation", BENCHMARK, "QUEUED", "QWEN_PLANNING", None, time.time())
         with patch.object(api, "node_mcp_launch_command", return_value=None), \
@@ -310,6 +357,8 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
                           tool_name="search_items_in_registries", result={"content": "card"})
         context = api._planning_preflight_context("preflight-context", self.tmp.name)
         self.assertIn("package.json", context["repo_summary"]["workspace_entries"])
+        self.assertIn("package.json", context["workspace_state"]["files"])
+        self.assertFalse(context["workspace_state"]["greenfield"])
         self.assertEqual("shadcn", context["shadcn_mcp_evidence"][0]["mcp_name"])
         self.assertIn("Required MCP preflight is already complete.", context["constraints"])
 
@@ -455,6 +504,44 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertIn(("close",), calls)
         evidence = api.db.coding_task("mcp-lifecycle")["mcp_evidence"]
         self.assertEqual(["initialize", "tools/list", "search_items_in_registries"], [entry["tool_name"] for entry in evidence])
+
+    def test_mcp_checkpoint_distinguishes_verified_implementation_and_pending_browser(self):
+        requirements = {**canonical_coding_requirements(BENCHMARK),
+                         "required_mcps": ["animejs", "shadcn", "playwright"],
+                         "required_mcp": ["animejs", "shadcn", "playwright"]}
+        api.db.create_coding_task("mcp-checkpoint", "conversation", BENCHMARK, "PLANNING", "NONE",
+                                  plan(), time.time())
+        api.db.update_coding_task("mcp-checkpoint", requirements=requirements, required_mcp=requirements["required_mcps"])
+        api._mcp_evidence("mcp-checkpoint", "animejs", status="PASS", purpose="preflight",
+                          tool_name="search_animejs_docs", result={})
+        api._mcp_evidence("mcp-checkpoint", "shadcn", status="PASS", purpose="preflight",
+                          tool_name="search_items_in_registries", result={})
+        message = api._required_mcp_checkpoint_message("mcp-checkpoint", continuation="続行")
+        self.assertIn("Anime.js", message)
+        self.assertIn("shadcn", message)
+        self.assertIn("Playwright", message)
+        self.assertIn("次工程", message)
+        self.assertNotIn("必須 MCP 検証・実装計画の保存が完了しました", message)
+
+    def test_mcp_failure_message_preserves_other_provider_success(self):
+        requirements = {**canonical_coding_requirements(BENCHMARK),
+                        "required_mcps": ["animejs", "shadcn", "playwright"],
+                        "required_mcp": ["animejs", "shadcn", "playwright"]}
+        api.db.create_coding_task("mcp-failure-message", "conversation", BENCHMARK, "BLOCKED", "NONE",
+                                  plan(), time.time())
+        api.db.update_coding_task("mcp-failure-message", requirements=requirements, required_mcp=requirements["required_mcps"])
+        api._mcp_evidence("mcp-failure-message", "animejs", status="PASS", purpose="preflight",
+                          tool_name="search_animejs_docs", result={})
+        api._mcp_evidence("mcp-failure-message", "shadcn", status="PASS", purpose="preflight",
+                          tool_name="search_items_in_registries", result={})
+        api._mcp_evidence("mcp-failure-message", "playwright", status="FAILED", purpose="browser",
+                          tool_name="browser_navigate", result={}, error="MCP_NOT_REGISTERED")
+        message = api._required_mcp_failure_message("mcp-failure-message", "playwright", "MCP_NOT_REGISTERED")
+        self.assertIn("Anime.js", message)
+        self.assertIn("shadcn", message)
+        self.assertIn("Playwright", message)
+        self.assertIn("MCP_NOT_REGISTERED", message)
+        self.assertNotIn("Anime.js MCP は利用できません", message)
 
     def test_required_playwright_calls_its_allowlisted_navigation_tool(self):
         api.db.create_coding_task("playwright-lifecycle", "conversation", "verify", "RUNNING", "NONE", plan("verify"), time.time())
