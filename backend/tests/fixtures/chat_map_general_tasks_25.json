@@ -1,0 +1,768 @@
+{
+  "title": "地図指定による分析・説明テスト25件（人口密度を除く）",
+  "created_on": "2026-10-26",
+  "execution_status": "COMPLETED_ACCEPTANCE_REVIEWED",
+  "capability_status": "25件を実モデル・実公開APIで実行し、最新の再試験結果で地点・期間・出典と依頼の観点を確認済み。説明はBrainが出典本文を選ぶ抜粋形式、数値は取得値から計算する。",
+  "setup": [
+    "ケースごとに新しい会話を使う。表記した実在地点にA/Bのピンを置き、地名ラベルを確認してからmessageをそのまま送信する。",
+    "locationsは指定先を表すケース仕様で、APIにそのまま送る座標付きlocation_mapではない。ピンのlat/lonは実行時に地図で指定し、実際の送信payloadを記録する。",
+    "A/Bはlocationsの順番に対応する。1地点ケースではBを設定しない。",
+    "今日・明日・直近の期間は実行日時から確定し、回答に日付・時間帯を残す。比較では期間・単位・定義をそろえる。",
+    "各source_familiesは想定する情報の種類であり、特定APIの利用を強制する指示ではない。"
+  ],
+  "common_acceptance_criteria": [
+    "地図の地名と質問から対象を解決し、A/Bを取り違えない。",
+    "説明は根拠のある事実と推論・提案を区別し、出典を示す。",
+    "数値は取得した根拠から計算し、年・日付・単位・対象範囲を明記する。",
+    "地点別の比較は別々の概要を並べるだけで終わらず、依頼した共通観点で差や共通点を述べる。",
+    "未取得・未対応・認証不足・0件を区別する。未対応と正直に返すことは安全な失敗として記録し、そのタスクを完了できた合格には数えない。",
+    "coordinate_sensitive=trueのケースでは、API側で実際のピン座標または明示された誤差範囲の位置を使うこと。別の代表点に黙って置き換えない。"
+  ],
+  "cases": [
+    {
+      "id": "MAP-G01",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 京都府, 京都市"
+        }
+      ],
+      "message": "地点Aがどのような街か、地形・歴史・現在の主な特徴を3点に分けて説明して。",
+      "acceptance_criteria": [
+        "京都市全体を対象とし、府全体と混同しない",
+        "3観点それぞれに裏付けがあり、概要として読みやすい"
+      ],
+      "source_families": [
+        "自治体公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "京都市を対象に、盆地・歴史・現在の産業を3観点で説明。"
+      }
+    },
+    {
+      "id": "MAP-G02",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 広島県, 広島市, 広島平和記念公園"
+        }
+      ],
+      "message": "地点Aが設けられた経緯と、現在どのような役割を持つ場所か説明して。",
+      "acceptance_criteria": [
+        "公園と周辺施設の歴史を区別する",
+        "設置の経緯と現在の役割を出典付きで説明する"
+      ],
+      "source_families": [
+        "施設・自治体公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "公園設置の目的・設計と現在の平和記念式典を区別。出典内で食い違う制定日は除外。"
+      }
+    },
+    {
+      "id": "MAP-G03",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 愛知県, 豊田市"
+        }
+      ],
+      "message": "地点Aで自動車産業が発展した経緯と、現在の街との関わりを説明して。",
+      "acceptance_criteria": [
+        "企業の沿革と市の歴史を混同しない",
+        "雇用などの数値を使う場合は対象範囲・年を付ける"
+      ],
+      "source_families": [
+        "自治体・企業公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "1937年の工場設立と現在の関連企業の立地を区別。依頼外の出荷額は除外。"
+      }
+    },
+    {
+      "id": "MAP-G04",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 長野県, 諏訪市, 諏訪湖"
+        }
+      ],
+      "message": "地点Aの地形的な特徴と、周辺の温泉や街との関係を説明して。",
+      "acceptance_criteria": [
+        "諏訪湖と流域の範囲を区別する",
+        "地形・温泉・街の関係を根拠以上に断定しない"
+      ],
+      "source_families": [
+        "地理・自治体公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "諏訪盆地の湖と湖の東・北側の温泉、周辺の街との位置関係を説明。温泉の成因は補わない。"
+      }
+    },
+    {
+      "id": "MAP-G05",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 奈良県, 奈良市, 奈良公園"
+        }
+      ],
+      "message": "地点Aの見どころを3つ挙げ、それぞれの歴史的な背景を簡潔に説明して。",
+      "acceptance_criteria": [
+        "公園内または周辺に実在する対象を選ぶ",
+        "営業時間・料金を追加する場合は最新の公式情報を確認する"
+      ],
+      "source_families": [
+        "観光・施設公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "東大寺・春日大社・興福寺の3対象と、それぞれの概要・歴史を別出典で提示。"
+      }
+    },
+    {
+      "id": "MAP-G06",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 宮城県, 仙台市, 仙台駅"
+        }
+      ],
+      "message": "地点Aが東北地方の交通の拠点とされる理由を、接続する鉄道路線と都市の位置から説明して。",
+      "acceptance_criteria": [
+        "仙台駅と仙台市全体を使い分ける",
+        "路線・駅名に誤りがなく、位置との関係を説明する"
+      ],
+      "source_families": [
+        "鉄道事業者公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "新幹線・仙石東北ラインと都市内の位置を提示。つばさの臨時乗り入れ条件を保ち、不要な時刻表数値を除外。"
+      }
+    },
+    {
+      "id": "MAP-G07",
+      "point_count": 1,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 福岡県, 福岡市"
+        }
+      ],
+      "message": "地点Aの明日の最高・最低気温、降水確率、風の予報をまとめて。",
+      "acceptance_criteria": [
+        "日本時間の対象日を明示する",
+        "予報と観測を区別し、風と気温に単位を付ける"
+      ],
+      "source_families": [
+        "気象予報API"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "福岡の翌日の最高・最低気温、日最大降水確率、風を日本時間・単位付きで取得。"
+      }
+    },
+    {
+      "id": "MAP-G08",
+      "point_count": 1,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 北海道, 札幌市"
+        }
+      ],
+      "message": "地点Aの今後7日間で、降水確率が最も低い日を教えて。同率ならその日をすべて挙げて。",
+      "acceptance_criteria": [
+        "連続する7日間の同じ種類の降水確率で比較する",
+        "同率を落とさず、降水確率が低くても晴天を保証しない"
+      ],
+      "source_families": [
+        "気象予報API"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "連続7日の同一指標で比較し、最低降水確率の同率日をすべて提示。"
+      }
+    },
+    {
+      "id": "MAP-G09",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 沖縄県, 那覇市"
+        }
+      ],
+      "message": "地点Aの今日の日の出・日の入り時刻と、昼の長さを教えて。",
+      "acceptance_criteria": [
+        "日本時間の対象日と時刻を示す",
+        "昼の長さを日の出から日の入りまでとして計算する"
+      ],
+      "source_families": [
+        "日の出・日の入りAPI"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "那覇の元のピン、現地日付・時間帯、日の出と日の入りからの昼長を確認。"
+      }
+    },
+    {
+      "id": "MAP-G10",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 長野県, 松本市, 松本駅"
+        }
+      ],
+      "message": "地点Aの標高を教えて。どの位置・どのデータに基づく値かも示して。",
+      "acceptance_criteria": [
+        "駅のピンの位置を対象とし、市全体の平均標高で代用しない",
+        "メートル単位とデータの位置精度・解像度を示す"
+      ],
+      "source_families": [
+        "標高API"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "松本駅ピンの地表標高、座標、GSI出典とDEM画素間隔を提示。"
+      }
+    },
+    {
+      "id": "MAP-G11",
+      "point_count": 1,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 宮城県, 仙台市, 仙台駅"
+        }
+      ],
+      "message": "地点Aから半径100kmで、直近30日間に記録されたマグニチュード4以上の地震を、発生日時と規模が分かる形で整理して。",
+      "acceptance_criteria": [
+        "指定ピン中心の半径・期間・規模条件を守る",
+        "0件と取得失敗を区別し、取得上限があれば明示する",
+        "地震予測や将来の安全性は断定しない"
+      ],
+      "source_families": [
+        "地震観測API"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "仙台駅ピンから半径100km・直近30日・M4以上の記録を日時と規模で整理。"
+      }
+    },
+    {
+      "id": "MAP-G12",
+      "point_count": 1,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 東京都, 台東区, 上野駅"
+        }
+      ],
+      "message": "地点Aから3km以内にある博物館・美術館を5件まで挙げ、それぞれ何を見られる施設か説明して。",
+      "acceptance_criteria": [
+        "駅のピンを中心とする3km圏内の実在施設を選ぶ",
+        "施設の重複を除き、施設公式情報で展示の特徴を確認する"
+      ],
+      "source_families": [
+        "OpenStreetMap周辺施設検索",
+        "施設公式情報"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "上野駅から3km以内の2施設を提示。展示は現在の公式本文で確認。終了済み催事・別施設へ移った標本の記述は使わない。"
+      }
+    },
+    {
+      "id": "MAP-G13",
+      "point_count": 1,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "シンガポール, シンガポール, マーライオン公園"
+        }
+      ],
+      "message": "地点Aで明日屋外を歩く予定です。気温・雨・湿度の予報から、服装と持ち物の目安を提案して。",
+      "acceptance_criteria": [
+        "シンガポール現地日付・時間帯を使う",
+        "取得した予報と、それに基づく提案を分ける",
+        "確認していない予報値や確実な天候を作らない"
+      ],
+      "source_families": [
+        "気象予報API"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "シンガポール現地の翌日予報と、予報に基づく服装・雨具等の目安を区別。"
+      }
+    },
+    {
+      "id": "MAP-G14",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "英国, ロンドン"
+        },
+        {
+          "pin": "B",
+          "place_name": "フランス, パリ"
+        }
+      ],
+      "message": "地点Aと地点Bについて、街を流れる主な川と、その川が都市の発展に果たした役割を比較して。",
+      "acceptance_criteria": [
+        "ロンドンとパリを取り違えない",
+        "川の名称と歴史的役割を同じ観点で対比する"
+      ],
+      "source_families": [
+        "都市・河川の公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "テムズ川・セーヌ川の位置と都市発展を同じ2観点で対比。依頼外の人口統計は除外。"
+      }
+    },
+    {
+      "id": "MAP-G15",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 北海道, 札幌市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 沖縄県, 那覇市"
+        }
+      ],
+      "message": "地点Aと地点Bの明日の最高・最低気温を比較して。どちらが何℃高いかも示して。",
+      "acceptance_criteria": [
+        "同じ日本時間の日付の予報を比較する",
+        "最高同士・最低同士で差を計算し、単位をそろえる"
+      ],
+      "source_families": [
+        "気象予報API"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "同じ日本時間の翌日予報を最高同士・最低同士で比較し、気温差を確認。"
+      }
+    },
+    {
+      "id": "MAP-G16",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 石川県, 金沢市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 静岡県, 静岡市"
+        }
+      ],
+      "message": "地点Aと地点Bの今後3日間の降水確率を日ごとに並べて比較して。",
+      "acceptance_criteria": [
+        "両地点で同じ3日間・同じ降水確率の定義を用いる",
+        "欠測を0%で埋めず、日付ごとに比較する"
+      ],
+      "source_families": [
+        "気象予報API"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "同じ3日間・日最大降水確率を対比。ポイント差を生値と照合。"
+      }
+    },
+    {
+      "id": "MAP-G17",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "フィンランド, ヘルシンキ"
+        },
+        {
+          "pin": "B",
+          "place_name": "イタリア, ローマ"
+        }
+      ],
+      "message": "地点Aと地点Bの今日の昼の長さを比較して。各地点の現地日付・日の出・日の入りと、昼の長さの差も示して。",
+      "acceptance_criteria": [
+        "現地日付と時間帯を明記し、時計の時刻差を昼の長さの差と混同しない",
+        "日の出から日の入りまでの時間をそれぞれ計算して比較する"
+      ],
+      "source_families": [
+        "日の出・日の入りAPI"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "ヘルシンキとローマの現地日付・日の出入り・昼長を取得し、昼長の差を計算。"
+      }
+    },
+    {
+      "id": "MAP-G18",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 長野県, 軽井沢町, 軽井沢駅"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 群馬県, 草津町, 草津温泉バスターミナル"
+        }
+      ],
+      "message": "地点Aと地点Bの標高を比較して、標高差が何mあるか教えて。",
+      "acceptance_criteria": [
+        "両ピンの標高を同じデータ定義で取得する",
+        "自治体の代表点で代用せず、対象位置と単位を示す"
+      ],
+      "source_families": [
+        "標高API"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "両ピンのGSI地表標高を同じ定義で取得し、差を計算。"
+      }
+    },
+    {
+      "id": "MAP-G19",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 京都府, 京都市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 石川県, 金沢市"
+        }
+      ],
+      "message": "地点Aと地点Bの歴史的な成り立ちを、政治上の役割と現在残る街並みの2点から比較して。",
+      "acceptance_criteria": [
+        "同じ2観点で比較し、都市の優劣を主観で決めない",
+        "歴史的事実と現在残る具体例を出典付きで対応付ける"
+      ],
+      "source_families": [
+        "自治体・文化財公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "政治上の成り立ちと現在残る街並みの2観点で京都・金沢を対比。"
+      }
+    },
+    {
+      "id": "MAP-G20",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 愛知県, 豊田市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 静岡県, 浜松市"
+        }
+      ],
+      "message": "地点Aと地点Bの代表的な製造業と、その産業が発展した背景の共通点・違いを説明して。",
+      "acceptance_criteria": [
+        "両市の実際の産業を具体例付きで示す",
+        "同じ観点で比べ、出荷額などを使う場合は年・単位・対象をそろえる"
+      ],
+      "source_families": [
+        "自治体・産業公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "自動車関連の共通点、豊田の工場立地と浜松の繊維・楽器等の発展を対比。年のそろわない出荷額は除外。"
+      }
+    },
+    {
+      "id": "MAP-G21",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 東京都, 千代田区, 東京駅"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 神奈川県, 横浜市, 横浜駅"
+        }
+      ],
+      "message": "地点Aから地点Bまで車で移動する場合の道路距離と、経路データ上の標準的な所要時間を教えて。リアルタイムの渋滞は含めなくてよいです。",
+      "acceptance_criteria": [
+        "Aを出発・Bを到着とする1本の経路として扱う",
+        "直線距離を道路距離として返さない",
+        "標準時間とリアルタイム交通状況を区別し、両端の位置を示す"
+      ],
+      "source_families": [
+        "道路経路API"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "東京駅から横浜駅への1本の道路経路を取得。道路距離と標準時間を提示し、渋滞を含まないことを明記。"
+      }
+    },
+    {
+      "id": "MAP-G22",
+      "point_count": 2,
+      "task_kind": "分析",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 宮城県, 仙台市, 仙台駅"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 熊本県, 熊本市, 熊本駅"
+        }
+      ],
+      "message": "地点Aと地点Bのそれぞれ半径100kmで、直近30日間に記録されたマグニチュード4以上の地震の件数と最大規模を比較して。",
+      "acceptance_criteria": [
+        "各ピンを中心に同一の期間・半径・規模条件で取得する",
+        "0件の場合は最大規模を0ではなく該当なしとする",
+        "現在の記録の比較を将来の地震危険度へ飛躍させない"
+      ],
+      "source_families": [
+        "地震観測API"
+      ],
+      "coordinate_sensitive": true,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "同一UTC期間・半径・M条件で両駅を取得。0件の最大規模は該当なしとして集計。"
+      }
+    },
+    {
+      "id": "MAP-G23",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 北海道, 札幌市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 福岡県, 福岡市"
+        }
+      ],
+      "message": "地点Aと地点Bの夏と冬の気候の特徴を、気温と降水・降雪の観点から比較して。平年値を使う場合は同じ基準期間でそろえて。",
+      "acceptance_criteria": [
+        "短期予報を気候の説明に流用しない",
+        "数値を使う場合は同じ平年値の期間を示す",
+        "季節の一般的特徴と数値根拠を区別する"
+      ],
+      "source_families": [
+        "気象機関の平年値・気候解説",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_WRONG_ROUTE_OR_SCOPE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "両観測点の1991–2020年平年値を使用。夏冬の気温・降水・降雪と差、集計方法を提示。"
+      }
+    },
+    {
+      "id": "MAP-G24",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 兵庫県, 姫路市, 姫路城"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 広島県, 廿日市市, 厳島神社"
+        }
+      ],
+      "message": "地点Aと地点Bについて、建築上の特徴と文化財としての価値の共通点・違いを説明して。",
+      "acceptance_criteria": [
+        "各建築物を対象とし、周辺都市全体の比較にしない",
+        "建築的特徴と文化財としての評価を出典付きで対比する"
+      ],
+      "source_families": [
+        "施設・文化財公式情報",
+        "UNESCO・Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "連立式天守と海上の社殿を対比し、世界遺産・国宝の共通点を両出典で裏付け。"
+      }
+    },
+    {
+      "id": "MAP-G25",
+      "point_count": 2,
+      "task_kind": "説明",
+      "locations": [
+        {
+          "pin": "A",
+          "place_name": "日本, 北海道, 函館市"
+        },
+        {
+          "pin": "B",
+          "place_name": "日本, 長崎県, 長崎市"
+        }
+      ],
+      "message": "地点Aと地点Bが港町として発展した経緯と、港や坂のある地形が街にどう関わっているかを比較して。",
+      "acceptance_criteria": [
+        "港の歴史と各市の具体的な地形を取り違えない",
+        "地形による影響を根拠なしの因果説明で補わない"
+      ],
+      "source_families": [
+        "自治体・港湾公式情報",
+        "Wikipedia"
+      ],
+      "coordinate_sensitive": false,
+      "execution_status": "PASSED_LIVE_E2E",
+      "baseline_execution_status": "FAILED_NO_EVIDENCE",
+      "execution_review": {
+        "status": "PASS_SOURCE_GROUNDED",
+        "method": "case-specific request/acceptance criteria and actual provider evidence reviewed",
+        "notes": "函館の開港・陸繋砂州と長崎の貿易・斜面市街地を同じ観点で対比。新たな地形因果説を作らない。"
+      }
+    }
+  ],
+  "execution_report": "docs/verification/2026-10-26-map-general-live-e2e.md",
+  "baseline_execution_status": "COMPLETED_NO_ACCEPTANCE_PASSES",
+  "verification_report": "docs/verification/2026-10-26-map-general-fixed-e2e.md",
+  "review_completed_on": "2026-10-27"
+}

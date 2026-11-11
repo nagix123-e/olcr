@@ -1,0 +1,575 @@
+{
+  "GET_STATS": {
+    "RESULT": {
+      "status": "0",
+      "errorMsg": "正常に終了しました。",
+      "date": "Mon Oct 26 13:57:02 JST 2026"
+    },
+    "PARAMETER": {
+      "lang": "JP",
+      "indicatorCode": [
+        "0201010000000010000",
+        "0101010000000010010"
+      ],
+      "regionCode": [
+        "13101",
+        "27100"
+      ],
+      "timeFrom": "2015CY00",
+      "cycle": "3",
+      "regionalRank": "4",
+      "isSeasonalAdjustment": "1",
+      "metaGetFlg": "Y"
+    },
+    "STATISTICAL_DATA": {
+      "RESULT_INF": {
+        "TOTAL_NUMBER": "26"
+      },
+      "TABLE_INF": {
+        "STAT_NAME": [
+          {
+            "@code": "00200502",
+            "$": "社会・人口統計体系"
+          },
+          {
+            "@code": "00200521",
+            "$": "国勢調査"
+          }
+        ]
+      },
+      "CLASS_INF": {
+        "CLASS_OBJ": [
+          {
+            "@id": "indicator",
+            "@name": "系列",
+            "@sname": "省略表示名",
+            "CLASS": [
+              {
+                "@code": "0101010000000010010",
+                "@name": "総面積（北方地域及び竹島を除く）",
+                "@sname": "",
+                "TERM_DETAILS": {
+                  "TERM_DETAIL": [
+                    {
+                      "@code": "0101010001",
+                      "@name": "総面積（北方地域及び竹島を除く）",
+                      "$": "北方地域及び竹島を除く日本の面積。"
+                    }
+                  ]
+                }
+              },
+              {
+                "@code": "0201010000000010000",
+                "@name": "総人口（総数）",
+                "@sname": "総人口",
+                "TERM_DETAILS": {
+                  "TERM_DETAIL": [
+                    {
+                      "@code": "0201010001",
+                      "@name": "総人口",
+                      "$": "\"本邦に常住する人口（当該住居に3か月以上にわたって住んでいるか、又は住むことになっている者）。人口推計は国勢調査による人口を基準人口とし、その後の人口動向を他の人口関連資料から得て、毎月１日現在の人口を算出したもの。\n各国のデータについては出典参照。\""
+                    }
+                  ]
+                },
+                "INDI_ANNOTATIONS": [
+                  {
+                    "@cycle": "3",
+                    "@regionalRank": "4",
+                    "@isSeasonal": "1",
+                    "$": "日本人・外国人の別不詳及び年齢不詳を含む。"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "@id": "unit",
+            "@name": "単位",
+            "CLASS": [
+              {
+                "@code": "010",
+                "$": "ha"
+              },
+              {
+                "@code": "090",
+                "$": "人"
+              }
+            ]
+          },
+          {
+            "@id": "regionCode",
+            "@name": "地域",
+            "CLASS": [
+              {
+                "@code": "13101",
+                "@name": "千代田区"
+              },
+              {
+                "@code": "27100",
+                "@name": "大阪市"
+              }
+            ]
+          },
+          {
+            "@id": "time",
+            "@name": "時間軸",
+            "CLASS": [
+              {
+                "@code": "2015CY00",
+                "@name": "2015年"
+              },
+              {
+                "@code": "2016CY00",
+                "@name": "2016年"
+              },
+              {
+                "@code": "2017CY00",
+                "@name": "2017年"
+              },
+              {
+                "@code": "2018CY00",
+                "@name": "2018年"
+              },
+              {
+                "@code": "2019CY00",
+                "@name": "2019年"
+              },
+              {
+                "@code": "2020CY00",
+                "@name": "2020年"
+              },
+              {
+                "@code": "2021CY00",
+                "@name": "2021年"
+              },
+              {
+                "@code": "2022CY00",
+                "@name": "2022年"
+              },
+              {
+                "@code": "2023CY00",
+                "@name": "2023年"
+              },
+              {
+                "@code": "2024CY00",
+                "@name": "2024年"
+              },
+              {
+                "@code": "2025CY00",
+                "@name": "2025年"
+              }
+            ]
+          },
+          {
+            "@id": "cycle",
+            "@name": "周期",
+            "CLASS": [
+              {
+                "@code": "3",
+                "$": "年"
+              }
+            ]
+          },
+          {
+            "@id": "regionalRank",
+            "@name": "地域階級",
+            "CLASS": [
+              {
+                "@code": "4",
+                "$": "市区町村"
+              }
+            ]
+          },
+          {
+            "@id": "isSeasonal",
+            "@name": "原数季調",
+            "CLASS": [
+              {
+                "@code": "1",
+                "$": "原数値"
+              }
+            ]
+          },
+          {
+            "@id": "isProvisional",
+            "@name": "速報or確報",
+            "CLASS": [
+              {
+                "@code": "0",
+                "$": "確報"
+              }
+            ]
+          }
+        ]
+      },
+      "DATA_INF": {
+        "DATA_OBJ": [
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2015CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2015CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22521"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2016CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2016CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22521"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2017CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2017CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22521"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2018CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2018CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22530"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2019CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2019CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22530"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2020CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2020CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22532"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2021CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2021CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22533"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2022CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2022CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22533"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2023CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2023CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22533"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "13101",
+              "@time": "2024CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "1166"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0101010000000010010",
+              "@unit": "010",
+              "@stat": "00200502",
+              "@regionCode": "27100",
+              "@time": "2024CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "22534"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "13101",
+              "@time": "2015CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "58406"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "27100",
+              "@time": "2015CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "2691185"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "13101",
+              "@time": "2020CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "66680"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "27100",
+              "@time": "2020CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "2752412"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "13101",
+              "@time": "2025CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "66270"
+            }
+          },
+          {
+            "VALUE": {
+              "@indicator": "0201010000000010000",
+              "@unit": "090",
+              "@stat": "00200521",
+              "@regionCode": "27100",
+              "@time": "2025CY00",
+              "@cycle": "3",
+              "@regionRank": "4",
+              "@isSeasonal": "1",
+              "@isProvisional": "0",
+              "$": "2805371"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

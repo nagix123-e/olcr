@@ -1,0 +1,10 @@
+.git-workspace { width:100%; max-width:100%; margin:8px 0; font-size:14px; }
+.git-workspace-content { max-height:55vh; overflow:auto; border:1px solid var(--line,#dfe3d9); border-radius:16px; padding:16px; background:var(--surface,#fff); }
+.git-workspace-content button { min-height:36px; margin:4px; }
+.git-workspace-content label { display:flex; gap:8px; align-items:center; margin:8px 0; }
+.git-workspace-content label input:not([type=checkbox]),.git-workspace-content select { flex:1; min-width:0; padding:8px; }
+.git-files { max-height:180px; overflow:auto; }
+.git-files label { overflow-wrap:anywhere; }
+.git-operation { margin:12px 0; padding:12px; border:1px solid var(--line,#dfe3d9); border-radius:12px; }
+.git-operation p { overflow-wrap:anywhere; }
+.git-diff { max-height:320px; overflow:auto; white-space:pre; font-size:12px; padding:10px; background:var(--bg,#f6f8f3); }

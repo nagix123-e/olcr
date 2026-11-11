@@ -1,0 +1,190 @@
+{
+  "date_local": "2026-10-11 Asia/Tokyo",
+  "source_e2e_record": "SEMANTIC_FOLLOWUP_GUI_E2E_28_20261011.json",
+  "primary_fix_count": 11,
+  "primary_global_indices": [
+    24,
+    27,
+    42,
+    59,
+    90,
+    97,
+    107,
+    108,
+    124,
+    142,
+    316
+  ],
+  "supplemental_global_indices": [
+    47
+  ],
+  "scope": "11件のPARTIAL/FAIL/INCOMPLETEへの修正と、ケース47の証跡で見つかった観察行の欠落への補修。",
+  "cases": [
+    {
+      "global_index": 24,
+      "change": "ISSの逆ジオコーディング失敗時に海域または座標に基づく地域の目安を表示。元の質問をrendererへ必ず渡す。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 27,
+      "change": "代替検索の追加試行失敗で取得済み根拠を消さない。元APIの403と検索設定エラーを区別し、終了応答を共通経路で保存。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "FAIL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 42,
+      "change": "元のUSGSエラーをtask.errorへ保持。代替合成を60秒に制限し、失敗時にも取得済み根拠と説明を返す。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "FAIL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 59,
+      "change": "前駆体配列長、Signal/Propeptide/Chain/Peptideの登録位置と残基数をモデル合成を介さず表示。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 90,
+      "change": "正解を伏せる条件を優先し、四択を型付きrendererで表示。モデルによる正解の再生成を回避。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PARTIAL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 97,
+      "change": "API失敗後の代替根拠の保持と合成期限を適用。期限超過時は取得済み抜粋・出典を返して終了。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "FAIL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 107,
+      "change": "Chess.comの色・結果・時刻・PGNを型付きrendererで表示。手数とPGNの省略も明示。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 108,
+      "change": "直前ユーザー指定を共有chatで解決し、手数差を直接計算。対象不明なら確認質問で終了。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 124,
+      "change": "最短経路依頼で移動手段が未指定なら確認質問。徒歩・自転車・車の指定を尊重。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 142,
+      "change": "EONETの既存rendererをcanonical aliasにも適用し、正常データを長時間のモデル合成に渡さず表示。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PARTIAL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    },
+    {
+      "global_index": 316,
+      "change": "判決本文の取得未完了を応答全体へ伝播。候補メタデータと本文を区別し、内容・関連性を未確認と明記。",
+      "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+      "post_fix_e2e_verdict": "PARTIAL",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    }
+  ],
+  "supplemental_fixes": [
+    {
+      "global_index": 47,
+      "change": "GBIF観察行を必要項目へ絞り、巨大メタデータが後続行の日付・種名・座標を消費する問題を防止。",
+      "post_fix_e2e_verdict": "PASS",
+      "post_fix_e2e_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+    }
+  ],
+  "shared_changes": [
+    "API streamingの約100行の重複実行/回復処理をchatへ集約。応答とtaskを送信前に保存。",
+    "GUI streamはdone/error/cancelledで読み取りを終了し、EOF待ちによりローダーが残らない。中途切断とUIハンドラ例外も報告。",
+    "モデル合成の期限は比較180秒、失敗したAPIの代替合成60秒。MLXはsubprocess timeoutでworkerを停止し、後続の通常生成へ期限を持ち越さない。"
+  ],
+  "verification": {
+    "offline_only": true,
+    "real_gui_retest": "COMPLETED_12_PROMPTS; 6 PASS, 3 PARTIAL, 3 FAIL",
+    "historical_verdicts": "PRESERVED",
+    "backend_followup_regressions": 28,
+    "model_role_regressions": 33,
+    "semantic_batch_regressions": 23,
+    "frontend_stream_regressions": 6,
+    "frontend_typecheck": "PASS",
+    "python_ast": "PASS",
+    "credential_and_permission_regressions": 10,
+    "backend_total": 94,
+    "total_regressions": 100,
+    "logs": {
+      "backend_followup_regressions": ".live/semantic28-final-repair-check.log",
+      "credential_and_permission_regressions": ".live/semantic28-credentials-regression.log",
+      "model_role_regressions": ".live/semantic28-model-regression.log",
+      "semantic_batch_regressions": ".live/semantic28-runtime-regression.log"
+    },
+    "diff_whitespace_check": "PASS",
+    "real_gui_retest_record": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json"
+  },
+  "limits": [
+    "NASA/USGS/Met等の取得元403・通信障害そのものを解消したと確認していない。代替取得または根拠付き失敗応答へ対応。",
+    "ISSの地域推定は概略で、未取得の近隣都市名は補わない。判決本文の401後に未確認の争点を補わない。",
+    "修正後の実GUI E2Eによる合否確定とインストール済みアプリの更新は未実施。"
+  ],
+  "source_changes": [
+    {
+      "path": "backend/olcr_api/app.py",
+      "before_sha256": "ba17b8c0fb9e22253cd9e6df2d34fcfc93596db56d7d2b03a89b83771ab99617",
+      "after_sha256": "1ee45d7e1623e8aed919f312406cb600a712083143f93e1b25bf07f62e7de186"
+    },
+    {
+      "path": "backend/olcr_api/brain_providers.py",
+      "before_sha256": "4514396cd1a9a9543506094c7062a8c9a08f2762efb130d22167a47fd9be04dd",
+      "after_sha256": "08f160d3c91a08afe9d30ad1e4e2b494fdde10cc3cdb4bb4e51f98a89242607b"
+    },
+    {
+      "path": "backend/olcr_api/external_tools.py",
+      "before_sha256": "442cc3b28f02f1f5a3a2ffa01642a344590507f72de99fde9c86ffd6c14d3f14",
+      "after_sha256": "fcd0fac32880449e25088833cccfe33ac90a957ac0163a6e1f119644931a9679"
+    },
+    {
+      "path": "backend/olcr_api/model_provider.py",
+      "before_sha256": "5ee0c22ad6ac08c6c5ed8b185f23f13d5752c0b4202237172970770a253ec3c7",
+      "after_sha256": "ac021ce61b62cdb99f9db92fbbfdec0f0d2cbc4f0be04f03e34f2a128dcb6e91"
+    },
+    {
+      "path": "backend/olcr_api/ollama.py",
+      "before_sha256": "701ca2efb06c865c36fb2b43e86b681f70aa0df504175875eaae9b3f0c8db08b",
+      "after_sha256": "971a5f706b2048ca29688ac1ced4483e85cf784aedc67a97f8042031467a14fe"
+    },
+    {
+      "path": "backend/olcr_api/runtime.py",
+      "before_sha256": "ee00e4da284d41da2831097beefff1d9ffea950a5b7c3afd24218fb113e3bf2f",
+      "after_sha256": "c5306215d039f15aee1e9973f102d63e034a94244b56a4566a587ff4028628ee"
+    },
+    {
+      "path": "backend/tests/test_semantic_batch_followup_repairs.py",
+      "before_sha256": "304cd5c3ba612c30016d606b7c7e30a83fca3e41904dbf7b154978dd527c5823",
+      "after_sha256": "34be987271622ec3ecb6dcd0edd09b25e02aab874265b3af71669dfc70529755"
+    },
+    {
+      "path": "frontend/src/api.test.ts",
+      "before_sha256": "b6216c30f7fb5873d1e68c5930681c05c7c01acd637d7b987e5d07cdeb423183",
+      "after_sha256": "70d7a6d7b62aeec8c7a3858467f01613f8758f18996b92d542f0bab5780052b4"
+    },
+    {
+      "path": "frontend/src/api.ts",
+      "before_sha256": "a01f6c76c1e5bfb29959b1436c9eeb5f4c2097a3a326edc0559bec4f3c280aa8",
+      "after_sha256": "fd16a972c6ba1a63211f68090ee2cedfeab66aa8884da9396b611ed93fe3cb85"
+    }
+  ],
+  "source_diff": ".live/semantic28-final-repairs-source.diff",
+  "source_backup": ".live/semantic28-final-repairs-20261011-before"
+}

@@ -1,9 +1,22 @@
 fastapi==0.116.1
 httpx==0.28.1
+websockets>=15,<16
 pydantic==2.11.7
+PyJWT[crypto]>=2.10,<3
 uvicorn==0.35.0
 prompt_toolkit==3.0.51
 torch==2.8.0
+torchaudio==2.8.0
+liquid-audio>=1.0,<2
 transformers==4.57.6
+laya==0.3.5
+safetensors>=0.4.0
+huggingface_hub>=0.20.0
+numpy>=1.20.0
 sympy>=1.12,<2.0
 scipy>=1.11,<2.0
+
+# PC mobile bridge and secure Happier device pairing
+PyNaCl==1.6.2
+keyring==25.7.0
+qrcode==8.2

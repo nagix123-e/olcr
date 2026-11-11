@@ -1,0 +1,4 @@
+# Keep Homebrew's pkg-config OpenCV link set limited to the modules enabled by
+# the `opencv-perception` feature. Its default opencv5.pc lists every module.
+[env]
+OPENCV_LINK_LIBS = "opencv_core,opencv_features,opencv_imgproc,opencv_video"

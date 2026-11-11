@@ -98,6 +98,27 @@ class SemanticVectorTests(unittest.TestCase):
         self.add("exact.txt","exact-literal-present")
         before=len(self.provider.calls);rows,method=self.router.retrieve("exact-literal-present",5)
         self.assertIn(method,("ripgrep","python_fallback"));self.assertTrue(rows);self.assertEqual(before,len(self.provider.calls))
+
+    def test_source_lookup_does_not_short_circuit_on_benchmark_prompt_copy(self):
+        query = "the function that retrieves Skill candidates"
+        benchmark = self.root / "benchmark_results" / "matrix.json"
+        benchmark.parent.mkdir()
+        benchmark.write_text('{"prompt": "' + query + '"}')
+        source = self.root / "skill_router.py"
+        source.write_text("def automatic_skill_selection():\n    bounded skill candidate retrieval and ranking\n")
+        distractor = self.root / "implementation_plan.py"
+        distractor.write_text("def gather():\n" + "    candidate_paths = candidate_diagnostics = candidate_count = 1\n" * 12)
+        router = RetrievalRouter(
+            self.files, FTSRetriever(self.db), StaticVectorStore([
+                SearchResult(str(benchmark), query, score=.99),
+                SearchResult(str(source), source.read_text(), score=.8),
+            ]), True, self.evaluator, self.normalizer,
+        )
+        rows, method = router.retrieve(query, 5)
+        self.assertEqual("ranked_source", method)
+        self.assertEqual(str(source.resolve()), rows[0].source)
+        self.assertEqual("ranked_source", router.semantic_telemetry["source_expansion"])
+        self.assertEqual(1, router.semantic_telemetry["non_source_artifact_results_discarded"])
     def test_vector_disabled_keeps_lexical_runtime(self):
         self.add("exact.txt","disabled-vector-literal")
         router=RetrievalRouter(self.files,FTSRetriever(self.db),DisabledVectorStore(),False)
@@ -141,10 +162,18 @@ class SemanticVectorTests(unittest.TestCase):
         self.assertIn("semantic context", result)
         self.assertIsNone(Runtime._retrieval_query("右側パネルに書かれている確認コードを教えてください。"))
 
+    def test_prefaced_source_search_uses_only_the_explicit_search_clause(self):
+        query = ("This is not a coding task. Search for the function that retrieves Skill candidates "
+                 "and summarize its ranking stages. Use only this local repository; no external services.")
+        result = Runtime._retrieval_query(query)
+        self.assertIn("function that retrieves Skill candidates", result)
+        self.assertNotIn("Use only this local repository", result)
+        self.assertIsNone(Runtime._retrieval_query("Do not search for files. Explain the local routing rules."))
+
     def test_multiline_retrieval_dispatch_is_selected(self):
         query = ("search 右側パネルに書かれている確認コードを探して教えてください。\n"
                  "semantic context が見つかった場合は、その内容に基づいて回答してください。")
-        settings = Settings(allowed_roots=(str(self.root),), db_path=self.db.path, main_model="mock").validated()
+        settings = Settings(allowed_roots=(str(self.root),), db_path=self.db.path, main_model="mock", web_mode="off").validated()
         runtime = Runtime(settings, self.db, self.router, FakeModel())
         with patch.object(self.router, "retrieve", return_value=([], "none")) as retrieve:
             task, _ = runtime.execute(query)

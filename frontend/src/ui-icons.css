@@ -1,0 +1,9 @@
+.ui-icon{display:inline-block;flex:none;vertical-align:middle}
+.icon-label{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.sidebar-more-menu button{display:flex;align-items:center;gap:10px}
+.sidebar-more summary .ui-icon{margin-left:4px}
+.copy-message,.conversation-delete,.project-delete,.chat-title button{display:inline-grid;place-items:center}
+.composer-action-menu .ui-icon{stroke-width:1.5}
+.attachment-chip>.ui-icon{flex-shrink:0}
+.settings-button:has(>.ui-icon){display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.message-attachment .ui-icon{margin-right:4px;stroke-width:1.5}

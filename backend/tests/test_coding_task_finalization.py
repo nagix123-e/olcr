@@ -96,7 +96,9 @@ class FinalizationTests(unittest.TestCase):
             self.assertEqual("FORMATTER", failed["recovery_reason"])
             report_count = len(api.db.coding_phase_reports("final-retry"))
             api.db.enqueue_coding_task("final-retry")
-            api._run_managed_task("final-retry", self.tmp.name)
+            with patch.object(api, "_prepare_approved_plan_artifact",
+                              side_effect=AssertionError("completed phases must not re-enter plan preparation")):
+                api._run_managed_task("final-retry", self.tmp.name)
         done = api.db.coding_task("final-retry")
         self.assertEqual("COMPLETED", done["status"])
         self.assertEqual(report_count, len(api.db.coding_phase_reports("final-retry")))
@@ -151,6 +153,33 @@ class FinalizationTests(unittest.TestCase):
         self.assertIn("MCP_USED=", final_text)
         self.assertIn("MCP_PURPOSE=", final_text)
         self.assertIn("MCP_SKIP_REASON=", final_text)
+
+    def test_completed_static_app_report_includes_local_http_launch_without_a_model(self):
+        self.create_task('static-launch')
+        entry=Path(self.tmp.name)/'画面 with spaces.html'
+        entry.write_text('<script type="module" src="app.js"></script>')
+        task=api.db.coding_task('static-launch')
+        plan={**task['plan'],'file_manifest':[{'path':entry.name}]}
+        api.db.update_coding_task('static-launch',plan=plan,requirements={
+            'planning_policy':{'coherent_static_application':True},'dependency_requirements':[]})
+        api._save_report('static-launch','p1',0,pass_report(0),'PASS')
+        with patch.object(api,'_model_text',side_effect=AssertionError('No model is needed for launch guidance')):
+            self.assertEqual('Coding Task completed.',api._complete_task('static-launch',api.db.coding_task('static-launch')))
+        text=api.db.coding_task('static-launch')['final_report']['text']
+        self.assertIn('## 起動方法',text)
+        self.assertIn('--bind 127.0.0.1 --directory',text)
+        self.assertIn('http://127.0.0.1:8000/%E7%94%BB%E9%9D%A2%20with%20spaces.html',text)
+        self.assertNotIn('file://',text)
+
+    def test_launch_guidance_does_not_guess_for_frameworks_missing_or_external_entrypoints(self):
+        task={'requirements':{'planning_policy':{'coherent_static_application':True}}}
+        plan={'file_manifest':[{'path':'missing.html'},{'path':'../outside.html'}]}
+        self.assertEqual('report',api._append_static_app_launch('report',task,plan,self.tmp.name))
+        (Path(self.tmp.name)/'index.html').write_text('<h1>app</h1>')
+        plan={'file_manifest':[{'path':'index.html'}]}
+        self.assertEqual('report',api._append_static_app_launch('report',{'requirements':{}},plan,self.tmp.name))
+        dependent={'requirements':{**task['requirements'],'dependency_requirements':['react']}}
+        self.assertEqual('report',api._append_static_app_launch('report',dependent,plan,self.tmp.name))
 
     def test_finalization_rejects_lifecycle_only_required_mcp_evidence(self):
         self.create_task("mcp-not-used")

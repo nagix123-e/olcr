@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import re
+import threading
 from typing import Any, Iterable, Protocol
 
 INDEX_VERSION = "olcr-coding-knowledge-v1"
@@ -408,6 +409,35 @@ class CodingKnowledge:
         self.path = Path(index_path) if index_path else default
         self.model = model
         self.index = KnowledgeIndex.load(self.path)
+        self._alternate_indexes = {}
+        self._alternate_lock = threading.RLock()
+
+    def context_for_embedding(self, request, workspace_root, provider, namespace):
+        """Re-embed public release records in memory for a user-selected model.
+
+        The reviewed release artifact stays immutable. Its original vectors
+        are never compared to vectors from the alternative embedding space.
+        """
+        if not self.index.available:
+            return KnowledgeResult('NOT_AVAILABLE', reason=self.index.reason)
+        stacks, versions = discover_repository_stacks(workspace_root, request)
+        domains = determine_domains(request)
+        core = self.index.select_core_rules(domains, stacks)
+        try:
+            with self._alternate_lock:
+                index = self._alternate_indexes.get(namespace)
+                if index is None:
+                    rows = self.index.entries
+                    embedded = provider.embed([row['content'] for row in rows], namespace) if rows else []
+                    if len(embedded) != len(rows): raise ValueError('embedding count mismatch')
+                    index = KnowledgeIndex({}, self.index.core_rules, [dict(row, embedding=vector) for row, vector in zip(rows, embedded)], True, 'AVAILABLE')
+                    self._alternate_indexes = {namespace: index}
+                query = provider.embed([request], namespace)[0]
+                if index.entries and len(query) != len(index.entries[0]['embedding']):
+                    raise ValueError('embedding dimension mismatch')
+            return KnowledgeResult('AVAILABLE', tuple(core), tuple(index.search(query, domains=domains, stacks=stacks, versions=versions)))
+        except Exception as exc:
+            return KnowledgeResult('CORE_ONLY', tuple(core), (), 'QUERY_EMBEDDING_UNAVAILABLE:' + type(exc).__name__)
 
     def context_for(self, request: str, workspace_root: str | Path | None, provider: EmbeddingProvider, model_identity: str | None) -> KnowledgeResult:
         if not self.index.available:

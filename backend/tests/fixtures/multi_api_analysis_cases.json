@@ -1,0 +1,293 @@
+{
+  "description": "Curated multi-API analysis scenarios with evaluable subjects; provider requests are mocked by the regression test. IDs retain their original numbering.",
+  "cases": [
+    {
+      "id": "multi-api-analysis-01",
+      "prompt": "日本と韓国の成長、物価、雇用の変化を比較して",
+      "tool_ids": [
+        "econ.worldbank",
+        "econ.jp_estat",
+        "econ.oecd"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-02",
+      "prompt": "米国の物価と雇用の推移を比較し、世界銀行の各国GDP成長率を背景情報として確認して",
+      "tool_ids": [
+        "econ.fred",
+        "econ.us_labor",
+        "finance.ecb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-03",
+      "prompt": "東南アジア各国の所得成長と貿易構成を比較して",
+      "tool_ids": [
+        "econ.adb",
+        "trade.un_comtrade",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-04",
+      "prompt": "アフリカ諸国の債務や成長をSDGsの進捗とあわせて",
+      "tool_ids": [
+        "econ.afdb",
+        "econ.imf",
+        "development.un_sdg"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-05",
+      "prompt": "ラテンアメリカのインフレと成長を地域別に比較して",
+      "tool_ids": [
+        "econ.cepalstat",
+        "econ.imf",
+        "development.idb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-06",
+      "prompt": "EU各国の電力価格と消費者物価、経済成長を比較して",
+      "tool_ids": [
+        "econ.eurostat",
+        "finance.ecb",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-07",
+      "prompt": "日本の輸出入の変化と為替・国際収支の動向を調べて",
+      "tool_ids": [
+        "trade.un_comtrade",
+        "finance.bis",
+        "econ.jp_estat"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-08",
+      "prompt": "世界の観光回復と航空便の運航規模を地域別に比較して",
+      "tool_ids": [
+        "econ.worldbank",
+        "aviation.opensky",
+        "econ.oecd"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-09",
+      "prompt": "米国の雇用・物価と連邦政府支出の変化を比較して",
+      "tool_ids": [
+        "econ.us_labor",
+        "econ.fred",
+        "gov.us_spending"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-11",
+      "prompt": "中央銀行の金利・金融環境と物価の関係を日米欧で比較して",
+      "tool_ids": [
+        "finance.ecb",
+        "finance.bis",
+        "econ.fred"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-12",
+      "prompt": "日本の地域別人口変化と雇用状況を比較して",
+      "tool_ids": [
+        "econ.jp_estat",
+        "econ.oecd",
+        "econ.us_labor"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-13",
+      "prompt": "各国の再生可能エネルギー比率と温室効果ガス排出の変化を比較して",
+      "tool_ids": [
+        "econ.worldbank",
+        "energy.us_eia",
+        "development.un_sdg"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-14",
+      "prompt": "米国の電力構成と大気質の季節的な傾向を整理して",
+      "tool_ids": [
+        "energy.us_eia",
+        "environment.air_quality",
+        "econ.us_labor"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-15",
+      "prompt": "大規模地震の発生状況と災害被害・支援ニーズを照合して",
+      "tool_ids": [
+        "earth.earthquakes",
+        "earth.disasters",
+        "humanitarian.hdx"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-18",
+      "prompt": "南アジアの電力アクセスと再生可能電力の普及を比較して",
+      "tool_ids": [
+        "econ.worldbank",
+        "development.un_sdg",
+        "econ.adb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-19",
+      "prompt": "欧州の気温・大気汚染とエネルギー消費動向を照合して",
+      "tool_ids": [
+        "environment.air_quality",
+        "econ.eurostat",
+        "energy.us_eia"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-21",
+      "prompt": "各地域の水資源ストレスと農業・持続可能性指標を比較して",
+      "tool_ids": [
+        "econ.worldbank",
+        "development.un_sdg",
+        "econ.afdb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-22",
+      "prompt": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して",
+      "tool_ids": [
+        "space.space_weather",
+        "astronomy.sunrise",
+        "space.ephemeris"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-23",
+      "prompt": "地震活動と津波・沿岸災害の記録を地域別に整理して",
+      "tool_ids": [
+        "earth.earthquakes",
+        "ocean.tides",
+        "earth.disasters"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-24",
+      "prompt": "国別の電力生産と燃料貿易の構成を比較して",
+      "tool_ids": [
+        "energy.us_eia",
+        "trade.un_comtrade",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-25",
+      "prompt": "ウクライナの紛争イベントと避難民の推移、人道支援状況を照合して",
+      "tool_ids": [
+        "conflict.ucdp",
+        "humanitarian.unhcr",
+        "humanitarian.hdx"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-26",
+      "prompt": "サヘル地域の紛争と国内避難、人道ニーズの重なりを整理して",
+      "tool_ids": [
+        "conflict.ucdp",
+        "humanitarian.unhcr",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-28",
+      "prompt": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を調べて",
+      "tool_ids": [
+        "sanctions.unsc",
+        "sanctions.us_ofac",
+        "conflict.ucdp"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-29",
+      "prompt": "難民受け入れの規模と各国の経済・人口指標を比較して",
+      "tool_ids": [
+        "humanitarian.unhcr",
+        "econ.worldbank",
+        "development.un_sdg"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-34",
+      "prompt": "中南米の暴力イベントと人道的移動・避難の状況を整理して",
+      "tool_ids": [
+        "conflict.ucdp",
+        "humanitarian.unhcr",
+        "development.idb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-37",
+      "prompt": "米国の気候関連法案、規則案、連邦支出を横断して整理して",
+      "tool_ids": [
+        "politics.us_congress",
+        "policy.us_rulemaking",
+        "gov.us_spending"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-38",
+      "prompt": "日本のAI政策審議と関連法令、国会発言を比較して",
+      "tool_ids": [
+        "japan.diet_transcript",
+        "japan.law",
+        "knowledge.wikidata"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-39",
+      "prompt": "EUの環境政策審議と法令文書、排出指標を結びつけて",
+      "tool_ids": [
+        "politics.eu_parliament",
+        "law.eu_cellar",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-40",
+      "prompt": "英国議会の医療政策議論と臨床試験の動向を整理して",
+      "tool_ids": [
+        "politics.uk_parliament",
+        "health.clinical_trials",
+        "health.openfda"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-41",
+      "prompt": "カナダ議会の審議とカナダ・各国の経済指標を照らし、議論の背景を整理して",
+      "tool_ids": [
+        "politics.ca_openparliament",
+        "law.eu_cellar",
+        "econ.worldbank"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-42",
+      "prompt": "ブラジルの上下両院の審議と地域開発指標を比較して",
+      "tool_ids": [
+        "politics.br_chamber",
+        "politics.br_senate",
+        "development.idb"
+      ]
+    },
+    {
+      "id": "multi-api-analysis-48",
+      "prompt": "AIエージェント開発記事の傾向とGitHub上の実装活動を照合して",
+      "tool_ids": [
+        "knowledge.qiita",
+        "knowledge.devto",
+        "dev.github"
+      ]
+    }
+  ]
+}

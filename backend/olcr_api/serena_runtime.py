@@ -13,8 +13,14 @@ def runtime_root(resource_root: str | Path | None = None) -> Path | None:
     considered valid fallbacks.
     """
     roots = [Path(resource_root)] if resource_root else []
-    if os.environ.get("OLCR_MCP_RUNTIME_ROOT"):
-        roots.insert(0, Path(os.environ["OLCR_MCP_RUNTIME_ROOT"]))
+    if override := os.environ.get("OLCR_MCP_RUNTIME_ROOT"):
+        roots.insert(0, Path(override))
+    elif resource_root is None:
+        from .optional_runtimes import runtime as components
+        if components.installed('serena'):
+            return components.path('serena')
+        support = Path(os.environ.get('OLCR_APP_SUPPORT', Path.home() / 'Library/Application Support/OLCR'))
+        roots.extend([support / 'runtime/current', Path(__file__).resolve().parents[2]])
     for root in roots:
         candidate = root / "mcp-runtime" / "serena"
         marker = candidate / "runtime-manifest.json"

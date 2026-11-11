@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import os
 import math
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Iterable
@@ -13,10 +14,12 @@ from .models import SearchResult
 
 
 class PathGuard:
-    def __init__(self, roots: Iterable[str]): self.roots = tuple(Path(r).resolve() for r in roots)
+    def __init__(self, roots: Iterable[str]):
+        self.roots = tuple(Path(r).resolve() for r in roots)
+        self.unrestricted = lambda: False
     def resolve(self, path: str) -> Path:
         value = Path(path).expanduser().resolve()
-        if not any(value == root or root in value.parents for root in self.roots): raise PermissionError("path is outside allowed roots")
+        if not self.unrestricted() and not any(value == root or root in value.parents for root in self.roots): raise PermissionError("path is outside allowed roots")
         return value
 
 
@@ -63,6 +66,64 @@ class FileRetriever(Retriever):
                     except (OSError, UnicodeError): pass
         return rows
 
+    def search_source(self, query: str, limit: int) -> list[SearchResult]:
+        """Rank local Python source snippets when a natural-language phrase has no exact hit."""
+        stop = {"the", "that", "this", "with", "from", "into", "for", "and", "are", "was", "were",
+                "function", "class", "method", "symbol", "definition", "implementation"}
+        tokens = [token for token in re.findall(r"[a-z][a-z0-9_]{2,}", query.lower()) if token not in stop]
+        patterns = []
+        for token in tokens:
+            stem = token[:-2] if token.endswith("es") else token[:-1] if token.endswith("s") else token
+            if len(stem) >= 3 and stem not in patterns:
+                patterns.append(stem)
+        if not patterns:
+            return []
+        term = re.compile(r"\b(?:" + "|".join(re.escape(item) for item in patterns) + r")\w*\b", re.I)
+        candidates: list[tuple[float, str, int, str]] = []
+        for root in self.guard.roots:
+            if not root.exists():
+                continue
+            listing = subprocess.run(
+                ["rg", "--files", "--hidden", "--glob", "*.py", "--glob", "!.git/**",
+                 "--glob", "!**/.venv/**", "--glob", "!**/tests/**", "--glob", "!**/test_*.py",
+                 "--glob", "!**/benchmark_results/**", str(root)],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            if listing.returncode not in (0, 1):
+                raise RuntimeError(f"ripgrep source listing failed: {listing.stderr.strip()}")
+            for raw_path in listing.stdout.splitlines():
+                path = Path(raw_path)
+                try:
+                    if path.stat().st_size > 2_000_000:
+                        continue
+                    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                except OSError:
+                    continue
+                matched = [index for index, line in enumerate(lines) if term.search(line)]
+                for index in matched:
+                    start, end = max(0, index - 4), min(len(lines), index + 5)
+                    snippet = "\n".join(lines[start:end])
+                    matched_terms = sum(
+                        1 for pattern in patterns
+                        if re.search(r"\b" + re.escape(pattern) + r"\w*\b", snippet, re.I)
+                    )
+                    score = float(matched_terms)
+                    if re.search(r"^\s*(?:async\s+)?def\s+", snippet, re.M):
+                        score += 1.0
+                    if path.name == "app.py":
+                        score += 0.25
+                    candidates.append((score, str(path), start + 1, snippet))
+        candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+        selected: list[SearchResult] = []
+        seen: set[tuple[str, int]] = set()
+        for score, source, line, snippet in candidates:
+            if any(source == existing.source and abs(line - int(existing.line or 0)) < 8 for existing in selected):
+                continue
+            selected.append(SearchResult(source, snippet, score=score, line=line, method="ranked_source"))
+            if len(selected) >= limit:
+                break
+        return selected
+
 
 class FTSRetriever(Retriever):
     def __init__(self, db: Database, source: str | None = None): self.db, self.source = db, source
@@ -84,12 +145,54 @@ class DisabledVectorStore(VectorStore):
 class RetrievalRouter:
     SEMANTIC_CANDIDATE_LIMIT=3
     SELECTABLE_RELATIONS={"answers","defines","explains","supports"}
-    def __init__(self, files: FileRetriever, fts: FTSRetriever, vectors: VectorStore, vector_enabled: bool, semantic_evaluator: object | None=None, semantic_normalizer: object | None=None, reranker: object | None=None, reranker_threshold: float=.01):
+    def __init__(self, files: FileRetriever, fts: FTSRetriever, vectors: VectorStore, vector_enabled: bool, semantic_evaluator: object | None=None, semantic_normalizer: object | None=None, reranker: object | None=None, reranker_threshold: float=.01, graphify: object | None=None):
+        self.graphify = graphify
         self.files, self.fts, self.vectors, self.vector_enabled, self.semantic_evaluator, self.semantic_normalizer, self.reranker, self.reranker_threshold = files, fts, vectors, vector_enabled, semantic_evaluator, semantic_normalizer, reranker, reranker_threshold
         self.last_failures: list[dict[str, str]] = []
         self.semantic_telemetry: dict = getattr(vectors,"last_telemetry",{"state":"disabled","available":False})
-    def retrieve(self, query: str, limit: int, filename_hint: bool = False) -> tuple[list[SearchResult], str]:
+    @staticmethod
+    def _source_lookup(query: str) -> bool:
+        return bool(re.search(r"\b(?:function|class|method|symbol|definition|implementation)\b", query, re.I))
+    @staticmethod
+    def _without_non_source_artifacts(rows: list[SearchResult]) -> tuple[list[SearchResult], int]:
+        retained = [
+            row for row in rows
+            if not ({"benchmark_results", "tests"} & set(Path(row.source.replace("\\", "/")).parts))
+            and not Path(row.source).name.startswith("test_")
+        ]
+        return retained, len(rows) - len(retained)
+    def graph_context(self, query: str, workspace_root: str | None, limit: int = 3):
+        if self.graphify is None:
+            return [], False
+        return self.graphify.search(query, workspace_root, limit)
+
+    def retrieve(self, query: str, limit: int, filename_hint: bool = False, workspace_root: str | None = None,
+                 scope_root: str | None = None) -> tuple[list[SearchResult], str]:
         self.last_failures = []
+        if scope_root:
+            # An attached folder is an explicit, isolated file selection.
+            # A miss must not fall back to another project's indexed files.
+            root = Path(scope_root).resolve(strict=True)
+            if not root.is_dir():
+                raise ValueError('WORKING_FOLDER_UNAVAILABLE_OR_CHANGED')
+            files = FileRetriever([str(root)])
+            rows = files.filename(query, limit) if filename_hint else []
+            if not rows:
+                rows = files.search(query, limit)
+            rows = [row for row in rows if Path(row.source).resolve().is_relative_to(root)
+                    and not Path(row.source).is_symlink()]
+            self.semantic_telemetry = {'state': 'attached_folder', 'attempted': False}
+            return rows, rows[0].method if rows else 'attached_folder'
+        if workspace_root and self.graphify is not None:
+            rows, authoritative = self.graph_context(query, workspace_root, limit)
+            if authoritative:
+                self.semantic_telemetry = {"state": "graphify", "attempted": False}
+                return rows, "graphify"
+        source_lookup = self._source_lookup(query)
+        non_source_artifacts_discarded = 0
+        def fail_if_prior_layers_failed():
+            if self.last_failures:
+                raise RuntimeError("retrieval failed: " + ", ".join(x["layer"]+":"+x["category"] for x in self.last_failures))
         self.semantic_telemetry={"available":self.vector_enabled and getattr(self.vectors,"state","") not in ("disabled","model_unavailable"),"attempted":False,"state":getattr(self.vectors,"state","disabled"),"model":getattr(self.vectors,"model",""),"router_enter":True,"vector_enabled_effective":self.vector_enabled}
         if filename_hint:
             try: rows = self.files.filename(query, limit)
@@ -99,6 +202,14 @@ class RetrievalRouter:
         try: rows = self.files.search(query, limit)
         except Exception as exc:
             self.last_failures.append({"layer":"lexical","category":type(exc).__name__}); rows=[]
+        if source_lookup:
+            rows, discarded = self._without_non_source_artifacts(rows)
+            non_source_artifacts_discarded += discarded
+            self.semantic_telemetry["non_source_artifact_results_discarded"] = non_source_artifacts_discarded
+            if not rows:
+                rows = self.files.search_source(query, limit)
+                if rows:
+                    self.semantic_telemetry["source_expansion"] = "ranked_source"
         self.semantic_telemetry["lexical_results_count"]=len(rows)
         if rows: self.semantic_telemetry["lexical_short_circuit"]=True; return rows, rows[0].method
         try: rows = self.fts.search(query, limit)
@@ -107,7 +218,11 @@ class RetrievalRouter:
         if rows: return rows, "fts5"
         if self.vector_enabled and self.reranker is not None:
             try:
-                candidates=self.vectors.search(query,limit);base=dict(getattr(self.vectors,"last_telemetry",{}));scores=[];reranker_latency=0.0
+                candidates=self.vectors.search(query,limit)
+                if source_lookup:
+                    candidates, discarded = self._without_non_source_artifacts(candidates)
+                    non_source_artifacts_discarded += discarded
+                base=dict(getattr(self.vectors,"last_telemetry",{}));base["non_source_artifact_results_discarded"] = non_source_artifacts_discarded;scores=[];reranker_latency=0.0
                 base.update({"reranker":getattr(self.reranker,"status",{"enabled":False}),"reranker_attempted":bool(candidates),"candidate_count":len(candidates[:self.SEMANTIC_CANDIDATE_LIMIT]),"scored_count":0,"threshold":self.reranker_threshold,"abstained":True,"selected":False,"qwen_relation_attempted":False})
                 for number,candidate in enumerate(candidates[:self.SEMANTIC_CANDIDATE_LIMIT],1):
                     candidate_id=f"candidate-{number}"
@@ -127,13 +242,15 @@ class RetrievalRouter:
             except Exception as exc:
                 self.last_failures.append({"layer":"semantic","category":getattr(exc,"category",type(exc).__name__)})
                 self.semantic_telemetry={"available":True,"attempted":True,"selected":False,"state":"error","model":getattr(self.vectors,"model","") ,"error_category":getattr(exc,"category",type(exc).__name__)}
+                if any(item["layer"] in {"filename", "lexical", "fts5"} for item in self.last_failures):
+                    raise RuntimeError("retrieval failed: " + ", ".join(x["layer"]+":"+x["category"] for x in self.last_failures)) from exc
                 return [], "none"
         if self.vector_enabled:
             self.semantic_telemetry["vector_branch_enter"]=True
             try:
                 if self.semantic_normalizer is None:
                     self.semantic_telemetry.update({"vector_search_skip_reason":"normalizer_unavailable","vector_precall_status":"SKIPPED"})
-                    self.semantic_telemetry.update({"normalization":{"attempted":False,"succeeded":False,"error":"normalizer_unavailable"},"relation_attempted":False,"abstained":True});return [],"none"
+                    self.semantic_telemetry.update({"normalization":{"attempted":False,"succeeded":False,"error":"normalizer_unavailable"},"relation_attempted":False,"abstained":True});fail_if_prior_layers_failed();return [],"none"
                 try:
                     intent=self.semantic_normalizer.normalize(query)
                     self.semantic_telemetry["normalizer_diagnostics"]=getattr(self.semantic_normalizer,"last_diagnostics",{})
@@ -141,11 +258,15 @@ class RetrievalRouter:
                 except Exception as exc:
                     self.semantic_telemetry["normalizer_diagnostics"]=getattr(self.semantic_normalizer,"last_diagnostics",{})
                     self.semantic_telemetry.update({"vector_search_skip_reason":"normalizer_error","vector_precall_status":"SKIPPED","vector_precall_error_class":getattr(exc,"category",type(exc).__name__)})
-                    self.semantic_telemetry.update({"normalization":{"attempted":True,"model":getattr(self.semantic_normalizer,"model",""),"succeeded":False,"error":getattr(exc,"category",type(exc).__name__)},"relation_attempted":False,"abstained":True});return [],"none"
+                    self.semantic_telemetry.update({"normalization":{"attempted":True,"model":getattr(self.semantic_normalizer,"model",""),"succeeded":False,"error":getattr(exc,"category",type(exc).__name__)},"relation_attempted":False,"abstained":True});fail_if_prior_layers_failed();return [],"none"
                 self.semantic_telemetry.update({"vector_store_present":self.vectors is not None,"vector_store_type":type(self.vectors).__name__,"vector_search_method_present":hasattr(self.vectors,"search"),"vector_search_precall":True,"vector_search_call_start":True})
                 try:
                     candidates=self.vectors.search(query,limit)
+                    if source_lookup:
+                        candidates, discarded = self._without_non_source_artifacts(candidates)
+                        non_source_artifacts_discarded += discarded
                     self.semantic_telemetry.update({"vector_search_call_end":True,"vector_search_invoke_status":"OK","vector_search_return_received":True,"vector_search_return_count":len(candidates)})
+                    self.semantic_telemetry["non_source_artifact_results_discarded"] = non_source_artifacts_discarded
                 except Exception as exc:
                     self.semantic_telemetry.update({"vector_search_call_end":False,"vector_search_invoke_status":"ERROR","vector_search_error_class":getattr(exc,"category",type(exc).__name__)})
                     raise
@@ -164,10 +285,19 @@ class RetrievalRouter:
                     if selected:
                         base.update({"candidates_evaluated":len(decisions),"relation_decisions":decisions,"relation_latency_ms":evaluator_latency,"abstained":False,"selected":True,"selected_candidate":{"candidate_id":candidate_id,"source":candidate.source,"similarity_score":candidate.score,"relation":decision.relation,"evidence":decision.evidence}});self.semantic_telemetry=base;return [candidate],"semantic"
                 base.update({"candidates_evaluated":len(decisions),"relation_decisions":decisions,"relation_latency_ms":evaluator_latency});self.semantic_telemetry=base
+                # If both deterministic retrieval layers failed, an empty
+                # semantic result is still a retrieval failure.  Do not fall
+                # through to Normal Brain, where the provider error can mask
+                # the original retrieval failure and violate the safe-error
+                # contract.
+                if self.last_failures:
+                    raise RuntimeError("retrieval failed: " + ", ".join(x["layer"]+":"+x["category"] for x in self.last_failures))
                 return [],"none"
             except Exception as exc:
                 self.last_failures.append({"layer":"semantic","category":getattr(exc,"category",type(exc).__name__)})
                 self.semantic_telemetry={"available":True,"attempted":True,"selected":False,"state":"error","model":getattr(self.vectors,"model",""),"error_category":getattr(exc,"category",type(exc).__name__)}
+                if any(item["layer"] in {"filename", "lexical", "fts5"} for item in self.last_failures):
+                    raise RuntimeError("retrieval failed: " + ", ".join(x["layer"]+":"+x["category"] for x in self.last_failures)) from exc
                 return [], "none"
         if self.last_failures: raise RuntimeError("retrieval failed: " + ", ".join(x["layer"]+":"+x["category"] for x in self.last_failures))
         return [], "none"

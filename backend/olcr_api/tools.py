@@ -54,7 +54,8 @@ def _calculate(node: ast.AST) -> Decimal:
 def calculator(v: dict[str, Any]) -> dict[str, str]:
     try: result = _calculate(ast.parse(v["expression"], mode="eval"))
     except (SyntaxError, InvalidOperation, ZeroDivisionError, OverflowError) as exc: raise ToolValidationError(str(exc)) from exc
-    return {"result": format(result, "f").rstrip("0").rstrip(".") or "0"}
+    rendered = format(result, "f")
+    return {"result": (rendered.rstrip("0").rstrip(".") if "." in rendered else rendered) or "0"}
 
 
 def registry() -> dict[str, Tool]:

@@ -1,0 +1,185 @@
+{
+  "description": "Excluded on 2026-10-23 by user request: underspecified subjects or no shared comparison target. Historical record only; do not execute in regression, live API, or GUI E2E batches.",
+  "cases": [
+    {
+      "id": "multi-api-analysis-10",
+      "prompt": "住宅費と物価上昇、家計への影響を複数指標から整理して",
+      "tool_ids": [
+        "econ.eurostat",
+        "econ.worldbank",
+        "econ.oecd"
+      ],
+      "exclusion_reason": "国・地域がなく、住宅費・物価・家計指標の対象を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-16",
+      "prompt": "洪水リスクと河川水位、周辺地域の標高をあわせて確認して",
+      "tool_ids": [
+        "earth.streamflow",
+        "geo.elevation",
+        "earth.disasters"
+      ],
+      "exclusion_reason": "河川・流域・観測所・座標がなく、水位と標高の照合対象を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-17",
+      "prompt": "沿岸地域の潮汐と災害発生状況の時期を比較して",
+      "tool_ids": [
+        "ocean.tides",
+        "earth.disasters",
+        "astronomy.sunrise"
+      ],
+      "exclusion_reason": "沿岸地域・観測所がなく、潮汐と災害の照合対象を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-20",
+      "prompt": "山火事や自然災害の発生と人口・人道支援の状況を整理して",
+      "tool_ids": [
+        "conflict.ucdp",
+        "humanitarian.hdx",
+        "econ.worldbank"
+      ],
+      "exclusion_reason": "地域・災害イベントがなく、災害、人口、人道支援を結びつける共通対象がない。"
+    },
+    {
+      "id": "multi-api-analysis-27",
+      "prompt": "制裁対象の組織と武力紛争イベントの地理的な重なりを確認して",
+      "tool_ids": [
+        "sanctions.unsc",
+        "sanctions.opensanctions",
+        "conflict.ucdp"
+      ],
+      "exclusion_reason": "制裁対象の組織・地域がなく、紛争イベントとの地理照合を評価できない。"
+    },
+    {
+      "id": "multi-api-analysis-30",
+      "prompt": "災害後の人道支援要請と被災地域の災害記録を照合して",
+      "tool_ids": [
+        "humanitarian.hdx",
+        "earth.disasters",
+        "humanitarian.unhcr"
+      ],
+      "exclusion_reason": "災害名・被災地がなく、支援要請と災害記録を結びつけられない。"
+    },
+    {
+      "id": "multi-api-analysis-31",
+      "prompt": "紛争地域周辺の航空機運航と民間航空気象情報を確認して",
+      "tool_ids": [
+        "conflict.ucdp",
+        "aviation.opensky",
+        "aviation.operational_weather"
+      ],
+      "exclusion_reason": "紛争地域・空域・空港がなく、運航と航空気象の観測範囲を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-32",
+      "prompt": "紛争地域の食料危機と避難民・支援ニーズを比較して",
+      "tool_ids": [
+        "humanitarian.hdx",
+        "humanitarian.unhcr",
+        "econ.worldbank"
+      ],
+      "exclusion_reason": "紛争地域・国がなく、食料危機・避難民・支援ニーズの比較対象を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-33",
+      "prompt": "制裁対象企業の情報と国際貿易フローの変化を検討して",
+      "tool_ids": [
+        "sanctions.opensanctions",
+        "trade.un_comtrade",
+        "sanctions.us_ofac"
+      ],
+      "exclusion_reason": "企業名・国・品目がなく、制裁情報と貿易フローを結びつける対象がない。"
+    },
+    {
+      "id": "multi-api-analysis-35",
+      "prompt": "人道危機の発生地域と国連SDGsの関連指標を比較して",
+      "tool_ids": [
+        "humanitarian.hdx",
+        "development.un_sdg",
+        "econ.worldbank"
+      ],
+      "exclusion_reason": "危機・対象地域・SDG指標がなく、何を比較するか評価できない。"
+    },
+    {
+      "id": "multi-api-analysis-36",
+      "prompt": "制裁措置と米国の政府契約・支出記録の関連を調査して",
+      "tool_ids": [
+        "sanctions.us_ofac",
+        "defense.us_contracts",
+        "gov.us_spending"
+      ],
+      "exclusion_reason": "制裁対象企業・団体・措置がなく、米国契約との関連を照合できない。"
+    },
+    {
+      "id": "multi-api-analysis-43",
+      "prompt": "米国の選挙資金と議会法案、政府契約支出の関係を整理して",
+      "tool_ids": [
+        "politics.us_campaign_finance",
+        "politics.us_congress",
+        "defense.us_contracts"
+      ],
+      "exclusion_reason": "選挙・候補者・企業・法案の指定がなく、選挙資金、法案、政府契約の関連を評価できない。"
+    },
+    {
+      "id": "multi-api-analysis-44",
+      "prompt": "連邦規則制定と議会審議、裁判例の動きを照合して",
+      "tool_ids": [
+        "policy.us_federal_register",
+        "politics.us_congress",
+        "law.us_courts"
+      ],
+      "exclusion_reason": "規則・政策分野・法案・裁判例の指定がなく、3種の文書を結びつける争点がない。"
+    },
+    {
+      "id": "multi-api-analysis-45",
+      "prompt": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して",
+      "tool_ids": [
+        "health.clinical_trials",
+        "health.openfda",
+        "biology.protein"
+      ],
+      "exclusion_reason": "疾患・薬剤・標的タンパク質がなく、臨床試験と有害事象・分子研究の対応を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-46",
+      "prompt": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して",
+      "tool_ids": [
+        "biology.structure",
+        "health.clinical_trials",
+        "econ.worldbank"
+      ],
+      "exclusion_reason": "感染症・研究課題・対象国がなく、論文、試験、健康指標の比較軸を決定できない。"
+    },
+    {
+      "id": "multi-api-analysis-47",
+      "prompt": "脆弱性の深刻度と悪用可能性、公開エクスプロイトの状況を比較して",
+      "tool_ids": [
+        "security.cve",
+        "security.exploit_probability",
+        "dev.github"
+      ],
+      "exclusion_reason": "CVE番号・製品名がなく、深刻度、悪用可能性、エクスプロイトの対象を特定できない。"
+    },
+    {
+      "id": "multi-api-analysis-49",
+      "prompt": "食料の栄養成分と食品表示、レシピでの利用例を整理して",
+      "tool_ids": [
+        "food.product",
+        "food.recipe",
+        "econ.worldbank"
+      ],
+      "exclusion_reason": "食品名・商品名・バーコードがなく、栄養成分、表示、レシピの対象を特定できない。"
+    },
+    {
+      "id": "multi-api-analysis-50",
+      "prompt": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して",
+      "tool_ids": [
+        "biology.occurrence",
+        "biology.phylogeny",
+        "biology.protein"
+      ],
+      "exclusion_reason": "種名・学名・遺伝子/タンパク質がなく、観察・系統・分子研究を結びつけられない。"
+    }
+  ]
+}

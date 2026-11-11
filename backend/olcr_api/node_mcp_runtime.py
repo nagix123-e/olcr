@@ -40,10 +40,37 @@ def _runtime_candidate(root: Path) -> Path | None:
 
 
 def runtime_root(resource_root: str | Path | None = None) -> Path | None:
+    if resource_root is None and not os.environ.get('OLCR_NODE_MCP_RUNTIME_ROOT'):
+        from .optional_runtimes import OptionalRuntimes, runtime as components
+        if components.installed('node-tools'):
+            return components.path('node-tools')
+        # A DB-only override isolates persistence for tests and local tooling;
+        # it must not relocate or hide immutable app-managed Node resources.
+        # OptionalRuntimes.root normally follows OLCR_DB_PATH when there is no
+        # explicit app-support/components root, so check the default profile
+        # before declaring the runtime unavailable.
+        if (os.environ.get('OLCR_DB_PATH') and not os.environ.get('OLCR_APP_SUPPORT')
+                and not os.environ.get('OLCR_COMPONENTS_ROOT')):
+            default_support=Path.home()/'Library'/'Application Support'/'OLCR'
+            default_components=OptionalRuntimes(default_support/'components')
+            if default_components.installed('node-tools'):
+                return default_components.path('node-tools')
     for root in _resource_roots(resource_root):
         if candidate := _runtime_candidate(root):
             return candidate
     return None
+
+
+def _component_runtime_for_node_root(root: Path):
+    """Resolve sibling components from the profile that owns ``root``."""
+    from .optional_runtimes import OptionalRuntimes, runtime
+    try:
+        profile = OptionalRuntimes(root.parent.parent)
+        if root.resolve() == profile.path('node-tools').resolve():
+            return profile
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return runtime
 
 
 def runtime_diagnostics() -> dict[str, object]:
@@ -87,6 +114,28 @@ def _read_manifest(root: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def verification_browser_executable(root: Path, *, prepare: bool = False) -> Path | None:
+    """Resolve Chromium for both split components and older bundled runtimes."""
+    from .optional_runtimes import BROWSER_PATH
+    components = _component_runtime_for_node_root(root)
+    if root.resolve() == components.path('node-tools').resolve():
+        from .optional_runtimes import SetupError
+        try:
+            browser = (components.ensure('browser') if prepare else
+                       components.path('browser') if components.installed('browser') else None)
+        except SetupError:
+            return None
+        return browser / BROWSER_PATH if browser else None
+    metadata = (_read_manifest(root) or {}).get('browser')
+    relative = metadata.get('path') if isinstance(metadata, dict) else None
+    if not isinstance(relative, str) or not relative:
+        return None
+    candidate = (root / relative).resolve()
+    if candidate.is_relative_to(root.resolve()) and candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
+    return None
+
+
 def _bundled_entrypoint(root: Path, server: str, metadata: dict[str, Any] | None) -> tuple[list[str] | None, str]:
     if metadata is None:
         return None, "RESOURCE_RESOLUTION_FAILED"
@@ -103,12 +152,13 @@ def _bundled_entrypoint(root: Path, server: str, metadata: dict[str, Any] | None
 
 
 def resolve_mcp_resources(server: str, resource_root: str | Path | None = None,
-                         source_root: str | Path | None = None) -> dict[str, Any]:
+                         source_root: str | Path | None = None, *, for_connection: bool = False) -> dict[str, Any]:
     """Return deterministic resource and launch prerequisites for ``server``."""
     try:
         from .mcp_manifest import MCP_MANIFEST
         registered = server in MCP_MANIFEST
-        enabled = bool(MCP_MANIFEST.get(server, {}).get("enabled_by_policy"))
+        enabled = bool(MCP_MANIFEST.get(server, {}).get("enabled_by_policy")) or (
+            for_connection and bool(MCP_MANIFEST.get(server, {}).get("connection_enabled")))
     except Exception:
         registered = enabled = False
     configured_mode = os.environ.get("MCP_RESOURCE_MODE", "").upper()
@@ -163,9 +213,16 @@ def resolve_mcp_resources(server: str, resource_root: str | Path | None = None,
     return result
 
 
-def launch_command(server: str, resource_root: str | Path | None = None) -> list[str] | None:
+def launch_command(server: str, resource_root: str | Path | None = None, *, prepare=False, for_connection=False) -> list[str] | None:
     """Return a command using only a bundled Node executable, or ``None``."""
-    value = resolve_mcp_resources(server, resource_root)
+    if prepare and resource_root is None and not runtime_root():
+        from .mcp_manifest import server_definition
+        definition = server_definition(server) or {}
+        if not (definition.get('enabled_by_policy') or (for_connection and definition.get('connection_enabled'))): return None
+        from .optional_runtimes import runtime as components, SetupError
+        try: components.ensure('node-tools')
+        except SetupError: return None
+    value = resolve_mcp_resources(server, resource_root, for_connection=for_connection)
     command = value.get("command")
     # Keep the low-level resolver backwards-compatible for callers that only
     # need the entrypoint. The orchestration preflight still rejects a bundled
@@ -180,6 +237,34 @@ def launch_command(server: str, resource_root: str | Path | None = None) -> list
                     command = [str(root / "node" / "bin" / "node")]
                     command.extend(str(root / item) if item.startswith(_RESOURCE_PREFIXES) else item for item in entrypoint)
     return list(command) if isinstance(command, list) else None
+
+
+def managed_browser_command(resource_root: str | Path | None = None, *, prepare=False) -> list[str] | None:
+    """Resolve only OLCR's bundled Playwright entrypoint for Web/Scrape scope.
+
+    This is deliberately separate from ``launch_command``: the generic MCP
+    policy may keep Playwright disabled for Coding Tasks while the dedicated
+    browser capability owns its own public-Web egress proxy and tool allowlist.
+    """
+    root = runtime_root(resource_root)
+    if prepare and root is None and resource_root is None:
+        from .optional_runtimes import runtime as components, SetupError
+        try: root = components.ensure('node-tools')
+        except SetupError: return None
+    if root is None:
+        return None
+    # The browser is a separate component. Plain reference tools never acquire it.
+    components = _component_runtime_for_node_root(root)
+    if root.resolve() == components.path('node-tools').resolve():
+        from .optional_runtimes import SetupError
+        try: browser = components.ensure('browser') if prepare else (components.path('browser') if components.installed('browser') else None)
+        except SetupError: return None
+        if browser is None: return None
+        from .optional_runtimes import BROWSER_PATH
+        return [str(root / 'node/bin/node'), str(root / 'node_modules/@playwright/mcp/cli.js'),
+                '--headless', '--isolated', '--executable-path', str(browser / BROWSER_PATH)]
+    command, _reason = _bundled_entrypoint(root, "playwright", _read_manifest(root))
+    return list(command) if command is not None else None
 
 
 mcp_resource_status = resolve_mcp_resources

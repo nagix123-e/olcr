@@ -1,7 +1,9 @@
 """Serial, persisted coding-task planning primitives for the desktop API."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
+import os
 import re
 import hashlib
 from pathlib import Path
@@ -18,8 +20,13 @@ MAX_SUBSTANTIAL_REPLANS_PER_TASK = 2
 # Epoch budgets remain useful for ordinary recovery UX, but these task-global
 # bounds prevent Continue/epoch churn from becoming an unbounded model loop.
 TASK_GLOBAL_REPLAN_LIMIT = 4
+# An explicit human resume may grant at most four additional bounded replan
+# epochs after the task-global budget is exhausted. Each epoch is separately
+# recorded and requires an explicit resume, so the cumulative budget remains
+# finite and repeated Continue actions cannot create an unbounded model loop.
+MAX_HUMAN_RECOVERY_REPLAN_EPOCHS = 4
 TASK_GLOBAL_PLAN_REPAIR_LIMIT = 4
-TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT = 8
+TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT = 9
 # A blocker may be reopened only a small, explicit number of times.  This is
 # separate from the normal replan epoch so Continue cannot turn a terminal
 # blocker into an unbounded retry loop.
@@ -189,6 +196,38 @@ def dependency_requirement_names(records_or_specs: list[Any] | None) -> list[str
     return names
 
 
+def planned_bootstrap_dependencies(plan: Mapping[str, Any], requirements: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Materialize a bounded host profile for an approved greenfield file plan.
+
+    No arbitrary planner package names or commands become authorization. Existing
+    projects and user-selected/restricted stacks keep their original contracts.
+    """
+    if (requirements.get("new_project_intent") is not True
+            or requirements.get("required_stack") or requirements.get("forbidden_stack")
+            or requirements.get("forbidden_technologies")
+            or requirements.get("dependency_policy") not in (None, "UNSPECIFIED")):
+        return []
+    files = {item.get("path") for item in plan.get("file_manifest", [])
+             if isinstance(item, Mapping) and item.get("action") == "create"}
+    if not {"package.json", "vite.config.ts", "tsconfig.json", "src/main.tsx", "src/App.tsx"}.issubset(files):
+        return []
+    if not any(isinstance(phase, Mapping) and phase.get("requires_dependency_installation") is True
+               and phase.get("execution_mode") in {"IMPLEMENTATION", "IMPLEMENTATION_AND_VERIFICATION"}
+               for phase in plan.get("phases", [])):
+        return []
+    stack = ["Vite", "React", "TypeScript"]
+    # Only the fixed catalog entry is selected; text never supplies an npm spec.
+    if any(re.search(r"\btailwind(?:\s+css)?\b", str(text), re.I) for text in plan.get("assumptions", [])):
+        stack.append("Tailwind")
+    records = canonical_dependency_requirements({"required_stack": stack})
+    if any(isinstance(path, str) and path.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")) for path in files):
+        records.append({"package": "vitest", "version_range": None, "semantic_type": "DEV_PACKAGE",
+                        "dependency_kind": "devDependencies", "phase_id": None})
+    return [{**record, "source_requirement": "planned_bootstrap_profile",
+             "canonical_stack_provenance": "HOST_VITE_REACT_TYPESCRIPT_BOOTSTRAP",
+             "authorization_status": "AUTHORIZED"} for record in records]
+
+
 def associate_dependency_requirements(plan: dict[str, Any], requirements: Mapping[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
     """Attach the canonical dependency contract to exactly one implementation phase.
 
@@ -200,7 +239,7 @@ def associate_dependency_requirements(plan: dict[str, Any], requirements: Mappin
     if not isinstance(plan, dict):
         return plan, []
     requirements = requirements if isinstance(requirements, Mapping) else {}
-    records = canonical_dependency_requirements(requirements)
+    records = canonical_dependency_requirements(requirements) or planned_bootstrap_dependencies(plan, requirements)
     if not records:
         return plan, []
     phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)]
@@ -275,6 +314,37 @@ def _current_task_text(text: str) -> str:
     return "\n".join(current)
 
 
+def explicitly_requests_plan_only(text: str) -> bool:
+    """Recognize a current-turn instruction to stop after showing a plan.
+
+    This is a control-plane boundary, not an inference from the planner's
+    output. Require both a planning reference and explicit stop/approval or
+    no-mutation language so ordinary "plan, then implement" requests remain
+    continuous.
+    """
+    value = _current_task_text(text or "")
+    asks_for_plan = bool(re.search(r"\b(?:plan|planning|implementation plan)\b|計画|設計", value, re.I))
+    stop_after_plan = bool(re.search(
+        r"(?:計画|plan|planning).{0,100}(?:だけ|のみ|停止|止め|承認.{0,24}待|確認.{0,24}待|stop|halt|wait)"
+        r"|(?:stop|halt|wait).{0,80}(?:after|until).{0,60}(?:plan|planning|計画|approval|承認)"
+        r"|(?:計画|設計).{0,100}承認(?:後|されてから|を得てから)|\bafter\s+(?:my\s+)?approval\b"
+        r"|\b(?:plan[ -]only|planning[ -]only|read.only plan)\b",
+        value, re.I | re.S,
+    ))
+    rejects_plan_only = bool(re.search(
+        r"\b(?:not|rather than|instead of)\s+(?:planning\s+only|plan[ -]only|planning|plan)\b"
+        r"|(?:計画|設計)(?:だけ|のみ)ではなく",
+        value, re.I,
+    ))
+    no_mutation_yet = bool(re.search(
+        r"(?:まだ|現時点では|承認(?:される|する)まで|変更せず|編集せず|実装せず).{0,48}(?:ファイル|コード|変更|編集|実装|書き込み)"
+        r"|(?:ファイル|コード).{0,32}(?:変更|編集|書き込み).{0,24}(?:しない|しません|行わない|行いません)"
+        r"|\b(?:do not|don't|without)\b.{0,40}\b(?:change|modify|edit|write|implement)\b.{0,32}\b(?:files?|code)\b.{0,20}\b(?:yet|before approval)\b",
+        value, re.I | re.S,
+    ))
+    return asks_for_plan and not rejects_plan_only and (stop_after_plan or no_mutation_yet)
+
+
 def _architecture_clauses(text: str) -> list[tuple[str, bool]]:
     """Legacy clause view for static-plan compaction and retry instructions.
 
@@ -290,7 +360,13 @@ def _architecture_clauses(text: str) -> list[tuple[str, bool]]:
             continue
         if line.rstrip().endswith((":", "：")) and re.fullmatch(r"frontend|backend|database|api|authentication|docker|cms|analytics", heading):
             continue
-        if re.match(r"^\s*#{1,6}\s", line) or re.fullmatch(r"実装するもの|要件|検証|完了条件|requirements|verification|required", heading):
+        markdown_heading = bool(re.match(r"^\s*#{1,6}\s", line))
+        plain_section_heading = bool(
+            line.rstrip().endswith((":", "："))
+            and not re.match(r"^\s*(?:[-*+]|\d+[.)、])\s", line)
+            and len(heading) <= 96
+        )
+        if markdown_heading or plain_section_heading or re.fullmatch(r"実装するもの|要件|検証|完了条件|requirements|verification|required", heading):
             excluded_section = False
         for sentence in re.split(r"[。;；!\n]|\.(?=\s|$)|(?<!\w)but\s+|ただし|一方", line):
             inherited_negative = bool(re.match(r"^\s*[-*]?\s*(?:no|without|do not|don't)\b", sentence) or re.search(r"(?:は|を)?(?:不要|なし|使わない|使用しない)\s*$", sentence))
@@ -353,7 +429,7 @@ def required_mcp_contract(text: str) -> list[str]:
     value = _current_task_text(text)
     patterns = {
         "animejs": (
-            r"(?:use|consult|required?\s+to\s+use)\s+(?:the\s+)?anime(?:\.js)?\s*mcp",
+            r"(?:use|consult|required?\s+to\s+use)\s+(?:the\s+)?(?:offline\s+)?anime(?:\.?js)?\s*mcp",
             r"anime(?:\.js)?\s*mcp\s*(?:を)?\s*(?:実際に)?(?:使用|使)",
             r"anime\.js\s*(?:を)?\s*(?:使用|使)",
         ),
@@ -368,9 +444,9 @@ def required_mcp_contract(text: str) -> list[str]:
         ),
     }
     required: list[str] = []
-    listed_mcp_use=bool(re.search(r"(?:anime(?:\.js)?|shadcn|playwright).{0,120}(?:mcp).{0,120}(?:使用|使|use)", value, re.I))
+    listed_mcp_use=bool(re.search(r"(?:anime(?:\.?js)?|shadcn|playwright).{0,120}(?:mcp).{0,120}(?:使用|使|use)", value, re.I))
     for name in ("animejs", "shadcn", "playwright"):
-        token = r"shadcn(?:/ui)?" if name == "shadcn" else (r"anime(?:\.js)?" if name == "animejs" else r"playwright")
+        token = r"shadcn(?:/ui)?" if name == "shadcn" else (r"anime(?:\.?js)?" if name == "animejs" else r"playwright")
         opt_out = rf"(?:do\s+not(?:\s+use)?|don't(?:\s+use)?|without|no|never|使用しない|使わない|不要|禁止)\s*(?:the\s+)?{token}(?:\s*mcp)?|{token}(?:\s*mcp)?\s*(?:を)?\s*(?:使用しない|使わない|不要|禁止)"
         if re.search(opt_out, value, re.I):
             continue
@@ -512,20 +588,279 @@ def attachment_repair_evidence(attachment: Mapping[str, Any] | None, text: str =
     }
 
 
+_VERIFICATION_OPT_OUT = re.compile(
+    r"\b(?:do\s+not|don't|never|without|skip|omit|remove|disable|no)\b.{0,48}\b(?:verification|tests?|test suite|typecheck|build|browser checks?)\b"
+    r"|\b(?:verification|tests?|test suite|typecheck|browser checks?)\b.{0,48}\b(?:not needed|not required|not run|unnecessary|skip|omit|remove|disable|off)\b"
+    r"|(?:検証|テスト|ビルド|型チェック|ブラウザー?確認|動作確認).{0,40}(?:しない|しません|しなくてよい|必要ない|不要|なし|省く|外す|取り除く|取っ払|なくす|停止)"
+    r"|(?:検証|テスト).{0,24}(?:工程|フェーズ|ステップ).{0,40}(?:取っ払|取り除|外す|なく|除外|しない|不要)", re.I)
+
+
+def _verification_positive_text(text: str) -> str:
+    return " ".join(clause for clause, negative in _architecture_clauses(text or "")
+                    if not negative and not _VERIFICATION_OPT_OUT.search(clause))
+
+
 def required_verification_contract(text: str, required_mcps: list[str] | None = None, attachment_evidence: Mapping[str, Any] | None = None) -> list[str]:
     """Persist only verification commands explicitly named by the request."""
-    value = text or ""
     required: list[str] = []
-    if re.search(r"(?:npm\s+run\s+)?typecheck|型(?:チェック|検査)を(?:実行|検証)", value, re.I):
+    positive = _verification_positive_text(text or "")
+    if re.search(r'(?:run|execute)\s+(?:the\s+)?(?:(?:unit|integration|acceptance|e2e)\s+)?(?:(?:project|repository|repo|application|app|its)\s+)?(?:test suite|tests?)\b'
+                 r'|\bnpm\s+(?:run\s+)?test\b|テスト(?:を)?実行|node\s+--test|pytest\b'
+                 r'|\bpython(?:\d+(?:\.\d+)*)?\s+(?:-B\s+)?-m\s+(?:unittest|pytest)\b'
+                 r'|(?:run|execute|verify|check)\s+.{0,20}\bnode:test\b'
+                 r'|\bnode:test.{0,24}(?:run|execute|verify|check|検証|テスト|実行|確認)'
+                 r'|\b(?:cargo|go|dotnet|flutter)\s+test\b'
+                 r'|\bnpx\s+(?:playwright|vitest|jest)\s+(?:run|test)\b', positive, re.I):
+        required.append('tests')
+    if re.search(r"(?:npm\s+run\s+)?typecheck|型(?:チェック|検査)を(?:実行|検証)", positive, re.I):
         required.append("typecheck")
-    if re.search(r"npm\s+run\s+build|(?:run|verify|check|perform)\s+(?:the\s+)?build\b|build\s+(?:verification|check)|ビルド(?:を)?(?:実行|検証|確認)", value, re.I):
+    if re.search(r"npm\s+run\s+build|(?:run|verify|check|perform)\s+(?:the\s+)?build\b|build\s+(?:verification|check)|ビルド(?:を)?(?:実行|検証|確認)", positive, re.I):
         required.append("build")
-    if "playwright" in (required_mcps or []) or re.search(r"(?:browser|ブラウザ).{0,40}(?:verify|verification|検証|確認)", value, re.I):
+    if ("playwright" in (required_mcps or [])
+            or re.search(r"(?:browser|ブラウザ).{0,40}(?:verify|verification|test|check|検証|確認|テスト)", positive, re.I)
+            or re.search(r"\b(?:verify|verification|validate|test|check)\b.{0,48}\b(?:in|on|with)\s+(?:the\s+)?browser\b", positive, re.I)
+            or re.search(r"(?:検証|動作確認).{0,32}ブラウザ|ブラウザ.{0,32}(?:検証|動作確認|確認)", positive, re.I)):
         required.append("browser")
-    if isinstance(attachment_evidence, Mapping) and attachment_evidence.get("supports_existing_behavior_repair"):
-        if "browser" not in required:
-            required.append("browser")
     return required
+
+
+def verification_requested_by_user(text: str, requirements: Mapping[str, Any] | None = None) -> bool:
+    """Keep verification opt-in: enable it only for an explicit user request.
+
+    Feature requirements such as handling empty data or save errors describe
+    application behavior; they do not implicitly authorize a separate test or
+    browser-verification stage. An explicit Playwright requirement or clear
+    verification language in the human request does.
+    """
+    requirements = requirements if isinstance(requirements, Mapping) else {}
+    if requirements.get("_explicit_verification_request_revision") is True:
+        return True
+    # Persisted verification flags and check lists are derived data and may
+    # have been written by an older default-on policy. Recompute from the
+    # original human request instead of treating them as new instructions.
+    required_mcps = list(requirements.get("required_mcps") or requirements.get("required_mcp") or [])
+    current = _current_task_text(text or "")
+    required_mcps = list(dict.fromkeys([*required_mcps, *required_mcp_contract(current)]))
+    if "playwright" in {str(item).lower() for item in required_mcps}:
+        return True
+    positive = _verification_positive_text(current)
+    if required_verification_contract(positive, required_mcps):
+        return True
+    explicit_language = re.compile(
+        r"\b(?:verify|validate|test|check)\s+(?:(?:the|this|that|my|existing|current|updated|new|implemented|actual|working|requested)\s+){0,3}(?:implementation|app|application|changes|behavior|requirements|ui|screen|browser|site|website|project|code|source|work|result|functionality)\b"
+        r"|\b(?:verify|validate|check)\s+(?:that\s+)?(?:it|this|the\s+app|the\s+application)\s+(?:works?|is\s+working|behaves?|matches?|meets?)\b"
+        r"|\b(?:run|execute|perform)\s+(?:the\s+)?(?:(?:unit|integration|acceptance|e2e)\s+)?(?:test suite|tests?|typecheck|build)\b"
+        r"|\bnpm\s+(?:run\s+)?test\b|\bnode\s+--test\b|\bpytest\b"
+        r"|(?:run|execute|verify|check)\s+.{0,20}\bnode:test\b|\bnode:test.{0,24}(?:run|execute|verify|check|検証|テスト|実行|確認)"
+        r"|\bpython(?:\d+(?:\.\d+)*)?\s+(?:-B\s+)?-m\s+(?:unittest|pytest)\b"
+        r"|\b(?:cargo|go|dotnet|flutter)\s+test\b"
+        r"|\bnpx\s+(?:playwright|vitest|jest)\s+(?:run|test)\b"
+        r"|\b(?:manually\s+test|test)\s+(?:the|this)\s+(?:app|application|implementation|changes)\b"
+        r"|(?:テスト(?:を)?(?:実行|実施)|(?:実装|アプリ|変更|成果物|動作|画面|UI).{0,24}(?:検証|動作確認|テスト)(?:してください|して|する|を実行|を実施)?|"
+        r"(?:検証|動作確認|ブラウザー?確認).{0,18}(?:してください|して|する|実施|実行))",
+        re.I,
+    )
+    separate_test_phase = re.compile(
+        r"(?:separate|distinct).{0,40}(?:test|tests)|(?:test|tests).{0,40}(?:separate|distinct).{0,24}phase"
+        r"|テスト.{0,24}別(?:の)?(?:工程|フェーズ)|別(?:の)?テスト工程",
+        re.I,
+    )
+    return bool(explicit_language.search(positive) or separate_test_phase.search(positive))
+
+
+def suppress_unrequested_verification(plan: dict[str, Any], *, preserve_phase_ids: set[str] | None = None) -> tuple[dict[str, Any], list[str]]:
+    """Remove planner/host-invented verification work for default coding tasks."""
+    if not isinstance(plan, dict) or not isinstance(plan.get("phases"), list):
+        return plan, []
+    preserve_phase_ids = {str(item) for item in (preserve_phase_ids or set())}
+    source = [dict(phase) for phase in plan["phases"] if isinstance(phase, dict)]
+    removed = {str(phase.get("id")) for phase in source
+               if str(phase.get("id")) not in preserve_phase_ids
+               if phase.get("execution_mode") == "VERIFICATION_ONLY"
+               and str(phase.get("status") or "pending").lower() != "pass"}
+    standalone_check_goal = re.compile(
+        r"^(?:final\s+)?(?:run|execute|perform|verify|validate|check|test)\b"
+        r"|^(?:consolidated\s+)?(?:verification|acceptance|browser|playwright)\b"
+        r"|^(?:テスト|検証|動作確認|ブラウザー?確認)(?:を|の)?(?:実行|実施|確認|工程|フェーズ)", re.I)
+    mutation_goal = re.compile(
+        r"\b(?:create|implement|build|write|edit|modify|update|fix|add|remove|delete)\b"
+        r"|(?:作成|実装|構築|書き|編集|変更|修正|追加|削除)", re.I)
+    for phase in source:
+        identifier = str(phase.get("id"))
+        if identifier in preserve_phase_ids:
+            continue
+        goal = str(phase.get("goal") or "")
+        if (str(phase.get("status") or "pending").lower() != "pass"
+                and identifier not in removed and standalone_check_goal.search(goal)
+                and not mutation_goal.search(goal) and not phase.get("requires_repo_mutation")
+                and not phase.get("requires_dependency_installation") and not phase.get("file_manifest")):
+            removed.add(identifier)
+    implementation = [phase for phase in source
+                      if str(phase.get("id")) not in removed
+                      and phase.get("execution_mode") != "VERIFICATION_ONLY"
+                      and phase.get("kind") != "ORCHESTRATOR_BLUEPRINT"]
+    phases = []
+    changes = []
+    verification_fields = {
+        "verification_command", "verification_targets", "verification_executor",
+        "criterion_executors", "host_partial_verification", "host_test_preflight",
+        "host_project_test_defect", "host_project_test_setup_repair",
+        "host_criteria", "host_criteria_version", "verification_repair_allowed",
+        "verification_repair_phase", "host_contract_failure", "host_declared_test_command",
+    }
+    remaining_ids = {str(phase.get("id")) for phase in source if str(phase.get("id")) not in removed}
+    by_id = {str(phase.get("id")): phase for phase in source}
+
+    def retained_dependencies(identifier: str, seen: set[str] | None = None) -> list[str]:
+        seen = set(seen or ())
+        if identifier in seen:
+            return []
+        seen.add(identifier)
+        if identifier in remaining_ids:
+            return [identifier]
+        phase = by_id.get(identifier)
+        if not phase:
+            # An unknown graph reference is not an unrequested verification
+            # edge. Preserve it so the graph validator can fail closed instead
+            # of silently turning a malformed plan into runnable work.
+            return [identifier]
+        expanded: list[str] = []
+        for dependency in phase.get("dependencies") or []:
+            expanded.extend(retained_dependencies(str(dependency), seen))
+        return expanded
+
+    execution_only = re.compile(
+        r"\b(?:run|execute|perform|verify|validate|check)\b.{0,120}\b(?:tests?|test suite|build|typecheck|browser|playwright)\b"
+        r"|\b(?:tests?|test suite|build|typecheck|browser|playwright)\b.{0,120}\b(?:pass|passed|succeed|successful|confirmation|confirmed)\b"
+        r"|\b(?:npm\s+test|npm\s+run\s+build|node\s+--test|pytest|cargo\s+test|cargo\s+check)\b"
+        r"|(?:テスト|ビルド|型チェック|ブラウザー?確認|動作確認|検証)(?:を|が|は)?(?:実行|実施|確認|合格|成功|通過|済み)"
+        r"|(?:テスト|ビルド|型チェック|ブラウザー?確認|動作確認|検証)(?:が|は)?(?:通る|通った|成功する|成功した|合格する|合格した)", re.I)
+    goal_check_suffix = re.compile(
+        r"(?:\s*(?:,|;|and then|then|and)\s*|[、。；]\s*)"
+        r"(?:finally\s+)?(?:run|execute|perform|verify|validate|check|test)\b.*$"
+        r"|(?:、|。|；)?\s*(?:最後に|その後)?(?:検証|テスト|動作確認|ブラウザー?確認)(?:を|して|する|し|の)?[^。]*$", re.I)
+    for phase in source:
+        identifier = str(phase.get("id"))
+        if identifier in preserve_phase_ids:
+            phases.append(phase)
+            continue
+        # A passed phase is historical evidence.  Removing implicit checks
+        # during recovery applies only to unfinished work; mutating a passed
+        # phase changes its acceptance signature and can reopen completed
+        # work during replan.
+        if str(phase.get("status") or "pending").lower() == "pass":
+            phases.append(phase)
+            continue
+        if identifier in removed:
+            changes.append(f"removed_unrequested_verification_phase:{identifier}")
+            continue
+        dependencies = list(dict.fromkeys(
+            retained for item in (phase.get("dependencies") or [])
+            for retained in retained_dependencies(str(item))))
+        if dependencies != (phase.get("dependencies") or []):
+            phase["dependencies"] = dependencies
+            changes.append(f"{identifier}:removed_verification_dependency")
+        mode = phase.get("execution_mode")
+        goal = str(phase.get("goal") or "")
+        cleaned_goal = goal_check_suffix.sub("", goal).strip(" ,;、。；")
+        if cleaned_goal and cleaned_goal != goal:
+            phase["goal"] = cleaned_goal
+            changes.append(f"{identifier}:removed_unrequested_verification_goal")
+        if mode == "IMPLEMENTATION_AND_VERIFICATION":
+            phase["execution_mode"] = "IMPLEMENTATION"
+            changes.append(f"{identifier}:implementation_only")
+        if mode in {"IMPLEMENTATION", "IMPLEMENTATION_AND_VERIFICATION"} or mode is None:
+            verify = phase.get("verify") or []
+            if verify:
+                phase["verify"] = []
+                changes.append(f"{identifier}:verification_criteria_disabled")
+            done = [str(item) for item in (phase.get("done") or [])]
+            filtered_done = [item for item in done if not execution_only.search(item.strip())]
+            if filtered_done != done:
+                phase["done"] = filtered_done or [f"{str(phase.get('goal') or 'Requested implementation').strip()} completed"]
+                changes.append(f"{identifier}:removed_unrequested_execution_criteria")
+            if phase.get("acceptance_contract"):
+                phase.pop("acceptance_contract", None)
+                changes.append(f"{identifier}:removed_implicit_acceptance_contract")
+            for key in verification_fields:
+                if key in phase:
+                    phase.pop(key, None)
+            for key in list(phase):
+                if key.startswith("host_verification"):
+                    phase.pop(key, None)
+            for key in ("required_mcp", "selected_mcp"):
+                if isinstance(phase.get(key), list):
+                    filtered = [item for item in phase[key] if str(item).lower() != "playwright"]
+                    if filtered != phase[key]:
+                        phase[key] = filtered
+                        changes.append(f"{identifier}:removed_implicit_playwright")
+        phases.append(phase)
+    result = {**plan, "phases": phases}
+    fallback_owner = str(implementation[-1].get("id")) if implementation else None
+
+    def clean_manifest(entries: list[Any], label: str) -> list[Any]:
+        manifest = []
+        for value in entries:
+            if not isinstance(value, dict):
+                manifest.append(value)
+                continue
+            entry = dict(value)
+            if str(entry.get("owner_phase") or "") in removed:
+                if fallback_owner:
+                    entry["owner_phase"] = fallback_owner
+                    changes.append(f"{label}:{entry.get('path')}:reassigned_to_implementation")
+                else:
+                    changes.append(f"{label}:{entry.get('path')}:removed_with_unrequested_verification")
+                    continue
+            manifest.append(entry)
+        return manifest
+
+    if isinstance(plan.get("file_manifest"), list):
+        result["file_manifest"] = clean_manifest(plan["file_manifest"], "file_manifest")
+    artifact_value = plan.get("implementation_plan_artifact")
+    if isinstance(artifact_value, dict):
+        artifact = dict(artifact_value)
+        if isinstance(artifact.get("file_manifest"), list):
+            artifact_manifest = clean_manifest(artifact["file_manifest"], "implementation_plan_artifact.file_manifest")
+            artifact["file_manifest"] = artifact_manifest
+            artifact["file_manifest_count"] = len(artifact_manifest)
+            for action in ("create", "modify", "delete"):
+                artifact[f"file_manifest_{action}_count"] = sum(
+                    1 for item in artifact_manifest if isinstance(item, dict)
+                    and str(item.get("action") or "").lower() == action)
+        artifact["dependencies"] = [
+            {"phase_id": str(phase.get("id")), "depends_on": list(phase.get("dependencies") or [])}
+            for phase in phases if phase.get("id") is not None
+        ]
+        artifact["verification_targets"] = [
+            {"phase_id": str(phase.get("id")), "verify": list(phase.get("verify") or [])}
+            for phase in phases if phase.get("id") is not None
+        ]
+        result["implementation_plan_artifact"] = artifact
+    tasks = plan.get("tasks")
+    if isinstance(tasks, list):
+        task_rows = [dict(task) for task in tasks if isinstance(task, dict)
+                     and str(task.get("phase_id") or "") not in removed]
+        task_ids = {str(task.get("phase_id")): str(task.get("task_id")) for task in task_rows
+                    if task.get("phase_id") is not None and task.get("task_id") is not None}
+        phases_by_id = {str(phase.get("id")): phase for phase in phases}
+        if len(task_ids) == len(phases) and set(task_ids) == set(phases_by_id):
+            for task in task_rows:
+                phase = phases_by_id[str(task["phase_id"])]
+                task["goal"] = str(phase.get("goal") or task.get("goal") or "")
+                task["verification"] = list(phase.get("verify") or [])
+                task["done_condition"] = list(phase.get("done") or [])
+                task["depends_on"] = [task_ids[str(dependency)] for dependency in (phase.get("dependencies") or [])
+                                       if str(dependency) in task_ids]
+                if phase.get("execution_mode") == "IMPLEMENTATION":
+                    task["domain"] = "implementation"
+            result["tasks"] = task_rows
+        else:
+            result.pop("tasks", None)
+            changes.append("rebuilt_task_graph_after_verification_removal")
+    if not implementation:
+        changes.append("no_implementation_phase_after_unrequested_verification_removal")
+    return result, sorted(set(changes))
 
 
 def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -533,8 +868,6 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
     profile = task_profile(text)
     evidence = attachment_evidence if isinstance(attachment_evidence, Mapping) else {}
     required_mcps = required_mcp_contract(text)
-    if evidence.get("supports_existing_behavior_repair") and "playwright" not in required_mcps:
-        required_mcps.append("playwright")
     mutation_mode, fix_reason = classify_mutation_mode(text, evidence)
     scoped_text = _current_task_text(text)
     dependency_policy = ("MINIMAL" if re.search(
@@ -553,6 +886,12 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
             "required_mcps": required_mcps,
             "selected_mcps": (["animejs"] if "animejs" not in required_mcps and animejs_auto_selected(text) else []),
             "required_verification": required_verification_contract(text, required_mcps, evidence),
+            "verification_requested": verification_requested_by_user(text, {
+                "required_mcps": required_mcps,
+                "required_verification": required_verification_contract(text, required_mcps, evidence),
+                "attachment_evidence": evidence,
+                "visual_repair": bool(evidence.get("supports_existing_behavior_repair")),
+            }),
             "dependency_policy": dependency_policy,
             "forbidden_technologies": sorted({item["capability"] for item in capability_evidence(text, _STRUCTURAL_SIGNALS)
                 if item["category"] == "technology" and item["active_for_control"] and item["polarity"] == "forbidden"}),
@@ -568,6 +907,7 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
                 r"(?:greenfield|new\s+project|from\s+scratch|新規(?:プロジェクト|サイト|アプリ)|ゼロから|作成|構築|build|create|implement)",
                 scoped_text, re.I)),
             "mutation_mode": mutation_mode,
+            "planning_only": explicitly_requests_plan_only(scoped_text),
             "fix_reason": fix_reason,
             "attachment_evidence": dict(evidence),
             "visual_repair": bool(evidence.get("supports_existing_behavior_repair")),
@@ -694,8 +1034,8 @@ def _is_orchestration_preflight_phase(phase: dict[str, Any]) -> bool:
     normal implementation phase.
     """
     value = _phase_text(phase)
-    preflight = bool(re.search(r"repo(?:sitory)?\s*(?:inspection|check)|repository\s*structure|mcp\s*(?:consultation|use|check)|shadcn\s*mcp|planning|analysis|(?:リポジトリ|repo)\s*(?:構成|確認)|mcp\s*(?:利用|確認)|計画|分析", value, re.I))
-    deliverable = bool(re.search(r"implement|create|build|write|edit|fix|add|config|source|ui\s*(?:design|implementation)|実装|作成|構築|編集|修正|追加|設定|ソース|ui\s*(?:デザイン|実装)", value, re.I))
+    preflight = bool(re.search(r"repo(?:sitory)?\s*(?:inspection|check)|repository\s*structure|mcp\s*(?:consultation|use|check)|shadcn\s*mcp|\bplanning\b|\banalysis\b|(?:リポジトリ|repo)\s*(?:構成|確認)|mcp\s*(?:利用|確認)|計画|分析", value, re.I))
+    deliverable = bool(re.search(r"\b(?:implement|create|build|write|edit|fix|add|change|modify|config|source)\b|ui\s*(?:design|implementation)|実装|作成|構築|編集|修正|変更|追加|設定|ソース|ui\s*(?:デザイン|実装)", value, re.I))
     return preflight and not deliverable
 
 
@@ -707,14 +1047,17 @@ def _phase_task(phase: dict[str, Any], task_id: str, depends_on: list[str], requ
             "done_condition": list(phase.get("done") or []), "retry_state": {}}
 
 
-def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[str]) -> dict[str, Any]:
+def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[str],
+                         verification_requested: bool = False) -> dict[str, Any]:
     """Make bounded profiles deterministic after model planning.
 
     A final report belongs to the orchestrator, not the task graph.  For the
-    frontend benchmark all implementation work is one phase and browser work
-    is one consolidated final phase, so repeated semantic phases cannot grow
-    with planner wording.
+    frontend benchmark all implementation work is one phase. A consolidated
+    browser phase is created only when the user explicitly requests checks, so
+    repeated semantic phases cannot grow with planner wording.
     """
+    if not verification_requested:
+        plan, _ = suppress_unrequested_verification(plan)
     source_phases = [dict(item) for item in (plan.get("phases") or []) if isinstance(item, dict)]
     phases = [dict(item) for item in source_phases
               if not _is_final_report_phase(item)
@@ -726,7 +1069,8 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
             # plan validation derive a fresh graph from the remaining phases.
             normalized.pop("tasks", None)
         return normalized
-    verification = [item for item in phases if _is_browser_verification_phase(item)]
+    verification = ([item for item in phases if _is_browser_verification_phase(item)]
+                    if verification_requested else [])
     implementation = [item for item in phases if item not in verification]
     if not implementation:
         implementation, verification = phases[:1], phases[1:]
@@ -739,7 +1083,10 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
     if merged.get("execution_mode") not in PHASE_EXECUTION_MODES:
         merged["execution_mode"] = "IMPLEMENTATION"
     merged["dependencies"] = []
-    merged["acceptance_contract"] = ["FRONTEND_STACK", "MARKETING_STRUCTURE"]
+    if verification_requested:
+        merged["acceptance_contract"] = ["FRONTEND_STACK", "MARKETING_STRUCTURE"]
+    else:
+        merged.pop("acceptance_contract", None)
     normalized = [merged]
     phase_replacements = {
         str(item.get("id")): "p1" for item in implementation if item.get("id")
@@ -753,7 +1100,7 @@ def normalize_task_graph(plan: dict[str, Any], profile: str, required_mcp: list[
         final["dependencies"] = [merged["id"]]
         normalized.append(final)
         phase_replacements.update({str(item.get("id")): "p2" for item in verification if item.get("id")})
-    elif "playwright" in required_mcp:
+    elif verification_requested and "playwright" in required_mcp:
         normalized.append({"id": "p2", "goal": "Consolidated browser verification: desktop, mobile, navigation, responsive, console, and accessibility smoke",
                            "status": "pending", "done": ["Playwright browser verification completed"],
                            "verify": ["desktop, mobile, navigation, responsive, console, and accessibility smoke pass"],
@@ -819,9 +1166,11 @@ def derive_task_graph(plan: dict[str, Any], required_mcp: list[str] | None = Non
     phases = [phase for phase in (plan.get("phases") or []) if isinstance(phase, dict)]
     required = set(required_mcp or [])
     tasks: list[dict[str, Any]] = []
-    for index, phase in enumerate(phases):
+    task_ids = {str(phase.get('id')): f"{phase.get('id')}-task" for phase in phases}
+    for phase in phases:
         phase_mcp = sorted(required & set(phase.get("required_mcp") or []))
-        tasks.append(_phase_task(phase, f"{phase.get('id')}-task", [tasks[-1]["task_id"]] if tasks else [], phase_mcp))
+        tasks.append(_phase_task(phase, task_ids[str(phase.get('id'))],
+                                 [task_ids.get(str(dep), str(dep)) for dep in phase.get('dependencies') or []], phase_mcp))
     return {**plan, "tasks": tasks}
 
 
@@ -832,11 +1181,26 @@ def graph_validation_diagnostics(plan: Any) -> dict[str, Any]:
     deliberately read-only so callers can report the exact owner and
     reference before deciding whether a deterministic replacement is safe.
     """
-    phases = [item for item in (plan.get("phases") or []) if isinstance(item, dict)] if isinstance(plan, dict) else []
-    tasks = [item for item in (plan.get("tasks") or []) if isinstance(item, dict)] if isinstance(plan, dict) else []
+    plan_data = plan if isinstance(plan, dict) else {}
+    phases = [item for item in (plan_data.get("phases") or []) if isinstance(item, dict)]
+    tasks = [item for item in (plan_data.get("tasks") or []) if isinstance(item, dict)]
     phase_ids = [str(item.get("id")) for item in phases if item.get("id") is not None]
     task_ids = [str(item.get("task_id")) for item in tasks if item.get("task_id") is not None]
     phase_set, task_set = set(phase_ids), set(task_ids)
+    package_names = {str(record.get("package") or "").strip()
+                     for phase in phases
+                     for record in (phase.get("dependency_requirements") or [])
+                     if isinstance(record, Mapping) and str(record.get("package") or "").strip()}
+    package_names.update(str(record.get("package") or "").strip()
+                         for record in (plan_data.get("dependency_requirements") or [])
+                         if isinstance(record, Mapping) and str(record.get("package") or "").strip())
+    artifact = plan_data.get("implementation_plan_artifact") if isinstance(plan_data.get("implementation_plan_artifact"), Mapping) else {}
+    coverage = artifact.get("manifest_coverage") if isinstance(artifact, Mapping) else {}
+    if not isinstance(coverage, Mapping):
+        coverage = {}
+    package_names.update(str(record.get("package") or "").strip()
+                         for record in (coverage.get("dependency_requirement_records") or [])
+                         if isinstance(record, Mapping) and str(record.get("package") or "").strip())
     errors: list[dict[str, Any]] = []
 
     for phase in phases:
@@ -845,9 +1209,10 @@ def graph_validation_diagnostics(plan: Any) -> dict[str, Any]:
             ref = str(dependency)
             if ref in phase_set:
                 continue
-            ref_kind = "TASK_ID" if ref in task_set else "UNKNOWN_ID"
+            ref_kind = "TASK_ID" if ref in task_set else "PACKAGE_NAME" if ref in package_names else "UNKNOWN_ID"
             errors.append({
-                "error_kind": "UNKNOWN_PHASE_DEPENDENCY" if ref_kind == "UNKNOWN_ID" else "TASK_ID_IN_PHASE_DEPENDENCY",
+                "error_kind": ("UNKNOWN_PHASE_DEPENDENCY" if ref_kind == "UNKNOWN_ID" else
+                               "PACKAGE_NAME_IN_PHASE_DEPENDENCY" if ref_kind == "PACKAGE_NAME" else "TASK_ID_IN_PHASE_DEPENDENCY"),
                 "offending_phase_id": owner,
                 "offending_task_id": None,
                 "offending_dependency_ref": ref,
@@ -856,7 +1221,10 @@ def graph_validation_diagnostics(plan: Any) -> dict[str, Any]:
                 "known_phase_ids": list(phase_ids),
                 "known_task_ids": list(task_ids),
                 "reason": ("phase dependency references a task ID; phase and task namespaces are separate"
-                           if ref_kind == "TASK_ID" else "phase dependency is not declared in the normalized phase IDs"),
+                           if ref_kind == "TASK_ID" else
+                           "phase dependency references a package name; package and phase namespaces are separate"
+                           if ref_kind == "PACKAGE_NAME" else
+                           "phase dependency is not declared in the normalized phase IDs"),
             })
 
     for task in tasks:
@@ -973,6 +1341,20 @@ def reconcile_graph_references(plan: dict[str, Any], replacement_map: Mapping[st
                 changes.append(f"phase:{phase.get('id')}:{dependency}->{ref}")
             values.append(ref)
         phase["dependencies"] = list(dict.fromkeys(values))
+    manifest = plan.get("file_manifest")
+    normalized_manifest: list[Any] = []
+    if isinstance(manifest, list):
+        for entry in manifest:
+            if not isinstance(entry, dict):
+                normalized_manifest.append(entry)
+                continue
+            owner = entry.get("owner_phase")
+            replacement = phase_map.get(str(owner)) if owner is not None else None
+            if (replacement is not None and str(replacement) in phase_ids
+                    and str(replacement) != str(owner)):
+                entry = {**entry, "owner_phase": str(replacement)}
+                changes.append(f"file-owner:{entry.get('path') or 'UNKNOWN'}:{owner}->{replacement}")
+            normalized_manifest.append(entry)
     for task in tasks:
         values = []
         for dependency in task.get("depends_on") or []:
@@ -992,6 +1374,8 @@ def reconcile_graph_references(plan: dict[str, Any], replacement_map: Mapping[st
     candidate = {**plan, "phases": phases}
     if "tasks" in plan:
         candidate["tasks"] = tasks
+    if isinstance(manifest, list):
+        candidate["file_manifest"] = normalized_manifest
     return candidate, sorted(set(changes)), graph_validation_diagnostics(candidate)
 
 
@@ -1008,6 +1392,54 @@ def normalize_replan_graph(plan: dict[str, Any], required_mcp: list[str] | None 
     phases = [dict(p) for p in (plan.get("phases") or []) if isinstance(p, dict)]
     phase_ids = {str(p.get("id")) for p in phases if p.get("id")}
     candidate = {**plan, "phases": phases}
+    # Replanner output occasionally leaks a package name into the phase graph
+    # (for example ``dependencies: ["vite"]``).  Package and phase IDs are
+    # separate namespaces.  Repair only when the existing typed requirement
+    # record identifies one unambiguous owning phase; otherwise leave the
+    # reference for strict graph validation/repair.
+    package_owners: dict[str, set[str]] = {}
+    for phase in phases:
+        phase_id = str(phase.get("id") or "")
+        records = phase.get("dependency_requirements") if isinstance(phase.get("dependency_requirements"), list) else []
+        for record in records:
+            if not isinstance(record, Mapping):
+                continue
+            package = str(record.get("package") or "").strip()
+            owner = str(record.get("phase_id") or phase_id).strip()
+            if package and owner in phase_ids:
+                package_owners.setdefault(package, set()).add(owner)
+    for record in ((plan.get("dependency_requirements") or [])
+                   if isinstance(plan.get("dependency_requirements"), list) else []):
+        if not isinstance(record, Mapping):
+            continue
+        package = str(record.get("package") or "").strip()
+        owner = str(record.get("phase_id") or "").strip()
+        if package and owner in phase_ids:
+            package_owners.setdefault(package, set()).add(owner)
+    artifact = plan.get("implementation_plan_artifact") if isinstance(plan.get("implementation_plan_artifact"), Mapping) else {}
+    coverage = artifact.get("manifest_coverage") if isinstance(artifact, Mapping) else {}
+    artifact_records = coverage.get("dependency_requirement_records") if isinstance(coverage, Mapping) else []
+    for record in artifact_records or []:
+        if not isinstance(record, Mapping):
+            continue
+        package = str(record.get("package") or "").strip()
+        owner = str(record.get("phase_id") or "").strip()
+        if package and owner in phase_ids:
+            package_owners.setdefault(package, set()).add(owner)
+    if package_owners:
+        for phase in phases:
+            values: list[str] = []
+            for dependency in phase.get("dependencies") or []:
+                ref = str(dependency)
+                owners = package_owners.get(ref, set())
+                if len(owners) == 1:
+                    owner = next(iter(owners))
+                    if owner != str(phase.get("id")) and owner not in values:
+                        values.append(owner)
+                    changes.append(f"phase-package-reference:{phase.get('id')}:{ref}->{owner if owner != str(phase.get('id')) else 'REMOVED'}")
+                else:
+                    values.append(ref)
+            phase["dependencies"] = list(dict.fromkeys(values))
     tasks = plan.get("tasks")
     valid_shape = isinstance(tasks, list) and len(tasks) == len(phases) and all(
         isinstance(t, dict) and t.get("phase_id") in phase_ids for t in tasks)
@@ -1016,11 +1448,122 @@ def normalize_replan_graph(plan: dict[str, Any], required_mcp: list[str] | None 
         changes.append("rebuilt_one_task_per_phase")
     else:
         candidate["tasks"] = [dict(task) for task in tasks]
+    # Apply the same namespace boundary to advisory task edges when a
+    # replanner put a package name in ``depends_on``.  Only an unambiguous
+    # phase owner is eligible for this local correction.
+    task_rows = [dict(item) for item in (candidate.get("tasks") or []) if isinstance(item, dict)]
+    task_by_phase = {str(item.get("phase_id")): str(item.get("task_id")) for item in task_rows
+                     if item.get("phase_id") is not None and item.get("task_id") is not None}
+    for task in task_rows:
+        values: list[str] = []
+        for dependency in task.get("depends_on") or []:
+            ref = str(dependency)
+            owners = package_owners.get(ref, set())
+            if len(owners) == 1:
+                owner_task = task_by_phase.get(next(iter(owners)))
+                if owner_task and owner_task != str(task.get("task_id")) and owner_task not in values:
+                    values.append(owner_task)
+                changes.append(f"task-package-reference:{task.get('task_id')}:{ref}->{owner_task or 'REMOVED'}")
+            else:
+                values.append(ref)
+        task["depends_on"] = list(dict.fromkeys(values))
+    if task_rows:
+        candidate["tasks"] = task_rows
     candidate, rewrites, diagnostics = reconcile_graph_references(candidate, plan.get("graph_replacement_map"))
     changes.extend(rewrites)
     if diagnostics["errors"]:
         changes.append("unresolved_graph_dependencies")
     return candidate, sorted(set(changes))
+
+
+def normalize_replanned_phase_ids(plan: Any, current: Any,
+                                   completed_phase_ids: set[str] | None = None) -> tuple[Any, list[str]]:
+    """Carry host phase identities across same-size recovery plans.
+
+    Providers sometimes rename every unfinished phase even when returning
+    exactly the requested number of replacement phases. Treating those names
+    as newly added work causes a false REPLAN_PHASE_LIMIT and detaches retry
+    history. Only perform a one-to-one rename when the replacement cardinality
+    exactly matches the existing unfinished graph; actual expansion remains
+    visible to the caller's phase-limit check.
+    """
+    if not isinstance(plan, dict) or not isinstance(current, dict):
+        return plan, []
+    proposed = plan.get("phases")
+    existing = current.get("phases")
+    if not isinstance(proposed, list) or not isinstance(existing, list):
+        return plan, []
+    completed = {str(item) for item in (completed_phase_ids or set())}
+    existing_unfinished = [phase for phase in existing if isinstance(phase, dict)
+                           and str(phase.get("id") or "") not in completed]
+    proposed_unfinished = [phase for phase in proposed if isinstance(phase, dict)
+                           and str(phase.get("id") or "") not in completed]
+    if len(proposed_unfinished) != len(existing_unfinished):
+        return plan, []
+    existing_ids = {str(phase.get("id")) for phase in existing if isinstance(phase, dict)
+                    and phase.get("id") is not None}
+    proposed_ids = {str(phase.get("id")) for phase in proposed if isinstance(phase, dict)
+                    and phase.get("id") is not None}
+    unknown = [phase for phase in proposed_unfinished if str(phase.get("id") or "") not in existing_ids]
+    missing = [str(phase.get("id")) for phase in existing_unfinished
+               if str(phase.get("id") or "") not in proposed_ids]
+    if not unknown or len(unknown) != len(missing):
+        return plan, []
+
+    replacements = {str(phase.get("id")): phase_id for phase, phase_id in zip(unknown, missing)}
+
+    def phase_ref(value: Any) -> Any:
+        return replacements.get(str(value), value) if value is not None else value
+
+    phases = []
+    for source in proposed:
+        if not isinstance(source, dict):
+            phases.append(source)
+            continue
+        phase = dict(source)
+        old_id = str(phase.get("id") or "")
+        if old_id in replacements:
+            phase["id"] = replacements[old_id]
+        if isinstance(phase.get("dependencies"), list):
+            phase["dependencies"] = [phase_ref(value) for value in phase["dependencies"]]
+        phases.append(phase)
+
+    candidate = {**plan, "phases": phases}
+    if isinstance(plan.get("file_manifest"), list):
+        candidate["file_manifest"] = [
+            ({**entry, "owner_phase": phase_ref(entry.get("owner_phase"))}
+             if isinstance(entry, dict) and entry.get("owner_phase") is not None else entry)
+            for entry in plan["file_manifest"]]
+    if isinstance(plan.get("tasks"), list):
+        candidate["tasks"] = [
+            ({**task, "phase_id": phase_ref(task.get("phase_id"))}
+             if isinstance(task, dict) and task.get("phase_id") is not None else task)
+            for task in plan["tasks"]]
+    def remap_phase_records(records: Any) -> Any:
+        if not isinstance(records, list):
+            return records
+        return [({**record, "phase_id": phase_ref(record.get("phase_id"))}
+                 if isinstance(record, dict) and record.get("phase_id") is not None else record)
+                for record in records]
+
+    for phase in candidate["phases"]:
+        if isinstance(phase, dict) and isinstance(phase.get("dependency_requirements"), list):
+            phase["dependency_requirements"] = remap_phase_records(phase["dependency_requirements"])
+    if "dependency_requirements" in candidate:
+        candidate["dependency_requirements"] = remap_phase_records(candidate["dependency_requirements"])
+    artifact = candidate.get("implementation_plan_artifact")
+    if isinstance(artifact, dict):
+        artifact = dict(artifact)
+        coverage = artifact.get("manifest_coverage")
+        if isinstance(coverage, dict):
+            coverage = dict(coverage)
+            if "dependency_requirement_records" in coverage:
+                coverage["dependency_requirement_records"] = remap_phase_records(
+                    coverage["dependency_requirement_records"])
+            artifact["manifest_coverage"] = coverage
+        candidate["implementation_plan_artifact"] = artifact
+    changes = [f"{old}->{new}" for old, new in replacements.items()]
+    return candidate, changes
 
 
 def ensure_explicit_phase_execution_modes(plan: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
@@ -1061,6 +1604,9 @@ def frontend_stack_acceptance(workspace_root: str | None) -> bool:
         package = json.loads((root / "package.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    if not isinstance(package,dict) or any(field in package and not isinstance(package[field],dict)
+                                          for field in ('dependencies','devDependencies')):
+        return False
     deps = {**(package.get("dependencies") or {}), **(package.get("devDependencies") or {})}
     names = set(deps)
     react = "react" in names and ("react-dom" in names or "@vitejs/plugin-react" in names)
@@ -1076,11 +1622,34 @@ def marketing_design_structure_acceptance(workspace_root: str | None) -> bool:
     if not workspace_root:
         return False
     root = Path(workspace_root)
-    text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in root.rglob("*.*")
-                     if path.suffix.lower() in {".tsx", ".ts", ".jsx", ".js", ".html"} and path.is_file())
-    lower = text.lower()
     required = ("header", "hero", "feature", "workflow", "development tools", "cta", "footer", "links")
-    return all(item in lower for item in required) and ("product" in lower or "visual" in lower)
+    found = set()
+    total_bytes = 0
+    files = 0
+    excluded = {'node_modules','.git','dist','build','target','.venv','.venv312','.next','.olcr','coverage','vendor'}
+    for directory, folders, names in os.walk(root,followlinks=False):
+        folders[:] = sorted(name for name in folders if name not in excluded
+                            and not Path(directory,name).is_symlink())
+        for name in sorted(names):
+            path = Path(directory,name)
+            if path.is_symlink() or path.suffix.lower() not in {'.tsx','.ts','.jsx','.js','.html'}:
+                continue
+            try:
+                with path.open('rb') as handle:
+                    data = handle.read(500_001)
+            except OSError:
+                continue
+            files += 1
+            total_bytes += len(data)
+            if files > 1024 or total_bytes > 8 * 1024 * 1024:
+                return False
+            if len(data)>500_000:
+                continue
+            lower = data.decode('utf8',errors='ignore').lower()
+            found.update(item for item in (*required,'product','visual') if item in lower)
+            if set(required)<=found and found.intersection({'product','visual'}):
+                return True
+    return False
 
 
 def _simple_static_site(goal: str) -> bool:
@@ -1108,6 +1677,14 @@ def workspace_mutation_count(report: dict[str, Any]) -> int:
                for op in _successful_typed_operations(report))
 
 
+def patch_preimage_retry_instruction() -> str:
+    return ("The previous patch precondition failed. Re-read current SOURCE and typed preimage diagnostics. "
+            "For an existing target in approved_scope, use an exact unique non-empty fragment for a patch. "
+            "If no such fragment can be anchored, use one complete write with the full updated file reconstructed from current SOURCE, "
+            "but only for a path in approved_scope. For a missing file, use one complete write. "
+            "Never emit an empty expected_old_fragment.")
+
+
 def zero_mutation_retry_instruction(phase: dict[str, Any], report: dict[str, Any],
                                     prior_reports: list[dict[str, Any]] | None = None,
                                     workspace_root: str | None = None) -> str:
@@ -1118,20 +1695,47 @@ def zero_mutation_retry_instruction(phase: dict[str, Any], report: dict[str, Any
     phase_work = " ".join(clause for clause, negative in _architecture_clauses(phase_work) if not negative)
     requires_mutation = bool(re.search(r"\b(?:implement|create|build|write|edit|modify|update|fix|delete|remove|add)\b|(?:実装|作成|変更|修正|追加|削除)(?!内容|結果|済み|後|した|された|の確認|の検証|を確認)", phase_work, re.I))
     if requires_mutation and workspace_mutation_count(report) == 0 and evaluate_phase(phase, report, prior_reports, workspace_root)["done_unmet"]:
-        instruction = ("The previous attempt produced no authoritative workspace mutation. "
+        typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+        idempotent = str(typed.get("mutation_classification") or report.get("mutation_classification") or "") == "IDEMPOTENT_NOOP"
+        instruction = (("The previous attempt emitted an accepted idempotent operation but produced no net workspace delta. "
+                        "Treat this as an explicit no-net-change result and address the unmet criteria without claiming a mutation. ") if idempotent else
+                       "The previous attempt produced no authoritative workspace mutation. "
                        "Do not only explain the change. Perform the required edits in the authorized repository scope "
-                       "and then verify the observable result.")
-        typed = report.get("typed_execution_summary") or {}
+                       "and follow only verification criteria explicitly requested by the user.")
         failure_class = str(typed.get("failure_class") or "UNKNOWN")
         worktree_state = str(typed.get("worktree_state") or "UNKNOWN")
+        typed_error = str(typed.get("error") or "")
         if failure_class not in {"UNKNOWN", ""}:
             instruction += (f" Deterministic application failure class: {failure_class}. "
                             f"The worktree state after the failed application is {worktree_state}; "
                             "re-read the current target before generating the next operation.")
-        if "patch precondition failed" in str(typed.get("error") or "").lower():
-            instruction += (" The previous patch precondition failed. Re-read existing targets before patching; "
-                            "for missing files use a write operation with complete content.")
-        if failure_class == "WRITE_CONTENT_INVALID" or "minor edit cannot replace" in str(typed.get("error") or "").lower():
+        if "write operation requires content" in typed_error.lower():
+            instruction += (" The previous operation used op=write without its required content field. "
+                            "For a new target, return one complete write operation with op=write, path, and content containing the entire file. "
+                            "Do not combine op=write with expected_old_fragment or replacement_fragment; those are patch fields. "
+                            "Use op=patch only for an existing target with the required patch preimage and replacement fields.")
+        if "patch precondition failed" in typed_error.lower():
+            instruction += " " + patch_preimage_retry_instruction()
+        structural_failures = []
+        for operation in typed.get("operations") or []:
+            if not isinstance(operation, dict) or operation.get("tool") != "operation_application_failure":
+                continue
+            output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+            diagnostic = output.get("operation_diagnostic") if isinstance(output.get("operation_diagnostic"), dict) else {}
+            if diagnostic.get("reason_subtype") != "STRUCTURAL_VALIDATION_FAILED":
+                continue
+            path = str(diagnostic.get("relative_target_path") or "authorized source file")[:200]
+            error = str(output.get("failure") or typed_error or "parser rejected the generated content")
+            structural_failures.append(f"{path}: {error[:300]}")
+        if structural_failures:
+            instruction += (
+                " The previous file operation was rejected by deterministic structural parsing and rolled back; "
+                "none of its writes should be treated as applied. Repair the parser failure in the current authorized source file(s): "
+                + "; ".join(structural_failures[:3])
+                + ". Re-read each target from the live worktree, then emit a complete syntactically valid file or an exact patch "
+                "that leaves the full file syntactically valid. Preserve the approved scope and requirements; do not replace this with prose."
+            )
+        elif "minor edit cannot replace" in typed_error.lower():
             instruction += (" The previous full-file write was too short for the existing file. "
                             "Use an exact patch with the current expected_old_fragment, or provide the complete current file content; "
                             "do not send a partial replacement.")
@@ -1139,6 +1743,11 @@ def zero_mutation_retry_instruction(phase: dict[str, Any], report: dict[str, Any
             instruction += (" The previous operation targeted a file outside the approved mutation scope. "
                             "Modify only the paths listed in approved_scope; verification targets are read-only "
                             "unless they are explicitly approved.")
+        if "operation path is descriptive prose" in typed_error.lower():
+            instruction += (" The previous structured operation put an instruction or task description in operations[].path. "
+                            "That field must contain only a concrete file path within the approved mutation scope. "
+                            "Choose a filename explicitly listed in the request and return a valid write or patch operation; "
+                            "do not copy the implementation request sentence into the path.")
         return instruction
     return ""
 
@@ -1147,6 +1756,8 @@ def _merge_texts(values: list[Any]) -> list[str]:
     merged: list[str] = []
     for value in values:
         for item in value if isinstance(value, list) else [value]:
+            if item is None:
+                continue
             text = str(item).strip()
             if text and text not in merged:
                 merged.append(text)
@@ -1191,6 +1802,17 @@ def compact_normal_plan(plan: dict[str, Any], goal: str) -> dict[str, Any]:
         return plan
     phase_rows = [phase for phase in phases if isinstance(phase, dict)]
     if len(phase_rows) != len(phases) or not phase_rows:
+        return plan
+    from .planning_policy import separate_ui_logic_requested
+    if separate_ui_logic_requested(goal):
+        return plan
+    # Similar size does not imply a shared deliverable: application logic and
+    # automated test creation retain their own observable boundaries.
+    if any(re.search(r'logic|algorithm|抽選|ロジック|計算|(?:create|write|implement|追加|作成|実装).{0,30}(?:tests?|テスト)'
+                     r'|\.(?:test|spec)\.[cm]?[jt]sx?', str(phase.get('goal') or ''), re.I) for phase in phase_rows):
+        return plan
+    if any(phase.get('dependencies') != ([] if i == 0 else [phase_rows[i - 1]['id']])
+           for i, phase in enumerate(phase_rows)):
         return plan
     implementation_pattern = re.compile(r"(?:implement|create|build|write|style|responsive|accessib|html|css|page|実装|作成|構築|スタイル|レスポンシブ|アクセシビリティ|ページ|ファイル)", re.I)
     verification_pattern = re.compile(r"(?:verify|verification|browser|test|check|確認|検証|ブラウザ|テスト)", re.I)
@@ -1245,25 +1867,57 @@ def compact_normal_plan(plan: dict[str, Any], goal: str) -> dict[str, Any]:
     if final_verification and last.get("id"):
         phase_replacements[str(last["id"])] = str(last["id"])
     compacted["graph_replacement_map"] = {"phase_ids": phase_replacements, "task_ids": task_replacements}
+    if isinstance(plan.get('file_manifest'), list):
+        compacted['file_manifest'] = [({**entry, 'owner_phase': phase_replacements.get(str(entry.get('owner_phase')), entry.get('owner_phase'))}
+                                       if isinstance(entry, dict) else entry) for entry in plan['file_manifest']]
     return compacted
 
 
 _EXPLICIT_NON_CODING = re.compile(
-    r"(?:これは\s*(?:コーディング|coding)\s*タスクではありません|(?:コーディング|実装)(?:(?:は)?しない|を行わない)でください|コード(?:を)?変更は不要です|(?:ファイル|コード)を(?:変更|編集|修正)しないでください|計画だけ(?:を)?(?:作って|作成|してください)|設計だけ(?:を)?(?:して|してください)|do\s+not\s+implement(?!\s*:)|do\s+not\s+(?:modify|change|edit)\s+(?:code|files?|the\s+(?:code|files?))|planning\s+only|design\s+only)",
+    r"(?:これは\s*(?:コーディング|coding)\s*タスクではありません|(?:コーディング|実装)(?:(?:は)?しない|を行わない)でください|コード(?:を)?変更は不要です|(?:ファイル|コード)を(?:変更|編集|修正)しないでください|計画だけ(?:を)?(?:作って|作成|してください)|設計だけ(?:を)?(?:して|してください)|(?:記事|論文|研究|報告書).{0,80}(?:から|をもとに|を参照).{0,80}(?:まとめ|整理|比較|分析|知見)|do\s+not\s+implement(?!\s*:)|do\s+not\s+(?:modify|change|edit)\s+(?:code|files?|the\s+(?:code|files?))|planning\s+only|design\s+only)",
     re.I,
 )
+_PLAN_ONLY_CODE_TARGET = re.compile(
+    r"\.(?:py|pyi|js|jsx|ts|tsx|rs|go|java|kt|swift|c|cc|cpp|h|hpp|html|css|json|md|toml|ya?ml)\b"
+    r"|\b(?:coding\s+task|code(?:base)?|source\s+code|repository|repo|workspace|python|typescript|javascript|rust|function)\b"
+    r"|(?:コーディングタスク|ソースコード|コード|リポジトリ|ワークスペース|Python関数|関数|プログラム)",
+    re.I,
+)
+_PLAN_ONLY_NEGATIVE_SCOPE = re.compile(
+    r"\b(?:do\s+not|don't|must\s+not|without|no\s+(?:file|code|implementation|dependency))\b"
+    r"|(?:しない|しません|せず|行わない|行いません|行わず)|禁止|不要|対象外",
+    re.I,
+)
+
+
+def _has_positive_plan_only_code_target(text: str) -> bool:
+    """Find a code target in the plan, ignoring clauses that only prohibit work."""
+    for clause in re.split(r"[\n。!?;；,、]|(?<=\.)\s+", text or ""):
+        if _PLAN_ONLY_NEGATIVE_SCOPE.search(clause):
+            continue
+        if _PLAN_ONLY_CODE_TARGET.search(clause):
+            return True
+    return False
 _LOCAL_DIAGNOSTIC_INTENT = re.compile(
     r"(?:inspect|inspection|diagnos(?:e|is|tic)?|audit|investigat(?:e|ion)|read[ -]?only|locally\s+persisted|local(?:ly)?\s+(?:stored|persisted)|task\s+state|local\s+task|ローカル|永続(?:化)?|タスク状態|診断|調査|読み取り専用|確認(?:だけ|のみ))",
     re.I,
 )
 _PLANNING_INTENT = re.compile(
-    r"(?:実装計画|実装方針|実装設計|実装方法|計画(?:を)?(?:作(?:って|成)|策定|立案)|設計(?:を)?(?:して|してください|レビュー)|ui\s*(?:案|設計)|画面構成|ボタン構成|アーキテクチャ(?:設計|を整理)|データモデル(?:設計)?|api(?:設計|design)|implementation\s*(?:plan|approach|design)|how\s+should\s+(?:this|it)\s+be\s+implemented|(?:ui|ux)\s*(?:design|proposal)|architecture\s*(?:plan|design)|technical\s*specification|code\s*review|技術相談|レビュー)",
+    r"(?:実装計画|実装方針|実装設計|実装方法|計画(?:を)?(?:作(?:って|成)|策定|立案)|設計(?:を)?(?:して|してください|レビュー)|(?:課題|お題|タスク案).{0,20}(?:考えて|作って|提案)|(?:考えて|作って|提案).{0,20}(?:課題|お題|タスク案)|ui\s*(?:案|設計)|画面構成|ボタン構成|アーキテクチャ(?:設計|を整理)|データモデル(?:設計)?|api(?:設計|design)|implementation\s*(?:plan|approach|design)|how\s+should\s+(?:this|it)\s+be\s+implemented|(?:ui|ux)\s*(?:design|proposal)|architecture\s*(?:plan|design)|technical\s*specification|code\s*review|技術相談|レビュー)",
     re.I,
 )
 _TECHNICAL_NOUNS = re.compile(
     r"(?:repo|repository|workspace|project|コード|ファイル|実装|修正|変更|追加|削除|react|fastapi|database|api|css|html|ui|button|architecture|code)",
     re.I,
 )
+_EXPLICIT_VERIFICATION_TASK = re.compile(r"\b(?:managed\s+)?coding\s+task\b", re.I)
+_VERIFICATION_ONLY_MODE = re.compile(r"\bVERIFICATION_ONLY\b|\bverification_command\b", re.I)
+
+
+SOFTWARE_TARGET = re.compile(
+    r'アプリ|ソフトウェア|プログラム|ウェブ|Webサイト|サイト|ダッシュボード|プランナー|コンポーネント|管理画面|画面|ボタン|UI|API|関数|コード|ファイル|バグ|リポジトリ|ワークスペース|'
+    r'\b(?:app|application|website|software|program|planner|dashboard|code|repository|workspace|function|component|endpoint|bug|stylesheet)\b|'
+    r'\.(?:py|js|jsx|ts|tsx|html|css|rs|swift|go|java)\b',re.I)
 
 
 def _mutation_intent(text: str, planning_intent: bool) -> bool:
@@ -1274,17 +1928,37 @@ def _mutation_intent(text: str, planning_intent: bool) -> bool:
     it into a Coding Task.
     """
     value = re.sub(r"\bdo\s+not\s+(?:implement|modify|change|edit)\s+(?:code|files?|the\s+(?:code|files?))\b", "", (text or "").strip(), flags=re.I)
+    value = re.sub(r"\b(?:do not|don't|never)\b[^.!?;\n]*", ' ', value, flags=re.I)
+    value = re.sub(r'(?:作って|直して|修正して|実装して)(?:くれる|もらえる)(?:アプリ|サービス|ツール|会社|人)', ' ', value)
+    if SOFTWARE_TARGET.search(value) and re.search(r'(?:直して|修復して|改善して|リファクタリングして)(?:ください|ほしい|欲しい)?(?:[。.!！、,\s]|$)',value):
+        return not planning_intent
     direct = re.compile(
-        r"(?:実装(?:して|してください|しろ|する|を開始)|修正(?:して|してください|しろ|する)|変更(?:して|してください|しろ|する)|追加(?:して|してください|しろ|する)|削除(?:して|してください|しろ|する)|書き換え(?:て|てください|る)|コードを書いて(?:ください)?|ソースコードを作成|置き換え(?:て|てください|る)|ファイルを(?:作成|変更|書き換え)|repo(?:に|の).{0,80}(?:実装|修正|変更|追加|削除)|この計画を(?:実装|実行)(?:して|してください)?|(?:implement|create|build|fix|modify|update|rewrite|delete|add)\s+(?:this|the|a|an|our|my)?\s*(?:repo(?:sitory)?|project|app|application|feature|code|file|plan)|(?:implement|fix|modify|update|rewrite|delete|add)\s+(?:this|the)\s+(?:plan|code|file|feature)|execute\s+(?:the\s+)?(?:implementation|plan)|change\s+this|edit\s+this)",
+        r"(?:実装(?:して|してください|しろ|する|を開始)|修正(?:して|してください|しろ|する)|変更(?:して|してください|しろ|する)|追加(?:して|してください|しろ|する)|削除(?:して|してください|しろ|する)|書き換え(?:て|てください|る)|コードを書いて(?:ください)?|ソースコードを作成|置き換え(?:て|てください|る)|ファイルを(?:作成|変更|書き換え)|repo(?:に|の).{0,80}(?:実装|修正|変更|追加|削除)|この計画を(?:実装|実行)(?:して|してください)?|(?:implement|create|build|fix|modify|update|rewrite|delete|add)\s+(?:this|the|a|an|our|my)?\s*(?:repo(?:sitory)?|project|app|application|feature|code|file|plan)|(?:update|modify|fix|rewrite|edit)\s+(?:only\s+)?(?:the\s+)?(?:existing\s+)?[\w./-]+\.[\w]+|create\s+(?:(?:exactly|only|new|a|an|the|one|two|three|four|\d+)\s+){0,4}files?\b|(?:implement|fix|modify|update|rewrite|delete|add|edit)\s+(?:this|the)\s+(?:plan|code|file|feature)|execute\s+(?:the\s+)?(?:implementation|plan)|change\s+this|edit\s+this)",
         re.I,
     )
+    # Named artifacts and punctuation between the artifact and imperative must
+    # not require the literal word "app" or a particular word order.
+    artifact = r'(?:アプリ(?:ケーション)?|プログラム|Webサイト|ウェブサイト|ダッシュボード|管理画面|画面|ボタン|プランナー|ソフトウェア|コンポーネント|API|エンドポイント|関数|ゲーム)'
+    if re.search(artifact+r'(?:として)?[、,\s]*(?:を)?[、,\s]*(?:独立したアプリとして)?[、,\s]*(?:一から|ゼロから|新規に|新しく)?[、,\s]*(?:作って(?:ください)?|作成して(?:ください)?|構築して(?:ください)?|開発して(?:ください)?)',value,re.I):
+        return True
+    if re.search(r'^(?:please\s+)?(?:implement|build|create|develop|refactor|fix|add|change|update|remove|delete|rewrite)\b[\s\S]{0,180}\b(?:planner|dashboard|component|endpoint|function|application|website|app|program|UI|stylesheet)\b',value,re.I):
+        return not planning_intent
+    if re.search(r'(?:create|write|edit|update|fix|refactor)\s+(?:the\s+)?[\w./-]+\.(?:py|js|jsx|ts|tsx|html|css|rs|swift|go)\b',value,re.I):
+        return not planning_intent
     if direct.search(value):
         return True
     if planning_intent:
         return False
-    # Short imperative application requests remain valid mutation intent even
-    # without an explicit repository noun (for example "テトリスを作って").
-    return bool(re.search(r"(?:\S+を)?(?:作成(?:して|してください|する)|作って)|(?:create|build)\b.{0,120}\b(?:app|application|website|site|feature)\b", value, re.I))
+    # Short imperatives are coding intent only when their object is clearly a
+    # software artifact. Content requests (quizzes, charts, summaries, etc.)
+    # belong to their knowledge/rendering APIs, not the managed task system.
+    return bool(re.search(
+        r"(?:(?:テトリス|アプリ|アプリケーション|Webサイト|ウェブサイト|サイト|ソフトウェア|"
+        r"プログラム|ツール|機能|ゲーム)(?:として)?(?:一から|ゼロから|新規に|新しく)?を?"
+        r"(?:独立した)?(?:アプリとして)?(?:一から|ゼロから|新規に|新しく)?(?:作成(?:して|してください|する)|作って|構築して|実装して))|"
+        r"(?:create|build)\b.{0,120}\b(?:app|application|website|site|software|program|tool|feature|game)\b",
+        value, re.I,
+    ))
 
 
 def coding_classification_diagnostics(text: str, *, project_scoped: bool = False,
@@ -1293,6 +1967,26 @@ def coding_classification_diagnostics(text: str, *, project_scoped: bool = False
                                       execution_intent: str | None = None) -> dict[str, str | bool]:
     """Return concise, deterministic routing facts without model inference."""
     value = (text or "").strip()
+    if explicitly_requests_plan_only(value) and _has_positive_plan_only_code_target(value):
+        # Explicitly read-only code plans still belong in the managed planner.
+        # Named future artifacts describe the plan scope, not permission to
+        # write those artifacts before the user's approval.
+        return {"classification": "CODING", "mutation_intent": False,
+                "planning_intent": True, "explicit_non_coding": False,
+                "reason": "EXPLICIT_PLAN_ONLY_CODING_REQUEST",
+                "attachment_repair_evidence": False,
+                "execution_intent": execution_intent or "NONE"}
+    if _EXPLICIT_VERIFICATION_TASK.search(value) and _VERIFICATION_ONLY_MODE.search(value):
+        # A user can explicitly ask the managed task system to run a bounded,
+        # read-only verification without authorizing implementation. Preserve
+        # that typed mode instead of treating its no-edit scope as ordinary
+        # non-coding prose or mistaking a negated "planning only" phrase for
+        # a plan-only task.
+        return {"classification": "CODING", "mutation_intent": False,
+                "planning_intent": False, "explicit_non_coding": False,
+                "reason": "EXPLICIT_VERIFICATION_ONLY_TASK",
+                "attachment_repair_evidence": False,
+                "execution_intent": execution_intent or "NONE"}
     planning = bool(_PLANNING_INTENT.search(value))
     explicit_non_coding = bool(_EXPLICIT_NON_CODING.search(value))
     local_diagnostic = bool(_LOCAL_DIAGNOSTIC_INTENT.search(value))
@@ -1345,6 +2039,18 @@ def classify_mutation_mode(text: str, attachment_evidence: Mapping[str, Any] | N
     """Classify the shape of an already-authorized repository mutation."""
     value=_current_task_text(text).strip()
     explicit_new=bool(re.search(r"(?:新機能|新しい).{0,32}(?:追加|実装|作成)|(?:追加|実装|作成).{0,32}(?:新機能|新しい)|修正ではなく.*(?:新機能|実装)|(?:initial|current).{0,32}(?:implementation|implement).{0,32}(?:not|rather than).{0,16}fix", value, re.I))
+    # A new product may explicitly require fixing tests after implementation.
+    # That recovery instruction does not turn the initial creation into FIX.
+    explicit_new = explicit_new or bool(re.search(
+        r'(?:独立した)?(?:アプリ|アプリケーション|Webサイト|ウェブサイト|サイト|ソフトウェア|プロジェクト|ゲーム)(?:として)?(?:を)?(?:一から|ゼロから|新規に|新しく).{0,24}(?:作成して|作って|構築して|実装して)|'
+        r'(?:空の(?:プロジェクト|フォルダ|ディレクトリ)から|ゼロから|一から).{0,160}'
+        r'(?:作成して|作って|構築して|実装して)|'
+        r'(?:アプリ|サイト|プロジェクト|ゲーム)を(?:新規(?:に|で)?|新しく|ゼロから)?(?:作成して|作って|構築して|実装して)|'
+        r'(?:アプリ|サイト|プロジェクト).{0,80}新規(?:作成|構築|実装)(?:して|する|しろ)|'
+        r'新規(?:の|で)?(?:Web|ウェブ)?(?:アプリ|サイト|プロジェクト).{0,80}(?:作成して|作って|構築して|実装して)|'
+        r'\b(?:create|build|implement)\s+(?:an?\s+|the\s+)?(?:new\s+)?(?:web\s+)?(?:app|application|website|project)\b|'
+        r'\b(?:from\s+scratch|empty\s+(?:project|folder)).{0,120}\b(?:create|build|implement)\b',
+        value,re.I))
     repair=bool(re.search(r"修正|直して|直す|バグ|不具合|壊れて|動かない|反応しない|表示されない|開始しない|保存できない|エラー", value, re.I))
     existing=bool(re.search(r"既存|現在|今実装中|この|ボタン|画面|ゲーム|アニメーション|機能|挙動", value, re.I))
     if explicit_new:
@@ -1430,7 +2136,7 @@ def classify_waiting_input(text: str) -> str:
 def plan_schema() -> dict[str, Any]:
     """Canonical JSON Schema shared by validation prompts and Ollama format mode."""
     dependency_record={"type":"object","properties":{"package":{"type":"string"},"version_range":{"type":["string","null"]},"semantic_type":{"type":"string","enum":["RUNTIME_PACKAGE","DEV_PACKAGE","CLI_TOOL","PROJECT_INITIALIZER","MCP_MANAGED_TOOLING","CONFIGURATION_ONLY_REQUIREMENT"]},"dependency_kind":{"type":"string","enum":["dependencies","devDependencies"]},"source_requirement":{"type":"string"},"canonical_stack_provenance":{"type":"string"},"phase_id":{"type":["string","null"]},"authorization_status":{"type":"string"}},"required":["package","source_requirement","canonical_stack_provenance","authorization_status"],"additionalProperties":False}
-    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"},"minItems":1},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"execution_mode":{"type":"string","enum":list(PHASE_EXECUTION_MODES)},"requires_repo_mutation":{"type":"boolean"},"requires_dependency_installation":{"type":"boolean"},"package_json_config_mutation":{"type":"boolean"},"dependency_requirements":{"type":"array","items":dependency_record},"required_mcp":{"type":"array","items":{"type":"string"}},"selected_mcp":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":{"type":"object"}}},"required":["id","goal","status","done","verify","dependencies","risks","execution_mode"],"additionalProperties":False}
+    phase={"type":"object","properties":{"id":{"type":"string"},"goal":{"type":"string"},"status":{"type":"string","enum":["pending","pass","blocked","waiting"]},"done":{"type":"array","items":{"type":"string"},"minItems":1},"verify":{"type":"array","items":{"type":"string"}},"dependencies":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"execution_mode":{"type":"string","enum":list(PHASE_EXECUTION_MODES)},"checkpoint_on_failure":{"type":"boolean"},"requires_repo_mutation":{"type":"boolean"},"requires_dependency_installation":{"type":"boolean"},"package_json_config_mutation":{"type":"boolean"},"dependency_requirements":{"type":"array","items":dependency_record},"criterion_executors":{"type":"object","additionalProperties":{"type":"string"}},"verification_executor":{"type":"string"},"verification_command":{"type":"array","items":{"type":"string"}},"verification_targets":{"type":"array","items":{"type":"string"}},"required_mcp":{"type":"array","items":{"type":"string"}},"selected_mcp":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":{"type":"object"}}},"required":["id","goal","status","done","verify","dependencies","risks","execution_mode"],"additionalProperties":False}
     task = {"type":"object", "properties":{"task_id":{"type":"string"},"phase_id":{"type":"string"},"goal":{"type":"string"},"domain":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}},"required_context":{"type":"array","items":{"type":"string"}},"required_mcp":{"type":"array","items":{"type":"string"}},"selected_mcp":{"type":"array","items":{"type":"string"}},"change_scope":{"type":"array","items":{"type":"string"}},"verification":{"type":"array","items":{"type":"string"}},"done_condition":{"type":"array","items":{"type":"string"}},"retry_state":{"type":"object"}}, "required":["task_id","phase_id","goal","domain","depends_on","required_context","required_mcp","change_scope","verification","done_condition","retry_state"], "additionalProperties":False}
     manifest_entry={"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["create","modify","delete"]},"role":{"type":"string"},"required":{"type":"boolean"},"owner_phase":{"type":"string"}},"required":["path","action"],"additionalProperties":False}
     return {"type":"object","properties":{"schema_version":{"type":"integer","const":1},"original_goal":{"type":"string"},"scope":{"type":"object","properties":{"allowed":{"type":"array","items":{"type":"string"}},"forbidden":{"type":"array","items":{"type":"string"}}},"required":["allowed","forbidden"],"additionalProperties":False},"assumptions":{"type":"array","items":{"type":"string"}},"file_manifest":{"type":"array","items":manifest_entry,"maxItems":100},"phases":{"type":"array","items":phase,"minItems":1,"maxItems":8},"tasks":{"type":"array","items":task,"maxItems":15},"max_retries_per_phase":{"type":"integer","const":2},"requires_user_approval":{"type":"boolean","const":True}},"required":["schema_version","original_goal","scope","assumptions","phases","max_retries_per_phase","requires_user_approval"],"additionalProperties":False}
@@ -1451,8 +2157,93 @@ def coding_action_intent(text: str) -> bool:
     return bool(facts["mutation_intent"]) and facts["classification"] == "CODING"
 
 
+def explicit_phase_failure_checkpoint_requested(goal: str) -> bool:
+    """Recognize an explicit stop-after-failure/manual-resume boundary."""
+    text = str(goal or "")
+    phase_failure = bool(re.search(r"\bif\s+(?:this|the)\s+phase\s+(?:fails|has\s+failed)\b", text, re.I))
+    manual_resume = bool(re.search(r"\bmanual\s+resume\b|\bexplicit\s+manual\s+resume\b", text, re.I))
+    stop_boundary = bool(re.search(r"\bstop\s+(?:this|the)\s+task\b|\bdo\s+not\s+retry\s+automatically\b", text, re.I))
+    direct_checkpoint = bool(re.search(
+        r"\bcheckpoint\s+(?:after|on)\s+(?:the\s+)?(?:first\s+)?(?:failed\s+phase|phase\s+failure)\b",
+        text, re.I))
+    negated_checkpoint = bool(re.search(
+        r"\b(?:do\s+not|don't|never|avoid)\s+(?:use\s+|create\s+|add\s+)?checkpoint\b"
+        r".{0,60}\b(?:failed\s+phase|phase\s+failure)\b", text, re.I | re.S))
+    japanese_checkpoint = bool(re.search(r"フェーズ.{0,24}失敗.{0,48}(?:停止|中断).{0,48}(?:手動|明示).{0,24}再開", text))
+    return (phase_failure and manual_resume and stop_boundary) or (direct_checkpoint and not negated_checkpoint) or japanese_checkpoint
+
+
+def explicit_single_file_write_target(goal: str) -> str | None:
+    """Return a sole writable file only when the user explicitly labels it."""
+    match = re.search(
+        r"\bthe\s+only\s+(?:editable|writable)\s+(?:artifact|file|path)\s+is\s+([\w./-]+\.(?:py|tsx?|jsx?|mjs|css|html?))\b",
+        str(goal or ""), re.I,
+    )
+    if not match:
+        return None
+    path = match.group(1).replace("\\", "/")
+    return Path(path).name if "/" not in path else path
+
+
+def enforce_explicit_phase_failure_checkpoint(plan: Any, goal: str) -> tuple[Any, list[str]]:
+    """Make failure checkpoints host-owned and opt-in, including on resume."""
+    if not isinstance(plan, dict) or not isinstance(plan.get("phases"), list) or not plan["phases"]:
+        return plan, []
+    phases = [dict(phase) if isinstance(phase, dict) else phase for phase in plan["phases"]]
+    requested = explicit_phase_failure_checkpoint_requested(goal)
+    if not requested:
+        changed = []
+        for phase in phases:
+            if isinstance(phase, dict) and phase.get("checkpoint_on_failure") is True:
+                phase["checkpoint_on_failure"] = False
+                changed.append(f"{phase.get('id', 'UNKNOWN')}:checkpoint_on_failure:disabled_without_user_request")
+        return ({**plan, "phases": phases}, changed) if changed else (plan, [])
+    if not isinstance(phases[0], dict) or phases[0].get("checkpoint_on_failure") is True:
+        return plan, []
+    phases[0]["checkpoint_on_failure"] = True
+    return {**plan, "phases": phases}, [f"{phases[0].get('id', 'phase-1')}:checkpoint_on_failure"]
+
+
+def enforce_explicit_single_file_manifest(plan: Any, goal: str) -> tuple[Any, list[str]]:
+    """Promote an explicitly named sole writable file into a typed manifest."""
+    target = explicit_single_file_write_target(goal)
+    if (not target or not isinstance(plan, dict) or not isinstance(plan.get("phases"), list)
+            or not plan["phases"] or not isinstance(plan["phases"][0], dict)
+            or isinstance(plan.get("file_manifest"), list)):
+        return plan, []
+    phase_id = str(plan["phases"][0].get("id") or "p1")
+    entry = {"path": target, "action": "modify", "role": "only explicitly writable artifact",
+             "required": True, "owner_phase": phase_id}
+    return {**plan, "file_manifest": [entry]}, [f"file_manifest:{target}:modify"]
+
+
+def plan_criterion_errors(value: Any) -> list[str]:
+    """Reject serialization debris without interpreting or rewriting criteria."""
+    errors=[]
+    fields={'verify','done','goal','status','phases','dependencies','risks','execution_mode'}
+    for phase in value.get('phases',[]) if isinstance(value,dict) else []:
+        if not isinstance(phase,dict):
+            continue
+        for key in ('done','verify'):
+            values=phase.get(key)
+            if not isinstance(values,list):
+                continue
+            for index,item in enumerate(values):
+                if not isinstance(item,str):
+                    errors.append(f"phase {phase.get('id')} {key}[{index}] must be an observable condition string")
+                    continue
+                compact=re.sub(r'[\s\[\]{}():;,\"\'`]+','',item).casefold()
+                if not compact or compact in fields and (compact!='done' or item.strip()!=compact):
+                    errors.append(f"phase {phase.get('id')} {key}[{index}] contains plan serialization syntax instead of an observable condition: {item[:100]!r}")
+    return errors
+
+
 def validate_plan(value: Any, goal: str) -> list[str]:
     if not isinstance(value, dict): return ["plan must be an object"]
+    if 'concept_diagram' in value:
+        from .concept_diagrams import ConceptDiagram
+        try: ConceptDiagram.model_validate(value['concept_diagram'])
+        except (ValueError,TypeError): return ['invalid concept_diagram in plan']
     required={"schema_version","original_goal","scope","assumptions","phases","max_retries_per_phase","requires_user_approval"}
     missing=required-value.keys()
     if missing:return ["missing: "+", ".join(sorted(missing))]
@@ -1460,11 +2251,22 @@ def validate_plan(value: Any, goal: str) -> list[str]:
     if not isinstance(value["phases"],list) or not 1 <= len(value["phases"]) <= 8:return ["phases must contain 1 to 8 entries"]
     for phase in value["phases"]:
         if not isinstance(phase,dict) or not {"id","goal","status","done","verify","dependencies","risks"} <= phase.keys():return ["invalid phase schema"]
+    criterion_errors=plan_criterion_errors(value)
+    if criterion_errors:return criterion_errors
     if value["max_retries_per_phase"] != MAX_RETRIES_PER_PHASE or value["requires_user_approval"] is not True:return ["invalid approval/retry policy"]
     if value["original_goal"] != goal:return ["original goal mismatch"]
     if "tasks" in value:
         graph_errors = validate_task_graph(value["tasks"])
         if graph_errors: return graph_errors
+    explicit_target = explicit_single_file_write_target(goal)
+    if explicit_target:
+        manifest = value.get("file_manifest")
+        if not isinstance(manifest, list):
+            return ["explicit single-file write target missing from file_manifest"]
+        manifest_paths = [str(item.get("path") or "") for item in manifest if isinstance(item, dict)]
+        manifest_actions = [str(item.get("action") or "") for item in manifest if isinstance(item, dict)]
+        if manifest_paths != [explicit_target] or manifest_actions != ["modify"]:
+            return ["file_manifest exceeds or contradicts the explicit single-file write scope"]
     ids=[]
     for phase in value["phases"]:
         phase_id=phase.get("id")
@@ -1476,7 +2278,23 @@ def validate_plan(value: Any, goal: str) -> list[str]:
         contract_errors = phase_execution_contract_errors(phase)
         if contract_errors:
             return contract_errors
+    if (explicit_phase_failure_checkpoint_requested(goal)
+            and value["phases"][0].get("checkpoint_on_failure") is not True):
+        return ["explicit phase-failure checkpoint requested but missing on first phase"]
+    if (not explicit_phase_failure_checkpoint_requested(goal)
+            and any(phase.get("checkpoint_on_failure") is True for phase in value["phases"])):
+        return ["phase-failure checkpoint requires an explicit user request"]
     if any(dep not in ids for phase in value["phases"] for dep in phase["dependencies"]): return ["unknown phase dependency"]
+    for entry in value.get('file_manifest') or []:
+        if not isinstance(entry,dict):
+            return ['invalid file_manifest entry']
+        owner=entry.get('owner_phase')
+        if owner:
+            phase=next((item for item in value['phases'] if item['id']==owner),None)
+            if phase is None:
+                return ['file_manifest owner_phase must identify a plan phase']
+            if phase.get('execution_mode')=='VERIFICATION_ONLY':
+                return ['file_manifest owner_phase must permit implementation']
     graph_diagnostics = graph_validation_diagnostics(value)
     first_graph_error = graph_diagnostics.get("first_error") or {}
     if first_graph_error.get("error_kind") == "PHASE_DEPENDENCY_CYCLE":
@@ -1488,6 +2306,56 @@ def validate_plan(value: Any, goal: str) -> list[str]:
         if len(task_phase_ids) != len(set(task_phase_ids)) or set(task_phase_ids) != set(ids):
             return ["task graph must contain exactly one task for each plan phase"]
     return []
+
+
+def deterministic_plan_schema_repair(value: Any, goal: str, errors: list[str] | None = None,
+                                     verification_requested: bool | None = None) -> dict[str, Any] | None:
+    """Repair unambiguous schema drift and explicit checkpoint omissions safely.
+
+    Local planners occasionally serialize a one-item ``done``/``verify`` value
+    as a string (or leave ``done`` empty). Wrapping an existing string and
+    using the already-authorized phase goal as the missing Done criterion do
+    not add scope, commands, or files. An explicitly requested manual-resume
+    checkpoint is restored from the original user goal if the planner omits
+    its typed flag. Unknown schema failures stay on the bounded model-repair
+    path.
+    """
+    repairable_errors = {
+        "phase done must be non-empty and verify must be an array",
+        "explicit phase-failure checkpoint requested but missing on first phase",
+        "explicit single-file write target missing from file_manifest",
+    }
+    if not errors or not set(errors).issubset(repairable_errors):
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("phases"), list):
+        return None
+    repaired = json.loads(json.dumps(value, ensure_ascii=False))
+    repaired, checkpoint_changes = enforce_explicit_phase_failure_checkpoint(repaired, goal)
+    repaired, manifest_changes = enforce_explicit_single_file_manifest(repaired, goal)
+    if verification_requested is None:
+        verification_requested = verification_requested_by_user(goal)
+    for phase in repaired["phases"]:
+        if not isinstance(phase, dict):
+            return None
+        done = phase.get("done")
+        if isinstance(done, str) and done.strip():
+            phase["done"] = [done]
+        elif isinstance(done, list) and done:
+            pass
+        elif isinstance(done, list) and not done and str(phase.get("goal") or "").strip():
+            phase["done"] = [str(phase["goal"]).strip()]
+        else:
+            return None
+        verify = phase.get("verify")
+        if isinstance(verify, str) and verify.strip():
+            phase["verify"] = [verify]
+        elif not isinstance(verify, list):
+            # The original request is authoritative for exact verifier
+            # commands and acceptance criteria; never invent either.
+            phase["verify"] = ([] if not verification_requested else [
+                "Run the exact verifier specified in the original goal, if any, and check its result against the stated acceptance criteria."
+            ])
+    return repaired if not validate_plan(repaired, goal) else None
 
 
 def phase_execution_contract_errors(phase: Mapping[str, Any]) -> list[str]:
@@ -1532,12 +2400,16 @@ def phase_execution_contract_errors(phase: Mapping[str, Any]) -> list[str]:
 
 
 def repair_phase_complexity(plan: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Repair only the safe internal verification-criteria omission.
+    """Repair safe internal verification-phase contract omissions.
 
     Normalization can merge a verification phase after the Planner schema has
     already passed.  Supplying a typed criterion keeps that internal repair
     bounded; execution still needs authoritative verification evidence before
-    the phase can pass.
+    the phase can pass.  A verification-only phase may retain browser evidence
+    MCP metadata, but implementation MCPs are contradictory metadata and must
+    be removed before the plan reaches the fail-closed validator.  This is a
+    planner-artifact repair only: it does not authorize a new capability or
+    turn a verification phase into an implementation phase.
     """
     if not isinstance(plan, dict):
         return plan, []
@@ -1548,11 +2420,62 @@ def repair_phase_complexity(plan: dict[str, Any]) -> tuple[dict[str, Any], list[
             phases.append(value)
             continue
         phase = dict(value)
+        for key in ("required_mcp", "selected_mcp"):
+            if not isinstance(phase.get(key), list):
+                continue
+            original = list(phase.get(key) or [])
+            filtered = [server for server in original
+                        if str(server).strip().lower() not in {"", "none", "null"}]
+            if filtered != original:
+                phase[key] = filtered
+                changes.append(f"{phase.get('id', 'UNKNOWN')}:removed_empty_{key}")
+        if isinstance(phase.get("acceptance_contract"), list):
+            original = list(phase["acceptance_contract"])
+            filtered = [contract for contract in original
+                        if contract is not None and str(contract).strip().lower() not in {"", "none", "null"}]
+            if filtered != original:
+                phase["acceptance_contract"] = filtered
+                changes.append(f"{phase.get('id', 'UNKNOWN')}:removed_empty_acceptance_contract")
         if phase.get("execution_mode") == "VERIFICATION_ONLY" and not phase.get("verify"):
             phase["verify"] = ["read-only verification evidence collected"]
             changes.append(f"{phase.get('id', 'UNKNOWN')}:added_verification_criterion")
+        if phase.get("execution_mode") == "VERIFICATION_ONLY":
+            verification_mcps = {"playwright"}
+            for key in ("required_mcp", "selected_mcp"):
+                if key not in phase or not isinstance(phase.get(key), list):
+                    continue
+                original = list(phase.get(key) or [])
+                filtered = [server for server in original if str(server).lower() in verification_mcps]
+                if filtered != original:
+                    phase[key] = filtered
+                    changes.append(f"{phase.get('id', 'UNKNOWN')}:removed_implementation_{key}")
         phases.append(phase)
-    return ({**plan, "phases": phases}, changes) if changes else (plan, [])
+    tasks = plan.get("tasks")
+    normalized_tasks: list[Any] = []
+    tasks_changed = False
+    if isinstance(tasks, list):
+        for value in tasks:
+            if not isinstance(value, dict):
+                normalized_tasks.append(value)
+                continue
+            task = dict(value)
+            for key in ("required_mcp", "selected_mcp"):
+                if not isinstance(task.get(key), list):
+                    continue
+                original = list(task.get(key) or [])
+                filtered = [server for server in original
+                            if str(server).strip().lower() not in {"", "none", "null"}]
+                if filtered != original:
+                    task[key] = filtered
+                    tasks_changed = True
+                    changes.append(f"{task.get('task_id', 'UNKNOWN')}:removed_empty_{key}")
+            normalized_tasks.append(task)
+    if changes:
+        normalized = {**plan, "phases": phases}
+        if isinstance(tasks, list) and tasks_changed:
+            normalized["tasks"] = normalized_tasks
+        return normalized, changes
+    return plan, []
 
 
 def phase_executor_capability(phase: Mapping[str, Any]) -> dict[str, Any]:
@@ -1585,7 +2508,8 @@ def validate_fix_plan_quality(value: Any, requirements: Mapping[str, Any] | None
     errors: list[str] = []
     if not re.search(r"inspect|read|existing|repository|source|調査|確認|読み|既存", text, re.I):
         errors.append("visual fix plan must inspect the existing repository before writing")
-    if not re.search(r"verify|browser|playwright|runtime|screenshot|検証|ブラウザ|実行", text, re.I):
+    if (verification_requested_by_user(str((requirements or {}).get("original_goal") or ""), requirements)
+            and not re.search(r"verify|browser|playwright|runtime|screenshot|検証|ブラウザ|実行", text, re.I)):
         errors.append("visual fix plan must include runtime/browser verification")
     if re.search(r"rewrite the app|rewrite .*all|replace the entire|implement required changes in src|src directory", text, re.I):
         errors.append("visual fix plan is too broad; identify the observed target before patching")
@@ -1622,23 +2546,55 @@ def validate_phase_report(value: Any, phase_id: str, attempt: int) -> list[str]:
     return []
 
 
-def report_has_authoritative_failure(report: dict[str, Any], phase: dict[str, Any]) -> bool:
+def report_has_authoritative_failure(report: dict[str, Any], phase: dict[str, Any],
+                                    workspace_root: str | None = None,
+                                    prior_reports: list[dict[str, Any]] | None = None) -> bool:
     """Return whether local typed evidence rules out a manager PASS decision."""
+    if phase.get('host_verification') and workspace_root:
+        commands=[op for op in (report.get('typed_execution_summary') or {}).get('operations') or []
+                  if op.get('tool') == 'verification_command' and op.get('status') == 'success']
+        if not commands:
+            return True
+        hashes=(commands[-1].get('output') or {}).get('target_sha256')
+        if not isinstance(hashes,dict) or not hashes:
+            return True
+        root=Path(workspace_root).resolve()
+        for relative,expected in hashes.items():
+            try:
+                target=(root/relative).resolve(strict=True)
+                if not target.is_relative_to(root) or hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                    return True
+            except (OSError,ValueError,TypeError):
+                return True
+    # Completion must apply the same strict whole-target/no-write/verifier
+    # predicate as phase evaluation. Legacy structured-empty implementations
+    # retain status=FAIL in the raw execution report even when the host has
+    # proved an exact read-only no-op for the phase.
+    if _verified_noop_implementation(
+            phase, report, _successful_typed_operations(report), workspace_root):
+        return False
     if report.get("status") != "PASS" or report.get("errors") or report.get("blockers"):
         return True
     if report.get("test_fail"):
         return True
     required=" ".join([*phase.get("done", []), *phase.get("verify", [])]).lower()
-    if any(term in required for term in ("typed filesystem", "read-back", "readback")):
-        operations=(report.get("typed_execution_summary") or {}).get("operations") or []
+    if not phase.get('host_verification') and any(term in required for term in ("typed filesystem", "read-back", "readback")):
+        compatible = [item for item in (prior_reports or [])
+            if item.get('phase_id') == phase.get('id')
+            and item.get('plan_revision',0) == report.get('plan_revision',0)
+            and (item.get('typed_execution_summary') or {}).get('worktree_state') != 'ROLLED_BACK']
+        operations=[op for item in [*compatible,report]
+                    for op in (item.get('typed_execution_summary') or {}).get('operations') or []]
         wrote=any(op.get("tool") == "workspace_write" and op.get("status") == "success" for op in operations if isinstance(op,dict))
         read=any(op.get("tool") == "workspace_read" and op.get("status") == "success" for op in operations if isinstance(op,dict))
         if not wrote or not read:
             return True
-    if any(word in required for word in ("test", "pytest", "cargo check", "typecheck", "build")):
+    test_run = bool(re.search(r'(?:run|execute)\s+(?:the\s+)?(?:test suite|tests?)\b|tests?\s+pass|pytest\b|テスト(?:を)?実行', required, re.I))
+    build_run = bool(re.search(r'cargo check|typecheck|npm\s+run\s+build|build.{0,24}(?:pass|success)|(?:run|execute).{0,24}\bbuild\b', required, re.I))
+    if test_run or build_run:
         if not report.get("test_executed") and report.get("build_executed") == "NOT_RUN":
             return True
-        if report.get("build_pass") in {"FAIL", "NOT_RUN"} and any(word in required for word in ("build", "cargo check", "typecheck")):
+        if report.get("build_pass") in {"FAIL", "NOT_RUN"} and build_run:
             return True
     return False
 
@@ -1652,18 +2608,43 @@ def _successful_typed_operations(report: dict[str, Any]) -> list[dict[str, Any]]
 def _criterion_paths(criterion: str, known_paths: set[str]) -> list[str]:
     """Find explicit file-like paths without treating arbitrary prose as evidence."""
     found = []
-    for match in re.findall(r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:html?|css|js|json|py|rs|tsx?|md|txt)", criterion):
-        found.append(match)
     lower = criterion.lower()
+    spans = []
     for path in known_paths:
-        if Path(path).name.lower() in lower or path.lower() in lower:
+        if path.lower() in lower:
+            start = lower.index(path.lower())
+            spans.append((start, start + len(path)))
             found.append(path)
+    for match in re.finditer(r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:html?|css|json|[cm]?js|py|rs|tsx?|md|txt)(?![A-Za-z0-9_]|\.[A-Za-z0-9_])", criterion):
+        if not any(start <= match.start() and match.end() <= end for start, end in spans):
+            found.append(match.group())
+    for path in known_paths:
+        if path.lower() in lower:
+            found.append(path)
+        elif (Path(path).name.lower() in lower
+              and not any(Path(item).name.lower() == Path(path).name.lower() for item in found)):
+            found.append(Path(path).name)
     return list(dict.fromkeys(found))
+
+
+def _installation_criterion(text: str) -> bool:
+    if re.search(r'\b(?:no|without|not|never)\b.{0,40}\b(?:dependenc\w*|packages?|install\w*)\b|依存.{0,12}(?:なし|不要|使わない|使用しない)', text, re.I):
+        return False
+    return bool(re.search(r'\binstall(?:ation|ed|ing)?\b|\b(?:npm|pnpm|yarn)\s+(?:install|ci|add)\b|インストール|(?:依存|パッケージ).{0,12}(?:導入|追加)', text, re.I))
 
 
 def _criterion_satisfied(criterion: str, report: dict[str, Any], typed: dict[str, Any],
                          successful_ops: list[dict[str, Any]], file_state: dict[str, bool]) -> tuple[bool, bool]:
     """Return (satisfied, required_not_run) using only typed/current-state facts."""
+    runtime_check = bool(re.search(
+        r'^(?:run\b|call\b|open\b.*browser|enter\b|click\b|resize\b)|'
+        r'console errors|loads in a browser|tests? pass|history never exceeds|'
+        r'(?:実行して|ブラウザで|クリックして|関数を呼び)', criterion, re.I))
+    verification_ran = any(op.get('tool') == 'verification_command'
+                           and (op.get('output') or {}).get('returncode') is not None
+                           for op in (typed.get('operations') or []) if isinstance(op, dict))
+    if runtime_check and not verification_ran:
+        return False, True
     explicit = report.get("criteria_evidence")
     if isinstance(explicit, dict):
         for key, value in explicit.items():
@@ -1678,10 +2659,17 @@ def _criterion_satisfied(criterion: str, report: dict[str, Any], typed: dict[str
     paths = _criterion_paths(criterion, set(file_state))
     if paths:
         known = set(file_state)
-        paths = [path for path in paths if path in known or any(Path(path).name.lower() == Path(item).name.lower() for item in known)]
-        if not paths:
-            return False, False
-        paths = list(dict.fromkeys(next((item for item in known if Path(item).name.lower() == Path(path).name.lower()), path) for path in paths))
+        matched = []
+        for path in paths:
+            # Qualified paths must match their directory as well. A bare
+            # basename is compatible only when there is one unique target;
+            # backend/index.js cannot prove frontend/index.js exists.
+            candidates = ([path] if path in known else
+                [item for item in known if item.replace("\\", "/").endswith("/" + path)])
+            if len(candidates) != 1:
+                return False, False
+            matched.append(candidates[0])
+        paths = list(dict.fromkeys(matched))
         # A successful deletion/removal is authoritative invalidation.
         if any(not file_state.get(path, False) for path in paths):
             return False, False
@@ -1689,7 +2677,7 @@ def _criterion_satisfied(criterion: str, report: dict[str, Any], typed: dict[str
             return True, False
 
     lower = criterion.lower()
-    if any(token in lower for token in ("install", "dependency", "npm", "package manager", "パッケージ", "依存")):
+    if _installation_criterion(criterion):
         package_installs = [op for op in successful_ops
                             if str(op.get("tool") or "") == "package_install"
                             and str(op.get("status") or "").lower() in {"success", "completed", "ok"}]
@@ -1699,19 +2687,143 @@ def _criterion_satisfied(criterion: str, report: dict[str, Any], typed: dict[str
         # missing package_install event is a required action that was not run.
         return False, not any(str(op.get("tool") or "") == "package_install" for op in successful_ops)
     if any(token in lower for token in ("test", "pytest", "cargo check", "typecheck", "build")):
-        if report.get("test_fail") or report.get("build_pass") in {"FAIL", "NOT_RUN"}:
-            return False, report.get("build_pass") == "NOT_RUN"
-        if report.get("test_pass") or report.get("build_pass") == "PASS":
+        build_required = any(token in lower for token in ("cargo check", "build"))
+        if report.get("test_fail") or (build_required and report.get("build_pass") in {"FAIL", "NOT_RUN"}):
+            return False, build_required and report.get("build_pass") == "NOT_RUN"
+        if report.get("test_pass") or (build_required and report.get("build_pass") == "PASS"):
             return True, False
         if report.get("status") == "NOT_RUN" or (not report.get("test_executed") and report.get("build_executed") == "NOT_RUN"):
             return False, True
+        return False, False
 
-    # A phase report with no typed failure is the existing compatibility path
-    # for non-filesystem, human-observable criteria (for example "manual check").
-    # Explicit NOT_RUN/FAIL remains authoritative and cannot be promoted.
+    # A PASS-shaped report alone is not execution evidence. In particular,
+    # an early runtime return must not satisfy UI behavior or manual checks
+    # when no executor has done any work.
     if report.get("status") in {"FAIL", "NOT_RUN", "BLOCKED"}:
         return False, report.get("status") == "NOT_RUN"
-    return True, False
+    return any(op.get("tool") not in {"workspace_list", "workspace_refresh", "operation_preflight",
+                                      "implementation_noop_candidate"} for op in successful_ops), False
+
+
+def _criterion_executor(phase: dict[str, Any], kind: str, criterion: str, index: int) -> str:
+    """Return the typed executor responsible for one acceptance criterion.
+
+    New plans may persist ``criterion_executors`` (a mapping keyed by
+    ``DONE:n``/``VERIFY:n`` or by criterion text).  Older plans have no such
+    field, so the phase's typed execution contract is the fallback.  The
+    fallback only distinguishes executor capabilities already represented by
+    the plan; it never promotes an unobserved verification to PASS.
+    """
+    key = f"{kind}:{index + 1}"
+    declared = phase.get("criterion_executors")
+    if isinstance(declared, Mapping):
+        value = declared.get(key)
+        if value is None:
+            value = declared.get(criterion)
+        if isinstance(value, str) and value.strip():
+            return value.strip().upper()
+    if kind == "DONE":
+        lower = criterion.lower()
+        if _installation_criterion(criterion):
+            return "PACKAGE_MANAGER"
+        return "IMPLEMENTER"
+    declared_executor = phase.get("verification_executor")
+    if isinstance(declared_executor, str) and declared_executor.strip():
+        return declared_executor.strip().upper()
+    if phase.get("execution_mode") == "VERIFICATION_ONLY":
+        return "PLAYWRIGHT_MCP" if "playwright" in {str(x).lower() for x in (phase.get("required_mcp") or [])} else "READ_ONLY_VERIFICATION"
+    if phase.get("verification_command") is not None:
+        return "READ_ONLY_VERIFICATION"
+    if "playwright" in {str(x).lower() for x in (phase.get("required_mcp") or [])}:
+        return "PLAYWRIGHT_MCP"
+    return "DETERMINISTIC_VERIFICATION"
+
+
+def _verified_noop_implementation(phase: dict[str, Any], report: dict[str, Any],
+                                  successful_ops: list[dict[str, Any]],
+                                  workspace_root: str | None) -> bool:
+    """Accept an already-satisfied implementation only on exact verifier evidence.
+
+    A failed structured implementer response is not itself proof of completion.
+    It can be treated as a no-op only when the plan has an explicit typed
+    verifier, that verifier read every declared target, all targets still exist,
+    and it passed without any attempted or recorded workspace mutation.
+    """
+    # A planner may choose IMPLEMENTATION while still declaring an exact,
+    # read-only verification command for the phase.  In that case the same
+    # host-verified no-op is valid when the requested implementation already
+    # exists; requiring the combined mode would make a passing, exact verifier
+    # unable to close the phase despite the strict target/hash checks below.
+    if (phase.get("execution_mode") not in {"IMPLEMENTATION", "IMPLEMENTATION_AND_VERIFICATION"}
+            or not phase.get("verification_command") or not phase.get("verification_targets")
+            or not workspace_root):
+        return False
+    typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), dict) else {}
+    noop_candidates = [item for item in (typed.get("operations") or [])
+                       if isinstance(item, dict) and item.get("tool") == "implementation_noop_candidate"
+                       and item.get("status") == "success"]
+    legacy_empty_failure = (str(typed.get("error") or "").startswith("IMPLEMENTER_STRUCTURED_OUTPUT_INVALID")
+                            and report.get("status") == "FAIL")
+    explicit_noop_candidate = len(noop_candidates) == 1 and report.get("status") == "PASS"
+    if (not (legacy_empty_failure or explicit_noop_candidate)
+            or report.get("errors") or report.get("blockers") or report.get("test_fail")
+            or report.get("changed_files")
+            or int(typed.get("accepted_mutations") or 0) != 0
+            or int(typed.get("files_written") or 0) != 0
+            or int(typed.get("final_worktree_mutations") or 0) != 0):
+        return False
+
+    root = Path(workspace_root).resolve()
+    def canonical_target(value: Any) -> str:
+        path = Path(str(value))
+        return str((path if path.is_absolute() else root / path).resolve())
+
+    targets = [canonical_target(item) for item in phase.get("verification_targets") or []]
+    if not targets or len(targets) != len(set(targets)):
+        return False
+    if any(not Path(target).is_relative_to(root) for target in targets):
+        return False
+    if not all(Path(target).is_file() for target in targets):
+        return False
+    if explicit_noop_candidate:
+        operation = noop_candidates[0]
+        output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+        operation_input = operation.get("input") if isinstance(operation.get("input"), dict) else {}
+        target_hashes = output.get("target_hashes")
+        if (operation_input.get("change_required") is not False
+                or operation_input.get("reason_code") != "already_satisfied"
+                or output.get("source_inspected") is not True
+                or output.get("condition_evaluated") is not True
+                or output.get("worktree_state") != "UNCHANGED"
+                or not isinstance(target_hashes, dict)):
+            return False
+        canonical_hashes = {canonical_target(path): value for path, value in target_hashes.items()}
+        if set(canonical_hashes) != set(targets):
+            return False
+        for target in targets:
+            expected = canonical_hashes[target]
+            if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+                return False
+            try:
+                if hashlib.sha256(Path(target).read_bytes()).hexdigest() != expected:
+                    return False
+            except OSError:
+                return False
+    verifiers = [item for item in successful_ops if item.get("tool") == "verification_command"]
+    from .coding_verification import verification_command_matches
+    for operation in verifiers:
+        operation_input = operation.get("input") if isinstance(operation.get("input"), dict) else {}
+        output = operation.get("output") if isinstance(operation.get("output"), dict) else {}
+        read_targets = [canonical_target(item) for item in output.get("read_only_targets") or []]
+        if (operation.get("status") == "success"
+                and verification_command_matches(operation_input.get("command"),phase.get("verification_command"))
+                and operation_input.get("write_scope") == "NONE"
+                and output.get("returncode") == 0
+                and output.get("changed_targets") == []
+                and output.get("zero_tests") is False
+                and set(read_targets) == set(targets)):
+            return True
+    return False
 
 
 def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
@@ -1747,7 +2859,7 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
         if index == len(all_reports) - 1 and item.get("status") == "NOT_RUN":
             required_not_run = True
         typed = item.get("typed_execution_summary") if isinstance(item.get("typed_execution_summary"), dict) else {}
-        if str(typed.get("state") or "") in {"denied", "forbidden"}:
+        if index == len(all_reports) - 1 and str(typed.get("state") or "") in {"denied", "forbidden"}:
             external_blocker = True
         for op in successful:
             output = op.get("output") if isinstance(op.get("output"), dict) else {}
@@ -1769,11 +2881,12 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
             if not candidate.is_absolute():
                 candidate = root / candidate
             # Current workspace state wins over an earlier operation claim.
-            file_state[path] = candidate.exists() and candidate.is_file()
+            file_state[path] = candidate.resolve().is_relative_to(root.resolve()) and candidate.is_file()
 
     done = [str(item) for item in (phase.get("done") or [])]
     verify = [str(item) for item in (phase.get("verify") or [])]
-    required_mcp = [str(item) for item in (phase.get("required_mcp") or [])]
+    required_mcp = [str(item) for item in (phase.get("required_mcp") or [])
+                    if str(item).strip().lower() not in {"", "none", "null"}]
     mcp_evidence = [item for source in all_reports for item in (source.get("mcp_evidence") or [])
                     if isinstance(item, dict)]
     # Initialize and tools/list establish availability only.  A required MCP
@@ -1781,9 +2894,123 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
     used_mcp = {str(item.get("mcp_name")) for item in mcp_evidence
                 if item.get("status") == "PASS"
                 and str(item.get("tool_name") or "") not in {"", "initialize", "tools/list"}}
-    aggregate_typed = {"operations": successful_ops, "state": report.get("typed_execution_summary", {}).get("state") if isinstance(report.get("typed_execution_summary"), dict) else ""}
+    current_typed = report.get('typed_execution_summary') if isinstance(report.get('typed_execution_summary'), dict) else {}
+    aggregate_typed = {"operations": [*successful_ops, *[op for op in current_typed.get('operations') or []
+                        if isinstance(op, dict) and op.get('status') not in {'success','completed','ok'}]],
+                       "state": current_typed.get('state', '')}
     done_flags = [_criterion_satisfied(item, report, aggregate_typed, successful_ops, file_state) for item in done]
     verify_flags = [_criterion_satisfied(item, report, aggregate_typed, successful_ops, file_state) for item in verify]
+    if phase.get('host_verification'):
+        evidence = report.get('criteria_evidence') or {}
+        executed = any(op.get('tool') == 'verification_command' and isinstance((op.get('output') or {}).get('returncode'), int)
+                       for op in current_typed.get('operations') or [] if isinstance(op, dict))
+        passed_command = any(op.get('tool') == 'verification_command' and (op.get('output') or {}).get('returncode') == 0
+                             for op in _successful_typed_operations(report))
+        # An older successful command cannot prove newly added requirements.
+        done_flags = [(bool(passed_command and evidence.get(item) is True), not executed or item not in evidence) for item in done]
+        verify_flags = [(bool(passed_command and evidence.get(item) is True), not executed or item not in evidence) for item in verify]
+    verified_noop_implementation = _verified_noop_implementation(
+        phase, report, successful_ops, workspace_root)
+    # A host-deferred artifact gate checks only that this task's accepted
+    # files are retained. A later idempotent retry must not erase earlier
+    # real writes and force the model to rewrite an already built scaffold.
+    # Behavioral criteria remain in the separate final acceptance gate.
+    retained_artifacts = bool(workspace_root and done
+        and verify == ['Typed workspace writes and read-back succeed for the changed files.']
+        and all(re.fullmatch(r'.+ exists', item) for item in done))
+    if retained_artifacts:
+        retained_hashes = {}
+        mutated_paths = set()
+        root = Path(workspace_root).resolve()
+        for item in all_reports:
+            typed = item.get('typed_execution_summary') or {}
+            if typed.get('worktree_state') == 'ROLLED_BACK':
+                continue
+            for operation in _successful_typed_operations(item):
+                output = operation.get('output') or {}
+                if operation.get('tool') not in {'workspace_write','workspace_patch'}:
+                    continue
+                try:
+                    supplied = Path(str(output.get('path') or ''))
+                    target = (supplied if supplied.is_absolute() else root / supplied).resolve()
+                    relative = target.relative_to(root).as_posix()
+                except (ValueError, OSError):
+                    continue
+                if output.get('post_apply_hash'):
+                    retained_hashes[relative] = output['post_apply_hash']
+                    if output.get('net_changed') is True:
+                        mutated_paths.add(relative)
+        for criterion in done:
+            relative = criterion.removesuffix(' exists')
+            try:
+                target = (root / relative).resolve()
+                if (not target.is_relative_to(root) or relative not in mutated_paths
+                        or relative not in retained_hashes
+                        or hashlib.sha256(target.read_bytes()).hexdigest() != retained_hashes[relative]):
+                    retained_artifacts = False
+                    break
+            except OSError:
+                retained_artifacts = False
+                break
+    if (phase.get("execution_mode") in {"IMPLEMENTATION", "IMPLEMENTATION_AND_VERIFICATION"}
+            and workspace_mutation_count(report) == 0 and not verified_noop_implementation and not retained_artifacts):
+        # An idempotent write to an existing path is not evidence that a
+        # requested path-bearing implementation criterion was completed.
+        # Keep it unmet unless the strict whole-target no-op verifier above
+        # proves an IMPLEMENTATION_AND_VERIFICATION task was already satisfied.
+        for index, criterion in enumerate(done):
+            if (_criterion_paths(criterion, set(file_state))
+                    or any(item.get("tool") == "implementation_noop_candidate" for item in _successful_typed_operations(report))):
+                done_flags[index] = (False, False)
+    if verified_noop_implementation:
+        # The exact planned verifier covers the complete target set and the
+        # current workspace is already correct, so no implementation write is
+        # necessary. The verifier is also the phase's typed verification
+        # contract; its successful, non-empty, read-only execution satisfies
+        # this implementation-and-verification phase without fabricating a
+        # model-authored implementation result.
+        done_flags = [(True, False) for _ in done_flags]
+        verify_flags = [(True, False) for _ in verify_flags]
+        authoritative_failure = False
+    if phase.get('host_verification') and report_has_authoritative_failure(report,phase,workspace_root):
+        authoritative_failure = True
+    # A typed verification command is an execution contract, not descriptive
+    # plan text.  Do not let a PASS-shaped implementation report, a file's
+    # mere existence, or model-authored criteria booleans stand in for the
+    # command actually running.  The application records this operation only
+    # after its bounded read-only verifier returns.
+    if phase.get("verification_command"):
+        from .coding_verification import verification_command_matches
+        def matches_verifier(operation, require_success=True):
+            given = operation.get("input") or {}
+            output = operation.get("output") or {}
+            command = given.get("command")
+            def canonical_path(path):
+                candidate = Path(str(path))
+                if workspace_root:
+                    candidate = candidate if candidate.is_absolute() else Path(workspace_root) / candidate
+                    return str(candidate.resolve())
+                return str(candidate)
+            targets_match = (not phase.get("verification_targets") or
+                {canonical_path(path) for path in phase["verification_targets"]}
+                == {canonical_path(path) for path in (output.get("read_only_targets") or [])})
+            command_matches = verification_command_matches(command,phase['verification_command'])
+            return (operation.get("tool") == "verification_command" and command_matches and targets_match
+                    and given.get("write_scope") == "NONE"
+                    and ((output.get("returncode") == 0 and output.get("changed_targets") == []
+                          and output.get("zero_tests") is not True) if require_success
+                         else isinstance(output.get("returncode"), int))
+                    and bool(output.get("read_only_targets")))
+        # A command from a previous attempt or a different verifier cannot
+        # establish that this attempt passed the declared verification.
+        verifier_passed = any(
+            matches_verifier(item) for item in _successful_typed_operations(report)
+        )
+        if not verifier_passed:
+            verifier_attempted = any(matches_verifier(op, False) for op in current_typed.get('operations') or [] if isinstance(op, dict))
+            verify_flags = [(False, not verifier_attempted) for _ in verify]
+            if phase.get('host_verification'):
+                done_flags = [(False, not verifier_attempted) for _ in done]
     required_not_run_ids = [f"DONE:{index + 1}" for index, flag in enumerate(done_flags) if flag[1]]
     required_not_run_ids.extend(f"VERIFY:{index + 1}" for index, flag in enumerate(verify_flags) if flag[1])
     required_not_run_kinds = [item.split(":", 1)[0] for item in required_not_run_ids]
@@ -1792,7 +3019,7 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
         if not flag[1]:
             continue
         lower = criterion.lower()
-        if any(token in lower for token in ("install", "dependency", "npm", "package")):
+        if _installation_criterion(criterion):
             required_not_run_executor_capability.append("PACKAGE_MANAGER_COMMAND")
         elif any(token in lower for token in ("build", "test", "pytest", "typecheck", "playwright", "browser")):
             required_not_run_executor_capability.append("VERIFICATION_COMMAND_OR_MCP")
@@ -1806,19 +3033,49 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
     if missing_mcp:
         done_unmet.extend(f"required MCP used: {name}" for name in missing_mcp)
     acceptance = [str(item) for item in (phase.get("acceptance_contract") or [])]
-    acceptance_results = {
-        "FRONTEND_STACK": frontend_stack_acceptance(workspace_root),
-        "MARKETING_STRUCTURE": marketing_design_structure_acceptance(workspace_root),
-    }
+    acceptance_checks = {'FRONTEND_STACK':frontend_stack_acceptance,
+                         'MARKETING_STRUCTURE':marketing_design_structure_acceptance}
+    acceptance_results = {name:acceptance_checks[name](workspace_root)
+                          for name in set(acceptance) if name in acceptance_checks}
     missing_acceptance = [name for name in acceptance if not acceptance_results.get(name, False)]
     if missing_acceptance:
         done_unmet.extend(f"acceptance contract: {name}" for name in missing_acceptance)
     required_not_run = required_not_run or any(flag[1] for flag in [*done_flags, *verify_flags])
+    criterion_ownership = []
+    for index, (criterion, (satisfied, not_run)) in enumerate(zip(done, done_flags)):
+        criterion_ownership.append({"id": f"DONE:{index + 1}", "kind": "DONE", "criterion": criterion,
+                                   "executor": _criterion_executor(phase, "DONE", criterion, index),
+                                   "satisfied": bool(satisfied), "required_not_run": bool(not_run)})
+    for index, (criterion, (satisfied, not_run)) in enumerate(zip(verify, verify_flags)):
+        criterion_ownership.append({"id": f"VERIFY:{index + 1}", "kind": "VERIFY", "criterion": criterion,
+                                   "executor": _criterion_executor(phase, "VERIFY", criterion, index),
+                                   "satisfied": bool(satisfied), "required_not_run": bool(not_run)})
+    unmet_criteria = [item for item in criterion_ownership if not item["satisfied"]]
+    owner_counts: dict[str, int] = {}
+    for item in unmet_criteria:
+        owner_counts[item["executor"]] = owner_counts.get(item["executor"], 0) + 1
+    next_executor = next((item["executor"] for item in unmet_criteria), None)
+    implementation_owners = {"IMPLEMENTER", "PACKAGE_MANAGER"}
+    implementation_unmet = [item for item in unmet_criteria if item["executor"] in implementation_owners]
+    verification_unmet = [item for item in unmet_criteria if item["executor"] not in implementation_owners]
+    # Done completion plus verification-owned gaps means the implementation
+    # executor has no remaining authorized work.  A caller may dispatch the
+    # declared verification executor or a later verification phase.
+    phase_advance_eligible = bool(not done_unmet and verification_unmet and not implementation_unmet
+                                  and not authoritative_failure and not required_not_run)
     # Permission/safety denials are external blockers; ordinary internal
     # errors remain recoverable and are never promoted to BLOCKED here.
     authorization_blocker = any(any(term in str(value).lower() for term in ("authorization", "permission", "safety"))
-                               for item in all_reports for value in (item.get("blockers") or item.get("errors") or []))
-    phase_complete = bool(done) and bool(verify) and not done_unmet and not verify_unmet and not authoritative_failure and not required_not_run and not external_blocker and not authorization_blocker
+                               for value in (report.get("blockers") or report.get("errors") or []))
+    # A host-owned acceptance gate may have one concrete done check and no
+    # separate verify prose. Its actual command and every criterion still
+    # have to pass; duplicating the same sentence is not an extra proof.
+    verification_not_requested = (not verify and phase.get('execution_mode') in {None, "IMPLEMENTATION"}
+                                  and not phase.get('host_verification') and not phase.get('verification_command'))
+    has_verification_contract=(bool(verify)
+                               or bool(phase.get('host_verification') and phase.get('verification_command'))
+                               or verification_not_requested)
+    phase_complete = bool(done) and has_verification_contract and not done_unmet and not verify_unmet and not authoritative_failure and not required_not_run and not external_blocker and not authorization_blocker
     structural_replan_needed = bool((done_unmet or verify_unmet) and any(
         token in " ".join([*done_unmet, *verify_unmet]).lower()
         for token in ("unobservable", "browser behavior", "visual behavior", "cannot be observed", "unsatisfiable")))
@@ -1828,6 +3085,8 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
         allowed = ["BLOCKED"]
     elif structural_replan_needed:
         allowed = ["RETRY", "REPLAN_REQUIRED"]
+    elif phase_advance_eligible:
+        allowed = ["RETRY"]
     elif done_unmet or verify_unmet or authoritative_failure or required_not_run:
         allowed = ["RETRY"]
     else:
@@ -1843,6 +3102,16 @@ def evaluate_phase(phase: dict[str, Any], report: dict[str, Any],
             "required_not_run_ids": required_not_run_ids,
             "required_not_run_kinds": sorted(set(required_not_run_kinds)),
             "required_not_run_executor_capability": sorted(set(required_not_run_executor_capability)),
+            "criterion_ownership": criterion_ownership,
+            "verified_noop_implementation": verified_noop_implementation,
+            "unsatisfied_done_ids": [item["id"] for item in criterion_ownership if item["kind"] == "DONE" and not item["satisfied"]],
+            "unsatisfied_verify_ids": [item["id"] for item in criterion_ownership if item["kind"] == "VERIFY" and not item["satisfied"]],
+            "remaining_criteria_owner_counts": owner_counts,
+            "next_required_executor": next_executor,
+            "phase_advance_eligible": phase_advance_eligible,
+            "implementer_retry_required": bool(implementation_unmet),
+            "implementer_retry_reason": ("remaining implementation-owned criteria" if implementation_unmet else
+                                          "verification-owned criteria remain" if verification_unmet else "none"),
             "acceptance": acceptance_results, "missing_acceptance": missing_acceptance}
 
 
@@ -1914,11 +3183,17 @@ def normalize_manager_decision(value: Any, phase: dict[str, Any], report: dict[s
     retry_instruction_source = "model" if retry_instruction else "derived"
     replan_instruction_source = "model" if replan_instruction else "derived"
     if decision == "RETRY" and not retry_instruction:
-        retry_instruction = "Address the unmet criteria using the typed evidence, then verify them again."
+        retry_instruction = ("Address the unmet Done criteria using the typed evidence. Do not run tests, builds, typechecks, or browser checks unless explicitly requested."
+                             if not (phase.get("verify") or []) else
+                             "Address the unmet criteria using the typed evidence, then execute the explicitly listed Verify criteria.")
     if decision == "REPLAN_REQUIRED" and not replan_instruction:
-        replan_instruction = "Redesign only the unfinished phase so its Done and Verify criteria are satisfiable."
+        replan_instruction = ("Redesign only the unfinished implementation work so its Done criteria are satisfiable; do not add verification work unless requested."
+                              if not (phase.get("verify") or []) else
+                              "Redesign only the unfinished phase so its Done and explicitly requested Verify criteria are satisfiable.")
     if decision != "PASS" and not verification_instruction:
-        verification_instruction = "Re-run every listed Verify criterion with observable typed evidence."
+        verification_instruction = ("No verification criteria were requested for this phase. Do not schedule a verification step."
+                                    if not (phase.get("verify") or []) else
+                                    "Run each explicitly listed Verify criterion with observable typed evidence.")
     diagnosis = {
         "phase_id": str(phase.get("id") or "")[:_DIAGNOSIS_ITEM_LIMIT],
         "plan_revision": int(report.get("plan_revision") or 0),
@@ -1940,23 +3215,36 @@ def normalize_manager_decision(value: Any, phase: dict[str, Any], report: dict[s
     return {"decision": decision, "reason": reason, "diagnosis": diagnosis}
 
 
-def plan_prompt(goal: str, execution_mode: str = "NORMAL", mutation_mode: str = "IMPLEMENTATION", task_size: str = "SMALL") -> str:
-    mode_instruction=("This is a FIX task: first obtain a concrete repo/runtime/test clue, then make the smallest patch using existing patterns and run focused verification. Use exactly one phase unless independently observable work requires 2-3; do not add inspection, planning, review, or final-report-only phases. Avoid refactors and new architecture. "
+def plan_prompt(goal: str, execution_mode: str = "NORMAL", mutation_mode: str = "IMPLEMENTATION", task_size: str = "SMALL",
+                verification_requested: bool = False) -> str:
+    verification_instruction = (
+        "The user explicitly requested verification. Include only those requested checks, keep them in the smallest coherent phase, and do not add unrelated acceptance suites. "
+        if verification_requested else
+        "DEFAULT_VERIFICATION=OFF. Do not add a test/build/typecheck/browser phase or routine checks. Use verify:[] for implementation phases; feature behavior is an implementation requirement, not a request to run a test. Create test files only when requested as deliverables, and do not run them unless requested. "
+    )
+    mode_instruction=("This is a FIX task: inspect for a concrete source clue, then make the smallest patch using existing patterns. Use exactly one phase unless independently observable implementation work requires 2-3; do not add inspection, planning, review, or final-report-only phases. Avoid refactors and new architecture. "
                       if mutation_mode == "FIX" else
-                      "Use 2-4 coherent deliverable phases, including one consolidated final verification phase. Keep focused checks inside each implementation phase. Repository context and MCP preflight are supplied separately; OLCR persists the validated blueprint as the first major boundary. Do not combine inspection, preflight, implementation and final verification in one phase. "
+                      "Use 2-4 coherent deliverable phases. Repository context and MCP preflight are supplied separately; OLCR persists the implementation blueprint as the first major boundary. Do not combine inspection, preflight and implementation in one phase. "
                       if task_size == "LARGE" else
-                      "Use 3-5 coherent batches for this substantial task. "
+                      "Use 3-5 coherent implementation batches for this substantial task. "
                       if execution_mode == "HEAVY_BATCHED" else
-                      "For a simple static site or small fix, use 1-3 coherent phases. Repo inspection is context, not a phase; combine scaffold, related pages, styling, accessibility and responsiveness into one implementation phase. Include at most one final verification phase. ")
+                      "For a small task, use 1-3 coherent implementation phases. Repo inspection is context, not a phase. Combine related markup, styling, accessibility and responsiveness into one UI phase. If the user separates UI and logic, retain at least two implementation phases for those deliverables. Use specific observable done criteria, not a single phase restating the entire request. ")
     return ("Return JSON only for a read-only coding plan. Do not edit files. "
+            "GIT_HANDOFF: when the user requests commit or push, plan implementation; include verification only when explicitly requested. "
+            "Never create Git execution phases/tasks, Git scope entries, or Git done/verification criteria. "
+            "The host Git service prepares the verified task files for separate diff review and approval after coding completes. "
+            "Never claim Git operations executed. "
             "Output exactly one JSON object: no markdown fences, preamble, or trailing explanation. Canonical skeleton: "
-            '{"schema_version":1,"original_goal":"<goal>","scope":{"allowed":["..."],"forbidden":["..."]},"assumptions":[],"phases":[{"id":"p1","goal":"...","status":"pending","done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],"max_retries_per_phase":2,"requires_user_approval":true}. '
+            '{"schema_version":1,"original_goal":"<goal>","scope":{"allowed":["..."],"forbidden":["..."]},"assumptions":[],"phases":[{"id":"p1","goal":"...","status":"pending","done":["..."],"verify":[],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],"tasks":[{"task_id":"p1-task","phase_id":"p1","goal":"...","domain":"implementation","depends_on":[],"required_context":[],"required_mcp":[],"change_scope":[],"verification":[],"done_condition":["..."],"retry_state":{}}],"max_retries_per_phase":2,"requires_user_approval":true}. '
             "Schema: {schema_version:1,original_goal:string,scope:{allowed:[string],forbidden:[string]},assumptions:[string],"
-            "phases:[{id:string,goal:string,status:'pending',done:[string],verify:[string],dependencies:[string],risks:[string],execution_mode:'IMPLEMENTATION|VERIFICATION_ONLY|IMPLEMENTATION_AND_VERIFICATION'}],"
+            "phases:[{id:string,goal:string,status:'pending',done:[string],verify:[string],dependencies:[string],risks:[string],execution_mode:'IMPLEMENTATION|VERIFICATION_ONLY|IMPLEMENTATION_AND_VERIFICATION',checkpoint_on_failure?:boolean,verification_executor?:string,verification_command?:[string],verification_targets?:[string]}],"
             "file_manifest:[{path:string,action:'create|modify|delete',role:string,required:boolean,owner_phase:string}] when concrete files are known. The orchestrator preflight supplies a bounded workspace_state filesystem snapshot: action=create is for a missing target in a confirmed greenfield/new-project workspace, action=modify requires the target to already exist, and action=delete requires the target to already exist. Never infer that a conventional Vite path exists from its name; do not use read-only evidence as a mutable target. "
             "max_retries_per_phase:2,requires_user_approval:true}. " + mode_instruction + (" For LARGE tasks, file_manifest is required: list every intended file with a relative path and action before implementation; do not use broad directory globs." if task_size == "LARGE" else "") + " Include a tasks array with exactly one task per phase. "
-            "Set execution_mode explicitly for every new phase. Use IMPLEMENTATION when repository mutation is required; VERIFICATION_ONLY only when no mutation, artifact creation, installation, migration, MCP mutation, external side effect, authorization-sensitive side effect, or write operation is required and deterministic verification is available; use IMPLEMENTATION_AND_VERIFICATION when both mutation and deterministic verification are required. Never infer this field from verification command tokens."
-            "Every task must have a unique task_id and phase_id exactly matching its phase id; task dependencies must mirror the phase dependencies. "
+            "Set execution_mode explicitly for every new phase. Use IMPLEMENTATION when repository mutation is required; use VERIFICATION_ONLY only for verification explicitly requested by the user and only when no mutation, artifact creation, installation, migration, MCP mutation, external side effect, authorization-sensitive side effect, or write operation is required; use IMPLEMENTATION_AND_VERIFICATION only when the user explicitly requests both. Never infer this field from verification command tokens. If the user explicitly requests that a same task stop after a failed phase for a later manual resume, set checkpoint_on_failure:true only on that phase; otherwise omit it or set false. "
+            + verification_instruction +
+            "Unless the human explicitly requests a separate test phase, assign each requested test file to the same implementation phase as the source it exercises; a separate test file is allowed, but do not create a test-only implementation phase after source implementation. "
+            " For command-based verification, put the exact argv in verification_command and every in-workspace file that must remain unchanged in verification_targets; keep human-readable success criteria in verify. The verifier never executes prose from verify. Use a direct executable plus argument array (no shell wrapper, pipes, redirection, network calls, installation, or write/delete flags). If no bounded read-only command and complete target list are known, omit the typed command rather than inventing one."
+            "The tasks array is mandatory and each task object must include every field in this canonical skeleton exactly: task_id, phase_id, goal, domain, depends_on, required_context, required_mcp, change_scope, verification, done_condition, retry_state. Never omit an empty array or empty object. Every task must have a unique task_id and phase_id exactly matching its phase id. Phase dependencies contain phase IDs only; task depends_on contains task IDs only. Mirror dependency ordering across those separate namespaces. "
             "When a phase needs dependency installation, set requires_dependency_installation:true; PACKAGE_INSTALL owns dependency declarations in package.json. "
             "Set package_json_config_mutation:true only for an explicitly requested non-install script/config change. "
             "MUTATION_SCOPE_MODEL=EXACT_FILE_MANIFEST. The file_manifest is the complete mutable authorization contract. "
@@ -1973,9 +3261,12 @@ def plan_repair_prompt(goal: str, invalid: str, errors: list[str] | None = None,
             "preamble, or trailing explanation. Required schema is exactly: "
             '{"schema_version":1,"original_goal":"<same goal>","scope":{"allowed":["..."],"forbidden":["..."]},'
             '"assumptions":["..."],"phases":[{"id":"p1","goal":"...","status":"pending",'
-            '"done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION"}],'
+            '"done":["..."],"verify":["..."],"dependencies":[],"risks":[],"execution_mode":"IMPLEMENTATION",'
+            '"verification_command":["executable","argument"],"verification_targets":["relative/path"]}],'
             '"max_retries_per_phase":2,"requires_user_approval":true}. If tasks are present, include exactly one task per phase and set each task.phase_id to its phase id. '
             "Preserve or repair each phase execution_mode explicitly; do not infer it from goal or verification command text. "
+            "Preserve existing typed verification_command argv and verification_targets. Never convert free-form verify prose into an executable command. "
+            "Each done/verify item must describe an observable condition. JSON punctuation or field labels such as '],', 'verify:[' or 'verify' are serialization mistakes, never task conditions. Replace them with conditions derived from that phase's existing goal and original request; preserve real conditions. "
             "Keep 1-8 unique phases, preserve intended scope and phase meaning. Original goal: " + goal +
             "\nValidator errors: " + json.dumps(errors or [], ensure_ascii=False) +
             "\nGraph diagnostics (authoritative; repair the exact reference and preserve namespaces): " +
@@ -2003,8 +3294,8 @@ def manager_review_prompt(goal: str, phase: dict[str, Any], report: dict[str, An
             "\"unmet_done\":[],\"unmet_verify\":[],\"evidence_used\":[],"
             "\"retry_instruction\":\"...\",\"verification_instruction\":\"...\","
             "\"replan_reason\":\"...\"}}. "
-            "PASS requires each phase Done and Verify supported by typed evidence. For non-PASS, identify every unmet "
-            "Done/Verify criterion and give a concise fix and verification instruction. evidence_used must come only "
+            "PASS requires each phase Done and any explicitly listed Verify criteria supported by typed evidence; an empty Verify array means no separate verification is required. For non-PASS, identify every unmet "
+            "Done/Verify criterion and give a concise fix. Do not invent tests or a verification step when Verify is empty. evidence_used must come only "
             "from the supplied typed execution summary and report; never provide chain-of-thought or unsupported facts. "
             "Do not override typed failures, missing required verification, or pending authorization. "
             + json.dumps({"original_goal":goal,"current_phase":phase,"current_brain_report":report,
@@ -2094,6 +3385,8 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
     successful_operations: list[dict[str, Any]] = []
     failed_operations: list[dict[str, Any]] = []
     declared_changed: list[str] = []
+    rolled_back_paths: list[str] = []
+    rolled_back_mutation_count = 0
     test_executed: list[Any] = []
     test_pass: list[Any] = []
     test_fail: list[Any] = []
@@ -2102,6 +3395,8 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
     blockers: list[Any] = []
     phase_statuses: list[tuple[str, str]] = []
     runtime_statuses: list[str] = []
+    browser_evidence: dict[str, tuple[str, int]] = {}
+    node_evidence: dict[str, Mapping[str, Any]] = {}
     build_statuses: list[str] = []
     not_run_items: list[str] = []
 
@@ -2123,13 +3418,35 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
                 if value == "NOT_RUN":
                     not_run_items.append("Build")
         typed = report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"), Mapping) else {}
+        attempt_rolled_back = str(typed.get("worktree_state") or "").upper() == "ROLLED_BACK"
+        if attempt_rolled_back:
+            rolled_back_mutation_count += int(typed.get("rolled_back_mutations") or 0)
         for operation in typed.get("operations") or []:
             if not isinstance(operation, Mapping):
                 continue
             normalized = dict(operation)
             operation_status = str(operation.get("status") or "").lower()
+            output=operation.get('output') if isinstance(operation.get('output'),Mapping) else {}
+            if operation.get('tool')=='verification_command':
+                count=output.get('browser_checks')
+                browser_failed=any(isinstance(item,Mapping) and item.get('kind')=='BROWSER'
+                                   for item in output.get('failures') or [])
+                if type(count) is int and count>0 or browser_failed:
+                    verified=(operation_status in _REPORT_SUCCESSFUL_OPERATION_STATUSES
+                              and output.get('returncode')==0 and not output.get('failures')
+                              and not output.get('changed_targets') and not attempt_rolled_back)
+                    browser_evidence[phase_id]=('PASS' if verified else 'FAIL' if browser_failed else 'UNVERIFIED',
+                                                count if type(count) is int and count>0 else 0)
+                for run in output.get('test_runs') or []:
+                    if isinstance(run,Mapping) and type(run.get('tests')) is int and run['tests']>0:
+                        node_evidence[phase_id]=run
             if operation_status in _REPORT_SUCCESSFUL_OPERATION_STATUSES:
-                successful_operations.append(normalized)
+                if attempt_rolled_back and str(operation.get("tool") or "") in _REPORT_MUTATION_TOOLS:
+                    path = _report_operation_path(operation)
+                    if path:
+                        rolled_back_paths.append(path)
+                else:
+                    successful_operations.append(normalized)
             elif operation_status in {"failed", "error", "rolled_back", "rollback", "denied", "forbidden_by_user", "permission_denied"}:
                 failed_operations.append(normalized)
         for value in (report.get("implemented") or [], report.get("test_executed") or [],
@@ -2194,6 +3511,11 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
     test_lines: list[str] = []
     test_lines.extend(f"PASS: {item}" for item in tests_passed)
     test_lines.extend(f"FAIL: {item}" for item in tests_failed)
+    for run in node_evidence.values():
+        result='PASS' if run.get('returncode')==0 and not run.get('failed') else 'FAIL'
+        test_lines.append(f"{result}: Node tests ({run.get('passed',0)}/{run['tests']})")
+    for result,count in browser_evidence.values():
+        test_lines.append(f"{result}: Browser checks ({count})")
     accounted_tests = tests_passed + tests_failed
     test_lines.extend(f"UNVERIFIED: {item}" for item in tests_executed
                       if not _report_test_is_accounted(item, accounted_tests))
@@ -2216,6 +3538,10 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
         build_status = "UNKNOWN"
 
     runtime_status = "UNKNOWN"
+    if browser_evidence:
+        # Later typed execution supersedes a producer's earlier NOT_RUN prose.
+        # Retain the latest actual outcome per phase, including failures.
+        runtime_statuses=[value[0] for value in browser_evidence.values()]
     distinct_runtime = _report_unique(runtime_statuses)
     if len(set(distinct_runtime)) == 1:
         runtime_status = distinct_runtime[0]
@@ -2280,6 +3606,10 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
     lines.extend(f"- {item}" for item in _report_unique(applied_lines))
     lines.extend(["", "Changed files"])
     lines.extend(f"- {item}" for item in changed_files) if changed_files else lines.append("- None")
+    lines.extend(["", "Mutation history"])
+    lines.append("- Accepted paths across all recorded attempts: " + (", ".join(changed_files) if changed_files else "None"))
+    lines.append("- Rolled-back mutation operations: " + str(rolled_back_mutation_count))
+    lines.append("- Rolled-back paths: " + (", ".join(_report_unique(rolled_back_paths)) if rolled_back_paths else "None"))
     lines.extend(["", "Tests"])
     lines.extend(f"- {item}" for item in test_lines)
     lines.extend(["", "Build", f"- {build_status}", "", "Not run"])
@@ -2297,4 +3627,15 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
 def new_id() -> str: return str(uuid.uuid4())
 
 
-def model_slot(): return _SLOT
+@contextmanager
+def model_slot():
+    """Serialize model calls while allowing a queued owner to stop immediately."""
+    from .generation_control import check_cancelled
+    check_cancelled()
+    while not _SLOT.acquire(timeout=.1):
+        check_cancelled()
+    try:
+        check_cancelled()
+        yield
+    finally:
+        _SLOT.release()

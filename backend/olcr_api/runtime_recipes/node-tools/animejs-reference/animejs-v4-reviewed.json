@@ -1,0 +1,27 @@
+{
+  "corpus_version": 1,
+  "source": "https://animejs.com/documentation/",
+  "animejs_version": "4.0.0",
+  "reviewed_at": "2026-09-16",
+  "records": [
+    {"source":"https://animejs.com/documentation/animation/","animejs_version":"4.0.0","api":"animate","category":"animation","reviewed_at":"2026-09-16","deprecated":false,"content":"Import animate from 'animejs'. animate(targets, parameters) returns a JSAnimation. Prefer transform and opacity, bounded targets, and finite playback. Example: animate('.hero-word', { opacity: [0, 1], y: ['.5rem', 0], delay: stagger(70), duration: 500, ease: 'out(3)' });"},
+    {"source":"https://animejs.com/documentation/timeline/","animejs_version":"4.0.0","api":"createTimeline","category":"timeline","reviewed_at":"2026-09-16","deprecated":false,"content":"Import createTimeline from 'animejs'. createTimeline(parameters) returns a Timeline; use .add(target, parameters, position) and labels to coordinate a finite sequence."},
+    {"source":"https://animejs.com/documentation/scope/","animejs_version":"4.0.0","api":"createScope","category":"scope","reviewed_at":"2026-09-16","deprecated":false,"content":"Import createScope from 'animejs'. A scope tracks instances and supports mediaQueries. In React, create it inside an effect, return cleanup that calls scope.revert(), and use a reduceMotion media query to set duration: 0 or skip nonessential motion."},
+    {"source":"https://animejs.com/documentation/draggable/","animejs_version":"4.0.0","api":"createDraggable","category":"draggable","reviewed_at":"2026-09-16","deprecated":false,"content":"Import createDraggable from 'animejs'. createDraggable(target, parameters) returns a Draggable. Preserve keyboard-accessible non-drag controls for essential interactions."},
+    {"source":"https://animejs.com/documentation/layout/layout-methods/animate/","animejs_version":"4.0.0","api":"createLayout","category":"layout","reviewed_at":"2026-09-16","deprecated":false,"content":"createLayout(root) records layout state. Call layout.record(), make the DOM change, then layout.animate({ duration: 750, ease: 'out(4)' }). Keep layout transitions limited to intentional changes."},
+    {"source":"https://animejs.com/documentation/animation/","animejs_version":"4.0.0","api":"waapi.animate","category":"waapi","reviewed_at":"2026-09-16","deprecated":false,"content":"Import waapi from 'animejs' and call waapi.animate(targets, parameters) for lightweight basic Web Animations API-powered animation. It has fewer features than JavaScript animate()."},
+    {"source":"https://animejs.com/documentation/animation/","animejs_version":"4.0.0","api":"stagger","category":"text","reviewed_at":"2026-09-16","deprecated":false,"content":"Use stagger() with animate for bounded enter sequences. For text, use splitText() only when its generated structure remains accessible; do not make meaning dependent on animation."}
+  ],
+  "patterns": {
+    "react":"Use createScope in useEffect with a root ref; return () => scope.revert(). Put prefers-reduced-motion in scope mediaQueries and skip or use duration 0. Animate opacity and transform only.",
+    "timeline":"Use createTimeline({ defaults: { duration: 500, ease: 'out(3)' } }) and .add() finite steps. Avoid infinite decorative timelines by default.",
+    "stagger":"Use animate(targets, { opacity: [0,1], y: ['.5rem',0], delay: stagger(70) }); bound targets and disable the sequence for reduced motion.",
+    "scroll":"Use a finite, nonessential scroll-triggered effect and retain the final content/state without motion. Respect prefers-reduced-motion.",
+    "svg":"Animate SVG transforms or opacity where possible; avoid expensive per-frame layout work.",
+    "text":"Use staggered opacity/transform for nonessential entrance only. Keep readable text available before and after animation.",
+    "draggable":"Use createDraggable and maintain equivalent keyboard/action controls.",
+    "layout":"Call record before a deliberate DOM update and animate after it; clean up the owning scope on unmount.",
+    "scope":"createScope({ mediaQueries: { reduceMotion: '(prefers-reduced-motion)' } }).add(self => { /* create animations */; return () => {/* cleanup */}; });",
+    "waapi":"Use waapi.animate for basic lightweight animations where its supported subset is sufficient."
+  }
+}

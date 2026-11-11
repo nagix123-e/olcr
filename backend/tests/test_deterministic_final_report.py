@@ -17,6 +17,40 @@ def report(**overrides):
 
 
 class DeterministicFinalReportTests(unittest.TestCase):
+    def test_owned_browser_execution_supersedes_earlier_runtime_not_run_and_shows_node_counts(self):
+        before=report(implemented=['Runtime behavior: NOT_RUN'])
+        actual=report(phase_id='verify',typed_execution_summary={'operations':[{
+            'tool':'verification_command','status':'success','output':{'returncode':0,
+                'browser_checks':6,'failures':[],'changed_targets':[],
+                'test_runs':[{'returncode':0,'tests':8,'passed':8,'failed':0}]}}]})
+        text=deterministic_final_report({'status':'COMPLETED'},{},[before,actual])
+        self.assertIn('PASS: Browser checks (6)',text)
+        self.assertIn('PASS: Node tests (8/8)',text)
+        self.assertNotIn('Runtime behavior: NOT_RUN',text)
+        self.assertNotIn('Runtime behavior: UNKNOWN',text)
+
+    def test_latest_owned_browser_failure_is_not_hidden_by_an_old_pass(self):
+        def actual(status,code,failures):return report(typed_execution_summary={'operations':[{
+            'tool':'verification_command','status':status,'output':{'returncode':code,
+                'browser_checks':1,'failures':failures}}]})
+        old=actual('success',0,[])
+        failed=actual('failed',1,[{'kind':'BROWSER','error':'Wrong actual result'}])
+        text=deterministic_final_report({'status':'RESUMABLE'},{},[old,failed])
+        self.assertIn('FAIL: Browser checks (1)',text)
+        self.assertNotIn('PASS: Browser checks',text)
+        recovered=deterministic_final_report({'status':'COMPLETED'},{},[old,failed,old])
+        self.assertIn('PASS: Browser checks (1)',recovered)
+        self.assertNotIn('FAIL: Browser checks',recovered)
+
+    def test_browser_count_without_successful_typed_execution_cannot_claim_runtime_pass(self):
+        for output in [{'returncode':1,'browser_checks':2},
+                       {'returncode':0,'browser_checks':2,'changed_targets':['app.js']}]:
+            value=report(typed_execution_summary={'operations':[{'tool':'verification_command',
+                'status':'success','output':output}]})
+            text=deterministic_final_report({'status':'RESUMABLE'},{},[value])
+            self.assertIn('UNVERIFIED: Browser checks (2)',text)
+            self.assertNotIn('PASS: Browser checks',text)
+
     def test_completed_report_preserves_pass_not_run_and_runtime_not_run(self):
         value = report(
             implemented=["Write: PASS; read-back: PASS. Runtime behavior: NOT_RUN."],
@@ -97,6 +131,32 @@ class DeterministicFinalReportTests(unittest.TestCase):
         self.assertEqual(1, text.count("- b.py"))
         self.assertEqual(1, text.count("Risk: same risk"))
         self.assertEqual(1, text.count("PASS: test (exit_code=0)"))
+
+    def test_final_report_preserves_prior_attempt_paths_and_separates_retry_rollback(self):
+        first = report(
+            phase_id="p1", attempt=0, changed_files=["src/kept.py"],
+            typed_execution_summary={"state": "completed", "worktree_state": "MODIFIED", "operations": [
+                {"tool": "workspace_write", "status": "success", "output": {"path": "src/kept.py", "net_changed": True}},
+            ]},
+        )
+        retry = report(
+            phase_id="p1", attempt=1, status="FAIL", changed_files=[],
+            typed_execution_summary={"state": "failed", "worktree_state": "ROLLED_BACK", "rolled_back_mutations": 1,
+                                     "operations": [
+                {"tool": "workspace_write", "status": "success", "output": {"path": "src/retry.py", "net_changed": True}},
+                {"tool": "operation_application_failure", "status": "failure",
+                 "output": {"worktree_state": "ROLLED_BACK"}},
+            ]},
+        )
+        text = deterministic_final_report({"status": "RESUMABLE"}, {}, [first, retry])
+        changed = text.split("Changed files\n", 1)[1].split("\n\nMutation history", 1)[0]
+        self.assertIn("src/kept.py", changed)
+        self.assertNotIn("src/retry.py", changed)
+        history = text.split("Mutation history\n", 1)[1].split("\n\nTests", 1)[0]
+        self.assertIn("Accepted paths across all recorded attempts: src/kept.py", history)
+        self.assertIn("Rolled-back mutation operations: 1", history)
+        self.assertIn("Rolled-back paths: src/retry.py", history)
+        self.assertNotIn("Applied workspace_write: src/retry.py", text)
 
     def test_no_changed_files_and_no_risks_are_explicit(self):
         text = deterministic_final_report({"status": "COMPLETED"}, {}, [report()])

@@ -1,0 +1,34 @@
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {afterEach,expect,it,vi} from 'vitest';
+vi.mock('./language',()=>({useLanguage:()=>({language:'en'})}));
+import {BrowserForms} from './BrowserForms';
+afterEach(()=>cleanup());
+const session={session_id:'session-one',url:'https://forms.example/contact'};
+const field={label:'Subject',selector:'#subject',tag:'input',type:'text'};
+const review={id:'review-one',session:{...session,origin:'https://forms.example',process_id:123,document_id:100},fields:[{...field,value:'Hello'}],expires_at:Date.now()/1000+300,status:'pending',submitted:false};
+it('requires session selection and exact review before filling without submitting',async()=>{
+ const api=vi.fn(async(path:string)=>path==='/browser-forms/sessions'?{sessions:[session]}:path.endsWith('/fields')?{fields:[field],origin:'https://forms.example'}:path.endsWith('/prepare')?review:{status:'applied',filled:1,submitted:false});
+ render(<BrowserForms api={api}/>);
+ expect(await screen.findByRole('option',{name:session.url})).toBeInTheDocument();
+ expect(api).toHaveBeenCalledTimes(1);
+ fireEvent.change(screen.getByLabelText('Browser session'),{target:{value:'session-one'}});
+ fireEvent.change(await screen.findByLabelText('Subject'),{target:{value:'Hello'}});
+ fireEvent.click(screen.getByRole('button',{name:'Review values'}));
+ expect(await screen.findByText('Review these exact values')).toBeInTheDocument();
+ expect(screen.getByText('Hello',{selector:'dd'})).toBeInTheDocument();
+ expect(api.mock.calls.some(([path])=>path.endsWith('/confirm'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Fill these values only'}));
+ await waitFor(()=>expect(api).toHaveBeenCalledWith('/browser-forms/reviews/review-one/confirm',{method:'POST',body:JSON.stringify({approve:true,review})}));
+ expect(await screen.findByText(/Values filled. Review and submit/)).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Fill these values only'})).not.toBeInTheDocument();
+});
+it('invalidates an existing review when a draft value changes',async()=>{
+ const api=vi.fn(async(path:string)=>path==='/browser-forms/sessions'?{sessions:[session]}:path.endsWith('/fields')?{fields:[field],origin:'https://forms.example'}:review);
+ render(<BrowserForms api={api}/>);
+ await screen.findByRole('option',{name:session.url});fireEvent.change(screen.getByLabelText('Browser session'),{target:{value:'session-one'}});
+ fireEvent.change(await screen.findByLabelText('Subject'),{target:{value:'Hello'}});fireEvent.click(screen.getByRole('button',{name:'Review values'}));
+ await screen.findByRole('button',{name:'Fill these values only'});
+ fireEvent.change(screen.getByLabelText('Subject'),{target:{value:'Changed'}});
+ expect(screen.queryByRole('button',{name:'Fill these values only'})).not.toBeInTheDocument();
+ expect(api.mock.calls.some(([path])=>path.endsWith('/confirm'))).toBe(false);
+});

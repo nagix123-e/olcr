@@ -1,0 +1,15 @@
+.assistant-workflow{display:grid;gap:12px;width:100%;min-width:0;margin:12px 0;padding:16px;border:1px solid var(--olcr-border-strong);border-radius:var(--radius-lg,16px);background:var(--olcr-surface);color:var(--olcr-text-primary)}
+.assistant-workflow-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;min-width:0}
+.assistant-workflow-domain{display:inline-flex;align-items:center;gap:7px;color:var(--olcr-text-secondary);font-size:12px;font-weight:600}
+.assistant-workflow-status{padding:4px 8px;border-radius:var(--radius-sm,8px);background:color-mix(in srgb,var(--olcr-text-secondary) 7%,var(--olcr-surface));color:var(--olcr-text-secondary);font-size:11px;line-height:1.4}
+.assistant-workflow--review .assistant-workflow-status,.assistant-workflow--completed .assistant-workflow-status{background:color-mix(in srgb,var(--olcr-accent) 18%,var(--olcr-surface));color:var(--olcr-text-primary)}
+.assistant-workflow--error .assistant-workflow-status{color:#873a35;background:#fff1ef}
+.assistant-workflow h3{margin:0;font-size:14px;font-weight:650;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+.assistant-workflow-details{display:grid;gap:7px;margin:0;padding-inline-start:18px;font-size:13px;line-height:1.6}
+.assistant-workflow-details li{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.assistant-workflow-actions{display:flex;flex-wrap:wrap;gap:8px;padding-top:2px}
+.assistant-workflow-actions button{min-height:36px;max-width:100%;padding:8px 12px;border:1px solid var(--olcr-border-strong);border-radius:var(--radius-sm,8px);background:var(--olcr-surface);font-size:12px;font-weight:600;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+.assistant-workflow-actions button:hover:not(:disabled){background:color-mix(in srgb,var(--olcr-accent) 12%,var(--olcr-surface));border-color:var(--olcr-accent)}
+.assistant-workflow-actions button:focus-visible{outline:3px solid var(--olcr-accent);outline-offset:2px}
+.assistant-workflow-actions button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:520px){.assistant-workflow-actions button{flex:1 1 120px}}

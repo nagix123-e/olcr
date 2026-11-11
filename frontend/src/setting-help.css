@@ -1,0 +1,15 @@
+.setting-label-with-help{display:inline-flex;align-items:center;gap:2px;min-width:0;flex-wrap:wrap}
+.setting-help-heading{display:flex;align-items:center;gap:3px;margin-bottom:12px}
+.setting-help-heading>h2,.setting-help-heading>h3,.setting-help-heading>h4{margin:0!important}
+.setting-help{display:inline-flex;align-items:center;flex:0 0 auto;vertical-align:middle;line-height:1}
+.setting-help>.setting-help-trigger{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;min-width:28px;min-height:28px;margin:0;padding:0!important;border:0!important;border-radius:50%!important;background:transparent!important;box-shadow:none!important;color:var(--olcr-text-secondary,#656b62);cursor:help;transform:none;font-size:12px;line-height:1}
+.setting-help>.setting-help-trigger .ui-icon{stroke-width:1.5}
+.setting-help>.setting-help-trigger:hover,.setting-help>.setting-help-trigger:focus-visible{color:var(--olcr-text-primary,#252925);background:var(--olcr-hover,#f1f3ef)!important}
+.setting-help>.setting-help-trigger:focus-visible{outline:2px solid var(--olcr-text-primary,#252925);outline-offset:2px}
+.setting-help>.setting-help-trigger:active{transform:scale(.96)}
+.setting-help-tooltip{position:fixed;z-index:10000;width:max-content;max-width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow-y:auto;box-sizing:border-box;padding:10px 12px;border:1px solid var(--olcr-border-strong,#dce0d8);border-radius:8px;background:var(--olcr-surface,#fff);color:var(--olcr-text-primary,#252925);box-shadow:0 2px 6px #0000000a,0 6px 20px #0000000d;font-size:12px;font-weight:400;line-height:1.65;text-align:start;overflow-wrap:anywhere;white-space:normal;user-select:text}
+.setting-field{display:grid;gap:7px}
+.setting-label-with-help>label{display:inline!important;margin:0!important;font-size:inherit!important;line-height:inherit}
+.credential-fields .credential-field{display:grid;gap:7px;margin:12px 0;font-size:12px}
+@media(pointer:coarse){.setting-help>.setting-help-trigger{width:44px;height:44px;min-width:44px;min-height:44px;flex-basis:44px}}
+@media(prefers-reduced-motion:reduce){.setting-help>.setting-help-trigger:active{transform:none}}

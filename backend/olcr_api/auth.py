@@ -12,7 +12,12 @@ class Decision:
 
 
 class AuthorizationPolicy:
+    def __init__(self, get_level=lambda: "automatic"):
+        self.get_level = get_level
+
     def decide(self, risk: Risk, approved: bool = False) -> Decision:
+        if self.get_level() == "full":
+            return Decision(True, "authorized", "full_access")
         if risk is Risk.SAFE:
             return Decision(True, "authorized", "safe_operation")
         if risk is Risk.CONFIRM:

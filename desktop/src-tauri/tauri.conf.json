@@ -1,1 +1,49 @@
-{"productName":"OLCR","version":"0.6.0","identifier":"local.olcr.desktop","build":{"beforeDevCommand":"npm --prefix ../frontend run dev","beforeBuildCommand":"npm --prefix ../frontend run build","devUrl":"http://127.0.0.1:5173","frontendDist":"../../frontend/dist"},"app":{"withGlobalTauri":true,"security":{"csp":"default-src 'self'; connect-src 'self' http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"},"windows":[{"title":"OLCR","width":1440,"height":900,"minWidth":980,"minHeight":640}]},"bundle":{"active":false}}
+{
+  "productName": "OLCR",
+  "version": "0.6.0",
+  "identifier": "local.olcr.desktop",
+  "build": {
+    "beforeDevCommand": "../scripts/build-macos-speech-helper.sh && npm --prefix ../frontend run dev",
+    "beforeBuildCommand": "npm --prefix ../frontend run build && ../scripts/build-macos-speech-helper.sh",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; frame-src 'self' http://127.0.0.1:* http://localhost:*; font-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org https://i.ytimg.com https://www.gstatic.com https://cdn.shopify.com;"
+    },
+    "windows": [
+      {
+        "title": "OLCR",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 980,
+        "minHeight": 640
+      }
+    ],
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "resources": {
+      "binaries/olcr-macos-speech": "speech/olcr-macos-speech",
+      "binaries/olcr-knowledge-reader": "knowledge/olcr-knowledge-reader",
+      "binaries/olcr-macos-calendar": "calendar/olcr-macos-calendar",
+      "binaries/olcr-macos-mail": "mail/olcr-macos-mail"
+    },
+    "icon": [
+      "icons/generated/32x32.png",
+      "icons/generated/128x128.png",
+      "icons/generated/128x128@2x.png",
+      "icons/generated/icon.icns",
+      "icons/generated/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "OLCR Local Debug Code Signing",
+      "minimumSystemVersion": "13.0",
+      "infoPlist": "Info.plist",
+      "entitlements": "Entitlements.plist"
+    }
+  }
+}

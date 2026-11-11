@@ -1,0 +1,9 @@
+.mcp-connection-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 12px}
+.mcp-server-name{font-weight:600;overflow-wrap:anywhere}
+.mcp-connection-status{grid-column:1;font-size:12px;color:var(--olcr-muted,#6b706a)}
+.mcp-connection-heading button{grid-column:2;grid-row:1 / span 2;min-height:44px;white-space:nowrap}
+ .mcp-connections>.setting-hint{font-size:13px;line-height:1.6;color:var(--olcr-text-secondary)}
+.mcp-connections .setting-help-heading{display:flex;align-items:center;gap:8px}
+.mcp-connections .setting-help-heading h2{margin:0;font-size:20px}
+.mcp-connection-heading button{padding:8px 12px;border:1px solid var(--olcr-border-strong);border-radius:8px;background:var(--olcr-surface);color:var(--olcr-text);font-size:12px}
+.mcp-connection-heading button:disabled{opacity:.55}

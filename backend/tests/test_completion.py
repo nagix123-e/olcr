@@ -15,7 +15,7 @@ from olcr_api.runtime import Runtime
 
 class SlowModel:
     def __init__(self): self.messages=[]
-    def generate(self, messages, model, stream=False):
+    def generate(self, messages, model, stream=False, **_kwargs):
         self.messages=messages
         if not stream: return {"text":"ok","latency_ms":1}
         def parts():
@@ -26,7 +26,7 @@ class SlowModel:
 
 class CounterModel:
     def __init__(self, counters=True): self.counters=counters
-    def generate(self,messages,model,stream=False):
+    def generate(self,messages,model,stream=False,**_kwargs):
         def parts():
             yield {"text":"ok","done":False,"prompt_tokens":None,"completion_tokens":None}
             last={"text":"","done":True}

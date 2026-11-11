@@ -1,0 +1,35 @@
+.service-connectors-page>h2{font-size:24px;margin:18px 0 10px}
+.service-category{padding:22px 0;border-top:1px solid var(--olcr-border)}
+.service-category-heading{margin-bottom:14px}
+.service-category-heading h3{margin:0;font-size:15px}
+.service-connector-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(248px,100%),1fr));align-items:start;gap:14px}
+.service-connector-tile{display:flex;flex-direction:column;min-width:0;min-height:128px;padding:16px;border:1px solid var(--olcr-border);border-radius:var(--radius-md);background:var(--olcr-surface)}
+.service-connector-identity{display:flex;align-items:center;gap:12px;flex:1;min-width:0;overflow-wrap:anywhere}
+.service-connector-identity>span:last-child{min-width:0}
+.service-brand-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid var(--olcr-border);border-radius:11px;background:var(--olcr-surface);overflow:hidden;color:var(--olcr-text-secondary)}
+.service-brand-icon>img{display:block;width:32px;height:32px;max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;outline:1px solid oklch(0 0 0 / .08)}
+.apple-calendar-brand>img{width:34px;height:34px;outline:0}
+.service-brand-icon>img.apple-mail-brand{width:34px;height:34px;outline:0}
+.service-connector-identity small{display:block;font-size:12px;font-weight:400;color:var(--olcr-text-secondary);margin-top:3px}
+.service-connector-tile .provider-account-details{margin-top:14px;font-size:12px}
+.service-connector-tile .brain-form-actions{flex-wrap:wrap}
+.service-google-connect{width:100%;min-height:38px;margin-top:14px;padding:8px 12px;border:1px solid var(--olcr-border-strong);border-radius:10px;background:var(--olcr-surface);color:var(--olcr-text-primary);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.service-google-connect:hover{border-color:var(--olcr-accent);background:color-mix(in srgb,var(--olcr-accent) 8%,var(--olcr-surface))}
+.service-connector-tile .credential-setup{display:flex;flex-direction:column;justify-content:space-between;gap:12px;box-sizing:border-box;width:100%;min-height:300px;aspect-ratio:1 / 1.04;max-height:min(520px,78vh);overflow:auto;margin:12px 0 0;padding:14px;border:1px solid var(--olcr-border);border-radius:12px;background:var(--olcr-surface)}
+.service-connector-tile .credential-setup input{min-width:0}
+.service-connector-tile .credential-setup>p{margin:0;color:var(--olcr-text-secondary);line-height:1.5}
+.service-connector-tile .credential-setup>a{align-self:flex-start;overflow-wrap:anywhere}
+.service-connector-details .settings-disclosure-content{padding:12px}
+.apple-mail-connection-info{display:grid;gap:8px;margin-top:10px}
+.apple-mail-connection-info p{margin:0;color:var(--olcr-text-secondary);line-height:1.5}
+.native-calendar-label{display:flex;flex:1;min-width:0}
+.native-calendar-tile .assistant-calendar-details form{display:grid;gap:10px;margin-top:12px}
+.native-calendar-tile .assistant-calendar-details form label{display:grid;gap:5px}
+.native-calendar-tile .assistant-calendar-details form :is(input,select){width:100%;min-width:0}
+.native-calendar-tile .setting-hint{margin:0 0 10px}
+.native-calendar-tile [role=alert],.native-calendar-tile [role=status]{overflow-wrap:anywhere}
+.services-entry>span:first-child{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.services-entry>span:first-child>span:last-child{min-width:0;overflow-wrap:anywhere}
+.services-entry svg{flex:none}
+.services-entry .service-connections-icon{display:block;flex:0 0 22px;width:22px;height:22px}
+@media(max-width:420px){.service-connector-grid{grid-template-columns:1fr}.service-connector-tile{padding:14px}.service-connector-tile .credential-setup{min-height:280px}}

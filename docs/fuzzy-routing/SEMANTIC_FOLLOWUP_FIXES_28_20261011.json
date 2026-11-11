@@ -1,0 +1,644 @@
+{
+  "created_at_local": "2026-10-11 Asia/Tokyo",
+  "source_run": "olcr-semantic47-r47c-20261011",
+  "target_count": 28,
+  "prior_verdicts": {
+    "PARTIAL": 18,
+    "FAIL": 10
+  },
+  "status": "ALL_28_GUI_PROMPTS_ATTEMPTED_23_TERMINAL_5_INCOMPLETE",
+  "offline_validation": {
+    "total": 37,
+    "passed": 37,
+    "existing_suite": 23,
+    "followup_regressions": 14,
+    "log": ".live/semantic28-final-offline.log"
+  },
+  "cases": [
+    {
+      "global_index": 7,
+      "case_id": "space.launches#3",
+      "original_verdict": "PARTIAL",
+      "change": "現在の予定・状態と公表更新を既存rendererで表示。新規登録・GOへの変更を延期と断定しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e": {
+        "state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "ui": "assistant reply visible",
+        "semantic_verdict": "PASS",
+        "notes": "複数の打ち上げと現在予定・公表更新を表示。延期の履歴と現在予定を区別し、断定を避けている。",
+        "build_id": "olcr-fix28-r47c-20261011-r6",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r6-profile"
+      }
+    },
+    {
+      "global_index": 24,
+      "case_id": "space.iss_position#4",
+      "original_verdict": "PARTIAL",
+      "change": "海上で逆ジオコーディングが失敗した場合、検証済み海岸線と限定された座標範囲から概略地域を表示し、その推定方法を明記。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e": {
+        "state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "ui": "assistant reply visible",
+        "semantic_verdict": "PARTIAL",
+        "notes": "座標・高度・速度・地図リンクは表示。逆ジオコーディング失敗で近隣地域名を示せず、今回修正の概略地域fallbackも出なかった。",
+        "build_id": "olcr-fix28-r47c-20261011-r6",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r6-profile"
+      }
+    },
+    {
+      "global_index": 27,
+      "case_id": "space.exoplanets#3",
+      "original_verdict": "FAIL",
+      "change": "NASA TAPの待ち時間を20秒へ。元のAPI失敗理由を代替Web設定エラーで隠さない。",
+      "status": "GUI_E2E_FAILED",
+      "followup_e2e": {
+        "state": "failed",
+        "route": "EXTERNAL_API",
+        "error": "WEB_PROVIDER_NOT_CONFIGURED",
+        "ui": "no assistant reply; GUI remained Generating response",
+        "semantic_verdict": "FAIL",
+        "notes": "NASA APIが403。Web fallback自体はログに検索成功記録があるが、タスクはWEB_PROVIDER_NOT_CONFIGUREDで失敗し、回答が保存されない。",
+        "build_id": "olcr-fix28-r47c-20261011-r6",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r6-profile"
+      }
+    },
+    {
+      "global_index": 34,
+      "case_id": "japan.law#2",
+      "original_verdict": "PARTIAL",
+      "change": "取得した条番号・見出し・本文に基づく目的／義務比較へ。対象条文の収集範囲を拡張し、未取得条文の役割を断定しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e": {
+        "state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "ui": "assistant reply visible",
+        "semantic_verdict": "PASS",
+        "notes": "第1条の目的と第17〜20条などの義務を条番号・見出し・本文付きで比較。",
+        "build_id": "olcr-fix28-r47c-20261011-r6",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r6-profile"
+      }
+    },
+    {
+      "global_index": 42,
+      "case_id": "earth.streamflow#2",
+      "original_verdict": "FAIL",
+      "change": "USGSの待ち時間20秒・有限の応答上限4 MiBへ。元のタイムアウトとWeb未設定を区別。",
+      "status": "GUI_E2E_FAILED",
+      "followup_e2e": {
+        "state": "failed",
+        "route": "EXTERNAL_API",
+        "error": "WEB_PROVIDER_NOT_CONFIGURED",
+        "ui": "no assistant reply; GUI remained Generating response",
+        "semantic_verdict": "FAIL",
+        "notes": "タスクがWEB_PROVIDER_NOT_CONFIGUREDで失敗。UIはGenerating responseから戻らず、次ケースの実行を阻害。",
+        "build_id": "olcr-fix28-r47c-20261011-r6",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r6-profile"
+      }
+    },
+    {
+      "global_index": 47,
+      "case_id": "biology.occurrence#3",
+      "original_verdict": "PARTIAL",
+      "change": "対象期間と返却された最新日を表示。日付・種名・座標がない匿名レコードを除外し、観察日降順へ。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 47,
+        "prompt": "近所で最近見られた野鳥を調べたい。上野公園周辺の記録を見せて。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "GBIF\n2026-07-14T10:16:56 · Zosterops japonicus japonicus Temminck & Schlegel, 1845 · 座標（緯度, 経度）：35.718835, 139.776521 · Tokyo\nhttps://www.gbif.org/occurrence/6451630859\n2026-07-14T10:14:07 · Parus cinereus Vieillot, 1818 · 座標（緯度, 経度）：35.718835, 139.776521 · Tokyo\nhttps://www.gbif.org/occurrence/6451820679\n2026-07-14T09:03:20 · Spodiopsar cineraceus (Temminck, 1835) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451586918\n2026-07-14T08:40:46 · Tachybaptus ruficollis poggei (Reichenow, 1902) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451649564\n記録日不明 · 学名不明 · 座標（緯度, 経度）：不明, 不明 · 地域名なし\nhttps://www.gbif.org/occurrence/6451543409\n取得記録の日付範囲：2026-07-14〜2026-07-14。最新の返却記録が今日の観察という意味ではありません。\n検索期間：2026-07-13,2026-10-11\n学名は登録された表記です。和名を推測して置き換えていません。",
+        "semantic_verdict": "NOT_SEPARATELY_ADJUDICATED",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791725974.944816
+      }
+    },
+    {
+      "global_index": 53,
+      "case_id": "biology.structure#1",
+      "original_verdict": "FAIL",
+      "change": "酸素分子OXYを正式な検索属性で照会。取得したリガンド・原題により区別し、deoxyと酸素結合を同時に分類しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 53,
+        "prompt": "ヘモグロビンの立体構造を、酸素結合状態が異なるもの同士で比べたい。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "RCSB PDB\n1QPW · CRYSTAL STRUCTURE DETERMINATION OF PORCINE HEMOGLOBIN AT 1.8A RESOLUTION · Sus scrofa、Sus scrofa · 分解能[1.8] Å · 酸素リガンドOXYを確認\n構成タンパク質：PORCINE HEMOGLOBIN (ALPHA SUBUNIT)、PORCINE HEMOGLOBIN (BETA SUBUNIT)\n登録リガンド：HEM、OXY\n実験法：X-RAY DIFFRACTION\n登録情報：deposit_site=RCSB、pdb_format_compatible=Y、process_site=RCSB、recvd_initial_deposition_date=1999-05-30T00:00:00.000+00:00、status_code=REL、status_code_sf=REL\n引用情報：title=Structure determination of porcine haemoglobin.、year=2000、journal_abbrev=Acta Crystallogr.,Sect.D、pdbx_database_id_DOI=10.1107/S0907444900000093、pdbx_database_id_PubMed=10713517\nhttps://www.rcsb.org/structure/1QPW\n4YU3 · The crystal structure of mongoose (Helogale parvula) hemoglobin at pH 8.2 · Helogale parvula、Helogale parvula · 分解能[2.45] Å · 酸素リガンドOXYを確認\n構成タンパク質：hemoglobin、hemoglobin\n登録リガンド：HEM、OXY\n実験法：X-RAY DIFFRACTION\n登録情報：SG_entry=N、deposit_site=RCSB、pdb_format_compatible=Y、process_site=PDBJ、recvd_initial_deposition_date=2015-03-18T00:00:00.000+00:00、status_code=REL、status_code_sf=REL\n引用情報：title=The crystal structure of mongoose (Helogale parvula) hemoglobin at pH 8.2、journal_abbrev=To Be Published\nhttps://www.rcsb.org/structure/4YU3\n4YU4 · Crystal structure",
+        "semantic_verdict": "NOT_SEPARATELY_ADJUDICATED",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791726014.537706
+      }
+    },
+    {
+      "global_index": 56,
+      "case_id": "biology.structure#4",
+      "original_verdict": "PARTIAL",
+      "change": "酸素化／脱酸素化検索の流用をやめ、hemoglobin-haptoglobin複合体とhemoglobinを検索。構成タンパク質と同種比較候補を表示。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 56,
+        "prompt": "ヘモグロビンの複合体構造と単独構造を見つけて違いを確認したい。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "RCSB PDB\n1CG5 · DEOXY FORM HEMOGLOBIN FROM DASYATIS AKAJEI · Hemitrygon akajei、Hemitrygon akajei · 分解能[1.6] Å · 原題が脱酸素（deoxy）と明記\n構成タンパク質：PROTEIN (HEMOGLOBIN)、PROTEIN (HEMOGLOBIN)\n登録リガンド：HEM\n実験法：X-RAY DIFFRACTION\n登録情報：deposit_site=BNL、pdb_format_compatible=Y、process_site=RCSB、recvd_initial_deposition_date=1999-03-26T00:00:00.000+00:00、status_code=REL、status_code_sf=REL\n引用情報：title=Structures of the deoxy and CO forms of haemoglobin from Dasyatis akajei, a cartilaginous fish.、year=1999、journal_abbrev=Acta Crystallogr.,Sect.D、pdbx_database_id_DOI=10.1107/S0907444999005934、pdbx_database_id_PubMed=10393295\nhttps://www.rcsb.org/structure/1CG5\n1CG8 · CO Form Hemoglobin from Dasyatis Akajei · Hemitrygon akajei、Hemitrygon akajei · 分解能[1.9] Å · 酸素結合状態は未確認\n構成タンパク質：PROTEIN (HEMOGLOBIN)、PROTEIN (HEMOGLOBIN)\n登録リガンド：HEM、CMO\n実験法：X-RAY DIFFRACTION\n登録情報：deposit_site=BNL、pdb_format_compatible=Y、process_site=RCSB、recvd_initial_deposition_date=1999-03-26T00:00:00.000+00:00、status_code=REL、status_code_sf=REL\n引用情報：title=Structures of the deoxy and CO forms of haemoglobin from Dasyatis akajei, a cartilaginous fish.、year=1999、journal_abbrev=Acta Crystallogr.,Sect.D、pdbx_database_id_DOI=10.1107/S090744499900",
+        "semantic_verdict": "NOT_SEPARATELY_ADJUDICATED",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791726041.24443
+      }
+    },
+    {
+      "global_index": 58,
+      "case_id": "biology.protein#2",
+      "original_verdict": "PARTIAL",
+      "change": "Reviewedタンパク質を優先。FUNCTION本文を前方へ正規化し、入れ子の文字数・深さ制限でコメント本文が空にならないよう改善。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 58,
+        "prompt": "ヒトTP53とマウスの対応タンパク質を比べて、基本機能を知りたい。",
+        "task_state": "completed",
+        "route": "NEURAL",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "# ヒトTP53とマウスTp53の基本機能比較\n\n両者とも、**Cellular tumor antigen p53**（細胞性腫瘍抗原 p53）という同じ名前のタンパク質に対応し、基本機能は非常に類似しています。ただし、データには明確な種間差として抽出できる箇所があります。\n\n## 共有される基本機能\n\n両タンパク質とも、以下の一連の機能を担う**多機能転写因子**です：\n\n- **細胞周期の停止、DNA修復、アポトーシスの誘導**：標的DNA配列へ結合することで誘発されます\n- **腫瘍抑制因子としての作用**：多くの腫瘍タイプで成長停止またはアポトーシスを誘導し、生理的条件や細胞型に応じて働き分けます\n- **細胞分裂の負の制御**：一連の遺伝子発現を制御することで、活性化された遺伝子の一つはサイクリン依存性キナーゼ（CDK）阻害剤です\n- **アポトーシスの誘導経路**：BAXおよびFAS抗原発現の刺激、またはBcl-2発現の抑制を介して起こると考えられています\n- **プロアポトーシス活性の調節**：PPP1R13B/ASPP1またはTP53BP2/ASPP2との相互作用で活性化し、PPP1R13L/iASPPがその相互作用を置換すると抑制されます\n- **酸化ストレス誘発性壞死の活性化**：ミトコンドリアPPIFとの協力により関与し、この機能は主に転写に依存しません\n- **CDK7活性の阻止**：DNA損傷に応答してCAK複合体に結合することで、細胞周期の進行を停止します\n- **lincRNA-p21の転写誘導**、**Notchシグナリングのクロスコア**への関与\n- **概日時計の調節**：CLOCK-BMAL1媒介のPER2転写活性化を抑制することで\n\n## 両者で抽出できる明確な差\n\n**lincRNA-p21の細胞周期への影響**についてのみ、両データ間に明確な記述差があります：\n\n- **ヒト（P04637）**：lincRNA-p21は「細胞周期調節に**影響を及ぼす（seems to have an effect on cell-cycle regulation）**」と記載されています。\n- **マウス（P02340）**：同様に「細胞周期調節に**影響を及ぼす（seems to have to effect on cell-cycle regulation）**」と記載されていますが、文脈が異なっています（マウス版は「TP53依存性転写抑制を誘導するが、細胞周期調節への影響は不確か」という構造です）。\n\n> 注意：マウスの記述の多くは「By similarity」（類似性に基づく推定）と明示されており、PubMedの直接証拠に裏打ちされていない点が、ヒトの記録（直接PubMed証拠）と異なります。\n\n## 補足情報（マウス",
+        "semantic_verdict": "NOT_SEPARATELY_ADJUDICATED",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791726051.4903638
+      }
+    },
+    {
+      "global_index": 59,
+      "case_id": "biology.protein#3",
+      "original_verdict": "PARTIAL",
+      "change": "Signal／Propeptide／Chain／Peptideの切断位置を優先保持。前駆体配列長と成熟鎖の残基位置を混同しないための指示を追加。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 59,
+        "prompt": "インスリンの前駆体から成熟タンパク質までの情報を確認して。",
+        "task_state": "not_terminal",
+        "route": null,
+        "error": null,
+        "assistant_reply_present": false,
+        "response_excerpt": null,
+        "semantic_verdict": "INCOMPLETE",
+        "notes": "UniProt HTTP 200後に通常Brain合成が進行せず、回答・終端タスクなし。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727654.627966
+      }
+    },
+    {
+      "global_index": 75,
+      "case_id": "internet.domain_registration#3",
+      "original_verdict": "FAIL",
+      "change": "RDAP registrarとregistrantを役割別に表示。空の登録者欄を非公開の証明とせず、別主体の連絡先で補わない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 75,
+        "prompt": "example.orgの登録者情報が公開されている範囲と、登録状況を調べて。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "RDAP\nドメイン：example.org · 登録状況：registered\nレジストラ（registrarロール）：ICANN\nネームサーバー：katelyn.ns.cloudflare.com、mitch.ns.cloudflare.com\nexpiration：2027-08-30T04:00:00Z\nregistration：1995-08-31T04:00:00Z\nlast changed：2026-08-30T04:00:10.519Z\nlast update of rdap database：2026-10-11T14:12:55.844Z\nRDAP状態：server delete prohibited、server transfer prohibited、server update prohibited、auto renew period\n公開登録者（registrantロール）：氏名を取得できていません。空欄だけでは非公開・保護済みとは断定できません。\nレジストラ、レジストリ、登録者は別の役割です。登録者欄の代わりに他の主体の連絡先を使っていません。\n\n出典：https://rdap.org/",
+        "semantic_verdict": "PASS",
+        "notes": "RDAP結果に登録状況と登録者情報の開示範囲を含めて表示。",
+        "build_id": "olcr-fix28-r47c-20261011-r10",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r10-profile",
+        "created_at_epoch": 1791727975.595413
+      }
+    },
+    {
+      "global_index": 76,
+      "case_id": "internet.domain_registration#4",
+      "original_verdict": "PARTIAL",
+      "change": "RDAP fanoutを既存型付き表示で展開し、両方のネームサーバーと共通設定を比較。欠落は引き続き明示。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 76,
+        "prompt": "2つのドメインのネームサーバー設定を比較したい：openai.comとwikipedia.org。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "RDAP\nドメイン：openai.com · 登録状況：registered\nレジストラ（registrarロール）：MarkMonitor Inc.\nネームサーバー：ns1-02.azure-dns.com、ns2-02.azure-dns.net、ns3-02.azure-dns.org、ns4-02.azure-dns.info\nregistration：2007-01-19T19:28:24Z\nexpiration：2029-01-19T19:28:24Z\nlast changed：2024-10-17T22:20:04Z\nlast update of rdap database：2026-10-11T14:13:05Z\nRDAP状態：client delete prohibited、client transfer prohibited、client update prohibited、server delete prohibited、server transfer prohibited、server update prohibited\n公開登録者（registrantロール）：氏名を取得できていません。空欄だけでは非公開・保護済みとは断定できません。\nレジストラ、レジストリ、登録者は別の役割です。登録者欄の代わりに他の主体の連絡先を使っていません。\n\n出典：https://rdap.org/",
+        "semantic_verdict": "PASS",
+        "notes": "2ドメインのネームサーバー設定を比較。",
+        "build_id": "olcr-fix28-r47c-20261011-r10",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r10-profile",
+        "created_at_epoch": 1791727994.185795
+      }
+    },
+    {
+      "global_index": 90,
+      "case_id": "games.trivia#2",
+      "original_verdict": "PARTIAL",
+      "change": "クイズの正解は明示要求時だけ渡す。少し難しめはmediumへ。表示のfallbackも四択と正解非表示を維持。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 90,
+        "prompt": "映画好き向けに、少し難しめのクイズを一つお願い。",
+        "task_state": "completed",
+        "route": "NEURAL",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "# 映画クイズ（中級）\n\n**問題：**\nマーク・ウォールバーグ（Mark Wahlberg）が主人公を演じた、2008年のビデオゲーム原作の映画はどれか。\n\n**選択肢：**\n- A. Hitman\n- B. Max Payne\n- C. Alan Wake\n- D. God Of War\n\n---\n\n答えは伏せままでご確認いただけますか？\n\n（参考：正解は **B. Max Payne** です。マーク・ウォールバーグ主演の『MAX・ペイン』（2008年）となります。）\n\n出典：https://opentdb.com/",
+        "semantic_verdict": "FAIL",
+        "notes": "クイズは中級・四択だが、正答Bを本文中に表示しており、正解を伏せる要件に失敗。",
+        "build_id": "olcr-fix28-r47c-20261011-r10",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r10-profile",
+        "created_at_epoch": 1791728012.540877
+      }
+    },
+    {
+      "global_index": 97,
+      "case_id": "art.met_collection#1",
+      "original_verdict": "FAIL",
+      "change": "Met APIの待ち時間20秒へ。接続エラーを保持したまま代替取得の成否を説明。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 97,
+        "prompt": "ゴッホの作品のうち、風景画と自画像をそれぞれ探して所蔵情報を見たい。",
+        "task_state": "not_terminal",
+        "route": null,
+        "error": null,
+        "assistant_reply_present": false,
+        "response_excerpt": null,
+        "semantic_verdict": "INCOMPLETE",
+        "notes": "Web検索ログは成功だが、通常Brain合成が完了せず回答と終端タスクなし。",
+        "build_id": "olcr-fix28-r47c-20261011-r10",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r10-profile",
+        "created_at_epoch": 1791728063.385429
+      }
+    },
+    {
+      "global_index": 102,
+      "case_id": "games.pc_deals#2",
+      "original_verdict": "PARTIAL",
+      "change": "協力カテゴリ確認候補を有限の32件へ拡張。価格・割引を既存rendererで並べ、1件を比較完了とせず、正確性の根拠なき保証を除去。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 102,
+        "prompt": "セール中の協力プレイ用PCゲームを、価格と割引率で比べて。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "CheapShark\nTerraScape · Epic Games Store · USD 0.00（通常16.99）、割引100.000000% · 協力カテゴリ：Co-op、Online Co-op\nhttps://store.steampowered.com/app/2290000\nCrewsaders · Fanatical · USD 0.26（通常2.99）、割引91.304348% · 協力カテゴリ：Co-op、Shared/Split Screen Co-op\nhttps://store.steampowered.com/app/540870\n価格・割引率は取得時のストア記録です。販売地域・終了時刻は購入前に確認してください。",
+        "semantic_verdict": "NOT_SEPARATELY_ADJUDICATED",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791726230.46409
+      }
+    },
+    {
+      "global_index": 107,
+      "case_id": "games.chess#3",
+      "original_verdict": "FAIL",
+      "change": "Chess.com月別棋譜応答の有限上限8 MiB・待ち時間20秒へ。過大パケットをスキーマ異常と誤判定する条件を緩和。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 107,
+        "prompt": "Nakamuraが黒番で指した最近の対局を棋譜付きで探して。",
+        "task_state": "no_terminal_task_record",
+        "route": "EXTERNAL_API (provider selected)",
+        "error": "response generation did not complete; no terminal task or assistant message saved",
+        "assistant_reply_present": false,
+        "ui": "Generating response remained; submit disabled",
+        "provider_log": "Chess.com route selected; three HTTP 200 responses; log stopped at normal_chat composer binding (MODEL_RUNTIME_BINDINGS_STATUS=FAIL diagnostic).",
+        "semantic_verdict": "FAIL_INCOMPLETE",
+        "build_id": "olcr-fix28-r47c-20261011-r7",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r7-profile",
+        "created_at_epoch": 1791726249.994677
+      }
+    },
+    {
+      "global_index": 108,
+      "case_id": "games.chess#4",
+      "original_verdict": "PARTIAL",
+      "change": "同じ会話の直前のユーザー指定からプレイヤーを解決し、前問の取得失敗とは別に新規取得。アシスタントの推測からは対象を決めない。stream経路も共有routerへ。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 108,
+        "prompt": "彼の最近の対局から、短手数で決着したものと長いものを比べたい。",
+        "task_state": "generating",
+        "route": "NEURAL",
+        "error": null,
+        "assistant_reply_present": false,
+        "response_excerpt": null,
+        "semantic_verdict": "INCOMPLETE",
+        "notes": "GUI送信後、taskはgenerating/NEURALのまま。回答は生成されず、UIは生成中状態。直前のNakamura問い合わせは前セッションで回答未完了。",
+        "build_id": "olcr-fix28-r47c-20261011-r11",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r11-profile",
+        "created_at_epoch": 1791728292.6889431
+      }
+    },
+    {
+      "global_index": 121,
+      "case_id": "geo.routing#1",
+      "original_verdict": "FAIL",
+      "change": "徒歩・自転車の取得済み数値から距離と時間の差を直接計算。直接回答・自律分析の双方で時系列専用fallbackを回避。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 121,
+        "prompt": "東京駅から皇居まで、徒歩と自転車なら距離と所要時間はどれくらい違う？",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "## 取得したAPI出力（証拠）\n\n### OSRM\nOSRM\n東京駅 → 皇居：徒歩で1.773 km、推定23.6分。\n東京駅 → 皇居：自転車で1.825 km、推定16.6分。\n徒歩に比べ自転車は距離+52.6 m、所要時間-7.1分です。\n所要時間はモデル上の推定で、信号待ち・混雑や現地の通行規制は別途確認が必要です。\n\n出典: [OSRM](https://project-osrm.org/)\n\n出典: [OSRM](https://project-osrm.org/)\n\n## 分析\n\nOSRM\n東京駅 → 皇居：徒歩で1.773 km、推定23.6分。\n東京駅 → 皇居：自転車で1.825 km、推定16.6分。\n徒歩に比べ自転車は距離+52.6 m、所要時間-7.1分です。\n所要時間はモデル上の推定で、信号待ち・混雑や現地の通行規制は別途確認が必要です。",
+        "semantic_verdict": "PASS",
+        "notes": "徒歩1.773 km/23.6分、自転車1.825 km/16.6分を並べ、距離差+52.6 m・時間差-7.1分を算出。",
+        "build_id": "olcr-fix28-r47c-20261011-r8",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r8-profile"
+      }
+    },
+    {
+      "global_index": 124,
+      "case_id": "geo.routing#4",
+      "original_verdict": "PARTIAL",
+      "change": "OSRMの返却候補を取得し、短い道順では候補中の距離最小を選ぶ。移動手段と範囲を明記し、全道路の最短と断定しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 124,
+        "prompt": "東京駅から皇居まで、移動距離が短い道順を出して。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "OSRM\n東京駅 → 皇居：車で2.709 km、推定3.8分。\n返却された候補2件のうち距離が最も短い経路です。全道路での最短距離を保証する結果ではありません。移動手段は車として計算しています。\n・丸の内室町線：30 m（depart ）\n・丸の内室町線：83 m（continue uturn）\n・錦町有楽町線：124 m（turn right）\n・行幸通り：458 m（turn left）\n・内堀通り：1219 m（turn right）\n・代官町通り：244 m（turn straight）\n・代官町通り：551 m（fork slight left）\n・代官町通り：0 m（arrive ）\n所要時間はモデル上の推定で、信号待ち・混雑や現地の通行規制は別途確認が必要です。\n\n出典：https://project-osrm.org/",
+        "semantic_verdict": "PARTIAL",
+        "notes": "返却候補2件中の最短を表示し、候補内の結果と明記。ただし利用者が指定していない車を移動手段に採用。",
+        "build_id": "olcr-fix28-r47c-20261011-r8",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r8-profile"
+      }
+    },
+    {
+      "global_index": 142,
+      "case_id": "earth.disasters#2",
+      "original_verdict": "FAIL",
+      "change": "EONETへ地域bboxを正式な順序で送信し、世界の結果上限を適用してから地域を絞る欠落を防止。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 142,
+        "prompt": "東南アジアで進行中の災害について、発生地域と開始日を知りたい。",
+        "task_state": "no_terminal_task_record",
+        "route": "EXTERNAL_API (earth.disasters / NASA EONET)",
+        "error": "回答合成が完了せず、タスク・アシスタント回答の保存なし",
+        "assistant_reply_present": false,
+        "provider_log": "HTTP 200; NASA EONET returned 55 normalized events; log stopped at normal_chat composer binding.",
+        "ui": "Generating response remained; submit disabled",
+        "semantic_verdict": "FAIL_INCOMPLETE",
+        "created_at_epoch": 1791726904.7221088,
+        "build_id": "olcr-fix28-r47c-20261011-r8",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r8-profile"
+      }
+    },
+    {
+      "global_index": 148,
+      "case_id": "ocean.tides#4",
+      "original_verdict": "PARTIAL",
+      "change": "オークランドの自動選択を気象用9414776から、潮汐予報対応9414777へ。比較時刻と現地日付の処理を維持。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 148,
+        "prompt": "同じ日にサンフランシスコとオークランドで潮汐時刻がどれくらい違う？",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "## 取得したAPI出力（証拠）\n\n### Ocean\nOcean\n観測所 9414290 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 00:40 · 満潮：1.549 m（MLLW基準）\n2026-10-11 05:54 · 干潮：0.531 m（MLLW基準）\n2026-10-11 12:18 · 満潮：1.854 m（MLLW基準）\n2026-10-11 18:43 · 干潮：-0.019 m（MLLW基準）\n最低潮：2026-10-11 18:43、-0.019 m。\n同日の最高満潮と最低干潮の高さの差：1.873 m。\n観測所 9414777 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 01:01 · 満潮：1.657 m（MLLW基準）\n2026-10-11 06:25 · 干潮：0.509 m（MLLW基準）\n2026-10-11 12:39 · 満潮：1.984 m（MLLW基準）\n2026-10-11 19:14 · 干潮：-0.018 m（MLLW基準）\n最低潮：2026-10-11 19:14、-0.018 m。\n同日の最高満潮と最低干潮の高さの差：2.002 m。\n満潮 2026-10-11 00:40 → 2026-10-11 01:01：観測所 9414777は21分遅い。\n満潮 2026-10-11 12:18 → 2026-10-11 12:39：観測所 9414777は21分遅い。\n干潮 2026-10-11 05:54 → 2026-10-11 06:25：観測所 9414777は31分遅い。\n干潮 2026-10-11 18:43 → 2026-10-11 19:14：観測所 9414777は31分遅い。\n\n出典: [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)\n\n出典: [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)\n\n## 分析\n\nOcean\n観測所 9414290 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 00:40 · 満潮：1.549 m（MLLW基準）\n2026-10-11 05:54 · 干潮：0.531 m（MLLW基準）\n2026-10-11 12:18 · 満潮：1.854 m（MLLW基準）\n2026-10-11 18:43 · 干潮：-0.019 m（MLLW基準）\n最低潮：2026-10-11 18:43、-0.019 m。\n同日の最高満潮と最低干潮の高さの差：1.873 m。\n観測所 9414777 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 01:01 · 満潮：1.657 m（MLLW基準）\n2026-10-11 06:25 · 干潮：0.509 m（MLLW基準）\n2026-10-11 12:39 · 満潮：1.984 m（MLLW基準）\n2026-10-11 19:14 · 干潮：-0.018 m（MLLW基準）\n最低潮：2026-10-11 19:14、-0.018 m。\n同日の最高満潮と最低干潮の高さの差：2.002 m。\n満潮 2026-10-11 00:40 → 2026-10-11 01:01：観測所 9414777は21分遅い。\n満潮 2026-10-11 12:18 → 2026-10-11 12:39：観測所 9414777は21分遅い。\n干潮 2026-10-11 05:54 → 2026-10-11 06:25：観測所 9414777は31分遅い。\n干潮 2026-10-11 18:43 → 2026-10-11 19:14：観測所 9414777は31分遅い。",
+        "semantic_verdict": "PASS",
+        "notes": "観測所9414290/9414777の同日潮汐を表示し、満潮21分・干潮31分の差を算出。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727183.342043
+      }
+    },
+    {
+      "global_index": 165,
+      "case_id": "health.clinical_trials#1",
+      "original_verdict": "FAIL",
+      "change": "ClinicalTrials.govの使用フィールドに照会を限定し、有限上限8 MiB・待ち時間20秒へ。元の応答エラーと代替検索の状態を区別。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 165,
+        "prompt": "日本で募集中の2型糖尿病の試験は、どんな介入を比較している？",
+        "task_state": "completed",
+        "route": "NEURAL",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "# 日本で募集中の2型糖尿病試験における介入比較\n\nご提示いただいたエビデンスは切り詰め（evidence_truncated: true）られており、5件のうち詳細が完全に見えていません。以下は提示された記録から抽出可能な内容です。\n\n## 各試験の介入比較\n\n**NCT07282600**（Eloralintide、第3相、募集継続）\n- 試験名: Eloralintide (LY3841136) を肥満・過体重かつ2型糖尿病を持つ参加者に投与する試験\n- 比較する介入:\n  - Eloralintide Dose 1〜4（皮下投与、すべて実験的）\n  - プラセボ（対照群）\n- 比較対象: **複数のEloralintide用量 vs. プラセボ**\n\n**NCT07684144**（Maridebart Cafraglutide、第3相、募集継続）\n- 試験名: MARITIME-2-EXTENSION（長期有効性・安全性・耐容性の評価）\n- 比較する介入:\n  - Maridebart Cafraglutide Low Dose Q4W（実験的）\n- 注記: 提示された記録では対照群が記載されておらず、親試験（20210184）の続投試験であるため比較構成が不完全です。\n\n**NCT07064473**（Vicadrostat + Empagliflozin、第3相、募集継続）\n- 試験名: EASi-PROTKT™（2型糖尿病・高血圧・心血管疾患を持つ人々）\n- 比較する介入:\n  - Vicadrostat + empagliflozin（実験的）\n  - Vicadrostat-placebo + empagliflozin（対照群、ACTIVE_COMPARATOR）\n- 比較対象: **Vicadrostatの有無 vs. Empagliflozinは全参与者共通**（エンプラグリフロジン添付・Vicadrostatを比較）\n\n## 対象外または条件を満たさない試験\n- **NCT07783802**（Clazakizumab、第2相）: 条件に「Diabetes Mellitus, Type 2」が含まれますが、主目的はhsCRPと心血管イベントリスクの評価であり、主たる介入比較はClazakizumab用量 vs. プラセボです。2型糖尿病が二次的対象です。\n- **NCT07321886**（Eloralintide、第3相）: 試験名・条件が「肥満・過体重**ただし2型糖尿病なし**」であり、2型糖尿病患者を募集する試験ではないため対象外です。\n\n## 重要な注意点\n- 結果は切り詰められており、他の2型糖尿病試験が含まれている可能性がありますが、提示された5件は以上です。\n- Maridebart Cafraglutide試験（NCT07684144）の詳細な対照群は確認できませんでした。\n\n以上、エビデンスのみで回答可能です。\n\n出典：https://clinicaltrials.gov/",
+        "semantic_verdict": "PASS",
+        "notes": "ClinicalTrials.govから5件を取得し、介入群と比較群を列挙。エビデンス切り詰めも明示。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727232.920609
+      }
+    },
+    {
+      "global_index": 169,
+      "case_id": "health.openfda#1",
+      "original_verdict": "PARTIAL",
+      "change": "取得した報告日・反応別報告数を型付き表示。serious=1を重篤、2を非重篤と区別し、古い最新返却日を現在直近と表現しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 169,
+        "prompt": "ibuprofenで報告されている副作用の種類を、最近の報告から確認したい。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "Health\n取得した報告5件での受信日：最新20260630。この日付が取得した範囲の終端であり、実行日直近の事例とは限りません。\nFlushing：2報告\nHeadache：2報告\nPain：2報告\nAgitation：1報告\nBlood pressure increased：1報告\nBone pain：1報告\nExtra dose administered：1報告\nHead discomfort：1報告\nHot flush：1報告\nIncorrect route of product administration：1報告\nInjection site bruising：1報告\nMuscle spasms：1報告\nPain in extremity：1報告\nProduct dose omission issue：1報告\nSpinal stenosis：1報告\n重篤報告0件、非重篤報告5件。分類不明0件。\n報告中の事象で、薬が原因であることや発生率を示すものではありません。少数サンプルの件数から母集団の傾向を推定していません。\n\n出典：https://open.fda.gov/",
+        "semantic_verdict": "PASS",
+        "notes": "直近取得範囲の受信日を明示し、反応別報告数・重篤区分を表示。少数標本の限界を説明。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727382.723663
+      }
+    },
+    {
+      "global_index": 174,
+      "case_id": "food.product#2",
+      "original_verdict": "FAIL",
+      "change": "引数エラーにも食品専用の確認質問を適用し、場所・期間を求める汎用エラーを回避。stream経路にもtool IDを渡す。",
+      "status": "GUI_E2E_INCOMPLETE",
+      "followup_e2e_resume": {
+        "global_index": 174,
+        "prompt": "砂糖が多い商品か判断したいので、栄養成分と100g当たりの値を確認して。",
+        "task_state": "failed",
+        "route": "EXTERNAL_API",
+        "error": "ARGUMENT_COMPILATION_FAILED",
+        "assistant_reply_present": true,
+        "response_excerpt": "栄養成分を調べる商品名、またはバーコード番号を指定してください。",
+        "semantic_verdict": "PASS",
+        "notes": "商品指定がないため商品名またはバーコードを求める食品専用の確認質問を返した。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727412.0418549
+      }
+    },
+    {
+      "global_index": 192,
+      "case_id": "aviation.opensky#4",
+      "original_verdict": "PARTIAL",
+      "change": "上空／飛行中の依頼はon_ground=falseの観測だけを表示。高度m・速度m/sを型付き表示し、地上状態から離着陸を推測しない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 192,
+        "prompt": "東京上空にいる航空機の位置を、地図に使える座標付きで一覧にして。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "OpenSky Network · 指定地域の現在の航空機位置\nANA160：35.5737, 139.781 · 高度 259.08 m · 速度 96.41 m/s · 進行方位 334.39°\nJAL922：35.5181, 139.8205 · 高度 129.54 m · 速度 71.4 m/s · 進行方位 330.66°\nJJP11：35.3871, 139.7349 · 高度 7132.32 m · 速度 208.59 m/s · 進行方位 252.64°\nANA84：35.2329, 139.8965 · 高度 1927.86 m · 速度 108.31 m/s · 進行方位 310.96°\n\n出典：https://opensky-network.org/",
+        "semantic_verdict": "PASS",
+        "notes": "OpenSky機の位置座標・高度・速度を一覧表示。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727448.454725
+      }
+    },
+    {
+      "global_index": 316,
+      "case_id": "law.us_courts#4",
+      "original_verdict": "PARTIAL",
+      "change": "判決本文の追加HTML形式html_lawbox／html_columbiaにも対応。API本文取得が未完了なら引き続き判決内容を補わない。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 316,
+        "prompt": "著作権とオンラインサービスに関する最近の連邦判決を探して。",
+        "task_state": "completed",
+        "route": "NEURAL",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "# 著作権とオンラインサービスに関する最近の連邦判決\n\nCourtListenerで、著作権(copyright)とインターネット・プラットフォーム・「online service」を併せた連邦裁判所の検索結果から、最も新しい5件の判決を以下に整理します。\n\n## 最新の5件（裁判所別）\n\n| 判決名 | 判決日 | 裁判所 | 出典URL |\n|---|---|---|---|\n| **Americans for Prosperity v. Meyer** | 2026-09-30 | 第9回控訴裁判所（Ninth Circuit） | https://www.courtlistener.com/opinion/10988846/americans-for-prosperity-v-meyer/ |\n| **Thomson Reuters Enterprise Centre GmbH v. Ross Intelligence Inc** | 2026-09-30 | 第3回控訴裁判所（Third Circuit） | https://www.courtlistener.com/opinion/10988837/thomson-reuters-enterprise-centre-gmbh-v-ross-intelligence-inc/ |\n| **Doe v. Github, Inc.** | 2026-09-16 | 第9回控訴裁判所（Ninth Circuit） | https://www.courtlistener.com/opinion/10974713/doe-v-github-inc/ |\n| **Doe v. Smith** | 2026-09-15 | 第1回控訴裁判所（First Circuit） | https://www.courtlistener.com/opinion/10974403/doe-v-smith/ |\n| **Emmerich Nwspr v. Particle Media** | 2026-08-27 | 第5回控訴裁判所（Fifth Circuit） | https://www.courtlistener.com/opinion/10960641/emmerich-nwspr-v-particle-media/ |\n\n## 留意点\n\n- **総数は1,336件**です（今回は5件のみが返却されたため、上記は「最近の」判決ではなく「最初の5件」に過ぎません。完全なランキングや網羅的な結果を主張できません）。\n- **裁判内容の特定は困難**です。各件とも`opinion_texts`が空で、`citation`（判例引用）も`snippet`（概要）も未提供のため、著作権とオンラインサービスがどう扱われたか、どの争点で審理されたかについての事実は確認できませんでした。\n- **日付は判決提出日（date_filed）**であり、判決 rendu 日や下裁判所での審理時期とは異なります。\n- 第9回控訴裁判所に2件（Meyer・Github）、第3・第1・第5回控訴裁判所に各1件と、オンラインサービスをめぐる事件が特定の巡回集約されています。\n\nより詳細な争点や判例番号が必要であれば、各URLへの個別アクセス（`opinion_texts`の取得）を要します。",
+        "semantic_verdict": "PARTIAL",
+        "notes": "CourtListener APIの複数401を受けたが、検索結果を根拠に判決名等を生成。APIエラー後の根拠が不十分な可能性あり。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727466.489388
+      }
+    },
+    {
+      "global_index": 345,
+      "case_id": "aviation.operational_weather#1",
+      "original_verdict": "PARTIAL",
+      "change": "CAVOKと観測風から視程・風の意味を説明。横風や着陸可否は滑走路・機体条件が必要と明記。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 345,
+        "prompt": "羽田では今、着陸に影響しそうな風や視程の条件がある？",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "航空気象（観測・予報時刻はUTC）\nRJTT · 2026-10-11T14:00:00.000Z\nMETAR RJTT 111400Z 03010KT CAVOK 20/17 Q1018 NOSIG\n風向（吹いてくる方角）：30°\n風速：10 kt\n視程：6+ statute miles\n気温：20 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T13:30:00.000Z\nMETAR RJTT 111330Z 03009KT 350V050 CAVOK 20/17 Q1019 NOSIG\n風向（吹いてくる方角）：30°\n風速：9 kt\n視程：6+ statute miles\n気温：20 ℃\n気圧：1019 hPa\nRJTT · 2026-10-11T13:00:00.000Z\nMETAR RJTT 111300Z 02009KT CAVOK 21/18 Q1019 NOSIG\n風向（吹いてくる方角）：20°\n風速：9 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1019 hPa\nRJTT · 2026-10-11T12:30:00.000Z\nMETAR RJTT 111230Z 04010KT CAVOK 21/17 Q1019 NOSIG\n風向（吹いてくる方角）：40°\n風速：10 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1019 hPa\n現在のCAVOKは視程10 km以上で、航空上重要な雲・天気現象が報告されていないことを示します。視程悪化を示す記録ではありません。\n現在の風は30°から10 ktです。横風・追い風の強さは使用滑走路との角度で変わり、これだけで着陸可否や遅延は断定できません。\n風向は北を0°、東を90°とする方位です。着陸への影響は使用滑走路・機体の制限と併せて判断する必要があります。\n\n出典：https://aviationweather.gov/data/api/",
+        "semantic_verdict": "PASS",
+        "notes": "METAR/CAVOKと風の条件を表示し、着陸可否は滑走路・機体条件と併せる必要を記載。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727607.555101
+      }
+    },
+    {
+      "global_index": 346,
+      "case_id": "aviation.operational_weather#2",
+      "original_verdict": "PARTIAL",
+      "change": "TAF区間のepochをUTC日時へ変換し、観測からの風速差・風向差を算出。視程の比較は予報区間ごとの値で行う。",
+      "status": "GUI_E2E_RETESTED",
+      "followup_e2e_resume": {
+        "global_index": 346,
+        "prompt": "現在のMETARと数時間先のTAFを比べて、天候が変わりそうか教えて。",
+        "task_state": "completed",
+        "route": "EXTERNAL_API",
+        "error": null,
+        "assistant_reply_present": true,
+        "response_excerpt": "航空気象（観測・予報時刻はUTC）\nRJTT · 2026-10-11T14:00:00.000Z\nMETAR RJTT 111400Z 03010KT CAVOK 20/17 Q1018 NOSIG\n風向（吹いてくる方角）：30°\n風速：10 kt\n視程：6+ statute miles\n気温：20 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T13:30:00.000Z\nMETAR RJTT 111330Z 03009KT 350V050 CAVOK 20/17 Q1019 NOSIG\n風向（吹いてくる方角）：30°\n風速：9 kt\n視程：6+ statute miles\n気温：20 ℃\n気圧：1019 hPa\nRJTT · 2026-10-11T13:00:00.000Z\nMETAR RJTT 111300Z 02009KT CAVOK 21/18 Q1019 NOSIG\n風向（吹いてくる方角）：20°\n風速：9 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1019 hPa\nRJTT · 2026-10-11T12:30:00.000Z\nMETAR RJTT 111230Z 04010KT CAVOK 21/17 Q1019 NOSIG\n風向（吹いてくる方角）：40°\n風速：10 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1019 hPa\n現在のCAVOKは視程10 km以上で、航空上重要な雲・天気現象が報告されていないことを示します。視程悪化を示す記録ではありません。\n現在の風は30°から10 ktです。横風・追い風の強さは使用滑走路との角度で変わり、これだけで着陸可否や遅延は断定できません。\nTAF：TAF RJTT 111105Z 1112/1218 01014KT 9999 FEW030\n予報区間 2026-10-11 12:00 UTC〜2026-10-12 18:00 UTC ·  · 風向 10°、風速 14 kt、視程 6+ statute miles\n現在から風速は+4.0 ktの変化です。\n風向は30°→10°（変化-20°）です。\nこの予報区間でも視程6 statute miles以上が示され、現在との比較で視程悪化の兆候はありません。雲・突風・一時的な変化はTAF各区間を参照してください。\n風向は北を0°、東を90°とする方位です。着陸への影響は使用滑走路・機体の制限と併せて判断する必要があります。\n\n出典：https://aviationweather.gov/data/api/",
+        "semantic_verdict": "PASS",
+        "notes": "複数METARとTAF予報区間を比較して変化を説明。",
+        "build_id": "olcr-fix28-r47c-20261011-r9",
+        "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+        "profile": "/private/tmp/olcr-fix28-r47c-20261011-r9-profile",
+        "created_at_epoch": 1791727630.1910882
+      }
+    }
+  ],
+  "limitations": [
+    "実API、GUI E2E、実モデル生成、ビルド、インストール済みアプリ更新は今回行っていない。",
+    "プロバイダー停止・ネットワーク制限・代替検索未設定の解消や、全28件の意味PASSを確認した記録ではない。",
+    "Keychain資格情報復元とAPIキーの状態は今回変更・検査していない。",
+    "本文・二つ目の比較対象などが外部で取得できない場合は、不完全な取得として保持する。"
+  ],
+  "sources": {
+    "Oakland prediction station": "https://tidesandcurrents.noaa.gov/noaatidepredictions.html?id=9414777&legacy=1",
+    "RCSB ligand attributes": "https://www.rcsb.org/docs/search-and-browse/advanced-search/attribute-details",
+    "EONET bbox ordering": "https://eonet.gsfc.nasa.gov/docs/v3"
+  },
+  "source_files": {
+    "backend/olcr_api/app.py": {
+      "before_sha256": "fee503f7ac1116720a8b5129f44910467ae120be84bf74a327d217446b29a304",
+      "after_sha256": "f7baa76609d0a96a7058892791a532762d83833ed790d00664ae8df818b60d6e",
+      "added": 217,
+      "removed": 72
+    },
+    "backend/olcr_api/external_tools.py": {
+      "before_sha256": "247978e7030e4ea736c031a66c494f6fd1b4017f42307032321e643cd8335942",
+      "after_sha256": "442cc3b28f02f1f5a3a2ffa01642a344590507f72de99fde9c86ffd6c14d3f14",
+      "added": 88,
+      "removed": 27
+    },
+    "backend/olcr_api/runtime.py": {
+      "before_sha256": "0a6b1e0b32f575e818743feb0412ada464854f79b0be92b8909770e5a9de597a",
+      "after_sha256": "ee00e4da284d41da2831097beefff1d9ffea950a5b7c3afd24218fb113e3bf2f",
+      "added": 6,
+      "removed": 1
+    }
+  },
+  "gui_e2e_run": "SEMANTIC_FOLLOWUP_GUI_E2E_28_20261011.json",
+  "gui_e2e_attempted": 28,
+  "gui_e2e_remaining": 0,
+  "gui_e2e_resume_build_id": "olcr-fix28-r47c-20261011-r8",
+  "gui_e2e_last_build_id": "olcr-fix28-r47c-20261011-r11"
+}

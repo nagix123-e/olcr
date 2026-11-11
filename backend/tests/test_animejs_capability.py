@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from olcr_api.coding_tasks import canonical_coding_requirements, animejs_project_version, animejs_version_compatibility
+from olcr_api.coding_tasks import canonical_coding_requirements, animejs_project_version, animejs_version_compatibility, required_mcp_contract
 from olcr_api.mcp_manifest import server_definition
 
 
@@ -20,7 +20,10 @@ class AnimeJsCapabilityTests(unittest.TestCase):
                     manifest.write_text(json.dumps({"dependencies": {"animejs": version}}))
                 before = {p.name: p.read_bytes() for p in Path(directory).iterdir()}
                 database = MagicMock()
-                database.coding_task.return_value = {"original_goal": "Use Anime.js v4", "requirements": {}}
+                database.coding_task.return_value = {
+                    "original_goal": "Consult the offline Anime.js MCP reference for API details about Anime.js v4 staggered animations.",
+                    "requirements": {},
+                }
                 runtime = MagicMock()
                 runtime.initialize.return_value = {"status": "AVAILABLE", "response": {"result": {}}}
                 runtime.tools_list.return_value = {"status": "AVAILABLE", "response": {"result": {"tools": [{"name": "search_animejs_docs"}]}}}
@@ -36,10 +39,22 @@ class AnimeJsCapabilityTests(unittest.TestCase):
                      patch.object(api, "_mcp_evidence", return_value={"status": "PASS"}) as evidence:
                     _, error = api._run_required_mcp("test", "animejs", directory, "reference")
                 self.assertEqual(expected_error, error)
+                runtime.call.assert_called_once_with("search_animejs_docs", {"query": "stagger"})
                 saved = database.update_coding_task.call_args.kwargs["requirements"]["animejs_project"]
                 self.assertEqual(action, saved["ANIMEJS_PROJECT_ACTION"])
                 self.assertEqual(before, {p.name: p.read_bytes() for p in Path(directory).iterdir()})
                 runtime.close.assert_called_once()
+
+    def test_animejs_mcp_query_uses_requested_topic(self):
+        import olcr_api.app as api
+        self.assertEqual(
+            {"query": "stagger"},
+            api._required_mcp_arguments("animejs", {"original_goal": "Find Anime.js v4 staggered animation API details"}),
+        )
+        self.assertEqual(
+            {"query": "Explain the createScope API"},
+            api._required_mcp_arguments("animejs", {"original_goal": "Explain the createScope API"}),
+        )
 
     def test_missing_manifest_is_greenfield_and_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -73,6 +88,11 @@ class AnimeJsCapabilityTests(unittest.TestCase):
 
     def test_explicit_animejs_is_required(self):
         self.assertIn("animejs", canonical_coding_requirements("Anime.jsを使って React page")["required_mcps"])
+
+    def test_explicit_offline_animejs_mcp_reference_is_required(self):
+        request = "consult the offline animejs MCP reference for API details; plan only and wait for approval"
+        self.assertEqual(["animejs"], required_mcp_contract(request))
+        self.assertEqual(["animejs"], canonical_coding_requirements(request)["required_mcps"])
 
     def test_policy_is_read_only_and_v4(self):
         definition = server_definition("animejs")

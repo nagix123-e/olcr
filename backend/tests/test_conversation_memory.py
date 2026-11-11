@@ -20,6 +20,11 @@ class FailingProvider:
         raise RuntimeError("embedding unavailable")
 
 
+class RelevanceProvider:
+    def embed(self, texts, model):
+        return [[1.0, 0.0] if text == "visual query" else [0.8, 0.6] if "visual" in text else [0.2, 0.98] for text in texts]
+
+
 class ConversationMemoryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -131,6 +136,68 @@ class ConversationMemoryTests(unittest.TestCase):
         self.assertTrue(alpha and beta)
         self.assertTrue(all("ALPHA_SECRET_731" in x["text"] for x in alpha))
         self.assertTrue(all("BETA_SECRET_842" in x["text"] for x in beta))
+
+    def test_search_excludes_unrelated_project_memory_below_relevance_floor(self):
+        now=time.time()
+        self.db.create_project("Vision QA",None,now,"vision-project")
+        scoped=ConversationMemory(self.db,RelevanceProvider(),self.memory.model)
+        for cid,user,assistant,vector in (
+            ("visual-chat","visual comparison","Two green circles look almost identical.",[0.8,0.6]),
+            ("gdp-chat","Japan GDP","External tools were disabled for the GDP request.",[0.2,0.98]),
+        ):
+            self.db.create_conversation(cid,now,cid,"vision-project")
+            self.db.add_message(cid,"user",user,now,cid+"-u")
+            self.db.add_message(cid,"assistant",assistant,now,cid+"-a")
+            turn={"conversation_id":cid,"user_message":user,"assistant_message":assistant,"ordinal":0}
+            self.db.save_memory_embedding(turn,scoped.model,vector,now,scoped.INDEX_VERSION)
+
+        results=scoped.search("visual query",exclude_conversation="current-chat",project_id="vision-project")
+
+        self.assertEqual(1,len(results))
+        self.assertEqual("visual-chat",results[0]["conversation_id"])
+        self.assertGreaterEqual(results[0]["score"],scoped.MIN_RELEVANCE_SCORE)
+        self.assertNotIn("Japan GDP",results[0]["text"])
+
+    def test_projectless_scope_and_cross_project_toggle_preserve_embeddings(self):
+        now = time.time()
+        self.db.create_project("Alpha", None, now, "alpha")
+        self.add_turn("loose")
+        self.db.create_conversation("Alpha", now, "alpha-chat", "alpha")
+        self.db.add_message("alpha-chat", "user", "question alpha", now, "alpha-u")
+        self.db.add_message("alpha-chat", "assistant", "answer alpha", now, "alpha-a")
+        self.memory.backfill()
+        self.assertEqual({"conversation-loose"}, {x["conversation_id"] for x in self.memory.search("question")})
+        self.assertEqual({"conversation-loose"}, {x["conversation_id"] for x in self.memory.search("question", project_id="")})
+        shared = ConversationMemory(self.db, Provider(), self.memory.model, cross_project=True)
+        self.assertEqual({"conversation-loose", "alpha-chat"}, {x["conversation_id"] for x in shared.search("question", project_id="alpha")})
+        self.assertEqual({"alpha-chat"}, {x["conversation_id"] for x in self.memory.search("question", project_id="alpha")})
+        self.assertEqual(2, len(self.db.memory_embeddings(self.memory.model, 2, self.memory.INDEX_VERSION)))
+
+    def test_lexical_fallback_respects_scope_and_adjustable_threshold(self):
+        now = time.time()
+        self.db.create_project("Alpha", None, now, "alpha")
+        self.add_turn("loose")
+        self.db.create_conversation("Alpha", now, "alpha-chat", "alpha")
+        self.db.add_message("alpha-chat", "user", "question loose", now, "alpha-u")
+        self.db.add_message("alpha-chat", "assistant", "private project answer", now, "alpha-a")
+        fallback = ConversationMemory(self.db, FailingProvider(), self.memory.model, min_relevance=0)
+        self.assertEqual({"conversation-loose"}, {x["conversation_id"] for x in fallback.search("question loose")})
+        shared = ConversationMemory(self.db, FailingProvider(), self.memory.model, min_relevance=1, cross_project=True)
+        self.assertEqual(2, len(shared.search("question loose")))
+        self.assertEqual([], shared.search("unrelated terms"))
+
+    def test_vector_threshold_can_be_adjusted_without_reindexing(self):
+        self.add_turn("visual")
+        ConversationMemory(self.db, RelevanceProvider(), self.memory.model).backfill()
+        strict = ConversationMemory(self.db, RelevanceProvider(), self.memory.model, min_relevance=.9)
+        permissive = ConversationMemory(self.db, RelevanceProvider(), self.memory.model, min_relevance=.1)
+        self.assertEqual([], strict.search("visual query"))
+        self.assertTrue(permissive.search("visual query"))
+
+    def test_threshold_rejects_nonfinite_and_out_of_range_values(self):
+        for value in (float("nan"), float("inf"), -.01, 1.01):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                ConversationMemory(self.db, Provider(), self.memory.model, min_relevance=value)
 
     def test_context_memory_is_bounded_and_keeps_request(self):
         evidence = [SearchResult("conversation_turn", "x" * 1000, method="memory") for _ in range(20)]

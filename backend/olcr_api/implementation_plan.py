@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import json
+import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -17,7 +18,10 @@ from .coding_tasks import canonical_dependency_requirements, dependency_requirem
 
 
 _ACTIONS = {"create", "modify", "delete"}
-_PATH_TOKEN = re.compile(r"(?<![\w.-])([\w./-]+\.(?:html?|css|scss|js|mjs|ts|tsx|jsx|py|json|vue|svelte))(?![\w.-])", re.I)
+_PATH_TOKEN = re.compile(r"(?<![\w.-])([\w./-]+\.(?:html?|css|scss|js|mjs|ts|tsx|jsx|py|json|vue|svelte|md|mdx|txt))(?![\w.-])", re.I)
+_PROSE_PATH_MARKER = re.compile(
+    r"(?:\b(?:create|add|write|edit|modify|update|delete|file\s+named|repository|root|content|in\s+the)\b|"
+    r"ファイル|リポジトリ|ルート|内容|作成|追加|変更|修正|削除)", re.I)
 
 # Planner prose sometimes compresses an entire selected stack into one
 # slash-separated value (for example ``Vite/React/TS/Tailwind/shadcn/Anime.js``).
@@ -72,12 +76,30 @@ def _canonical_artifact_path(path: str, requirements: dict[str, Any] | None = No
     return normalized
 
 
+def _canonical_prose_manifest_path(path: str) -> tuple[str, str | None]:
+    """Extract one concrete filename from a planner's descriptive path.
+
+    A planner occasionally emits ``Create FOO.md in the repository root`` as
+    the manifest path.  Treating that sentence as a filesystem name creates
+    a different file and makes the exact-file authorization contract lie.
+    Only prose-marked values with exactly one recognizable file token are
+    rewritten; ordinary paths containing spaces remain untouched.
+    """
+    normalized = Path(str(path).replace("\\", "/")).as_posix()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    matches = _PATH_TOKEN.findall(normalized)
+    if len(matches) == 1 and matches[0] != normalized and _PROSE_PATH_MARKER.search(normalized):
+        return matches[0], "PROSE_EMBEDDED_PATH"
+    return normalized, None
+
+
 def normalize_plan_artifact_paths(plan: dict[str, Any], requirements: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Canonicalize concrete manifest/task paths before coverage is evaluated."""
-    if not isinstance(plan, dict) or not _confirmed_vite_react_profile(requirements):
+    if not isinstance(plan, dict):
         return plan, []
     entries = plan.get("file_manifest") if isinstance(plan.get("file_manifest"), list) else []
-    explicit = {Path(str(item.get("path")).replace("\\", "/")).as_posix().lstrip("./")
+    explicit = {_canonical_prose_manifest_path(str(item.get("path")))[0]
                 for item in entries if isinstance(item, dict) and isinstance(item.get("path"), str)}
     changes: list[dict[str, str]] = []
     normalized_entries: list[Any] = []
@@ -85,10 +107,21 @@ def normalize_plan_artifact_paths(plan: dict[str, Any], requirements: dict[str, 
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
             normalized_entries.append(item)
             continue
-        path = _canonical_artifact_path(item["path"], requirements, explicit)
+        path, prose_source = _canonical_prose_manifest_path(item["path"])
+        canonical = (_canonical_artifact_path(path, requirements, explicit)
+                     if _confirmed_vite_react_profile(requirements) else path)
+        if canonical != path:
+            prose_source = prose_source or "VITE_REACT_CANONICAL_PROFILE"
+        path = canonical
         if path != item["path"]:
-            changes.append({"from": str(item["path"]), "to": path, "source": "VITE_REACT_CANONICAL_PROFILE"})
-        normalized_entries.append({**item, "path": path})
+            changes.append({"from": str(item["path"]), "to": path,
+                            "source": prose_source or "PATH_CANONICALIZATION"})
+        normalized_item = {**item, "path": path}
+        # Preserve duplicates for the canonical pre-approval validator. A
+        # normalizer must never merge two independently authored grants or
+        # silently resolve conflicting actions into one authorization.
+        normalized_entries.append(normalized_item)
+    vite_profile = _confirmed_vite_react_profile(requirements)
     if not changes:
         return plan, []
     bound = {**plan, "file_manifest": normalized_entries}
@@ -96,7 +129,8 @@ def normalize_plan_artifact_paths(plan: dict[str, Any], requirements: dict[str, 
     for key in ("allowed", "forbidden"):
         values = scope.get(key)
         if isinstance(values, list):
-            scope[key] = [_canonical_artifact_path(value, requirements, explicit) if isinstance(value, str) else value
+            scope[key] = [(_canonical_artifact_path(_canonical_prose_manifest_path(value)[0], requirements, explicit)
+                           if _confirmed_vite_react_profile(requirements) else _canonical_prose_manifest_path(value)[0]) if isinstance(value, str) else value
                           for value in values]
     if scope:
         bound["scope"] = scope
@@ -106,7 +140,8 @@ def normalize_plan_artifact_paths(plan: dict[str, Any], requirements: dict[str, 
             tasks.append(task)
             continue
         tasks.append({**task, "change_scope": [
-            _canonical_artifact_path(value, requirements, explicit) if isinstance(value, str) else value
+            (_canonical_artifact_path(_canonical_prose_manifest_path(value)[0], requirements, explicit)
+             if _confirmed_vite_react_profile(requirements) else _canonical_prose_manifest_path(value)[0]) if isinstance(value, str) else value
             for value in (task.get("change_scope") or [])
         ]})
     if "tasks" in bound:
@@ -148,13 +183,27 @@ def concrete_artifact_contract(plan: dict[str, Any], requirements: dict[str, Any
 
     text_parts: list[str] = []
     phases = plan.get("phases") if isinstance(plan, dict) else []
-    for phase in phases or []:
+    blueprint = plan.get("blueprint") if isinstance(plan, dict) else None
+    source_phases = blueprint.get("source_phases") if isinstance(blueprint, dict) else []
+    # Large-task normalization replaces detailed planner phases with short
+    # lifecycle summaries.  The original implementation contract remains in
+    # blueprint.source_phases and must continue to drive exact-file coverage.
+    for phase in [*(phases or []), *(source_phases or [])]:
         if not isinstance(phase, dict) or phase.get("execution_mode") == "VERIFICATION_ONLY":
             continue
-        text_parts.extend(str(phase.get(key) or "") for key in ("goal", "done", "verify"))
+        # Verification criteria describe read-only evidence. A path mentioned
+        # there is not a writable artifact unless an implementation criterion
+        # independently names it.
+        text_parts.extend(str(phase.get(key) or "") for key in ("goal", "done"))
         for task in plan.get("tasks") or []:
             if isinstance(task, dict) and task.get("phase_id") == phase.get("id"):
-                text_parts.extend(str(task.get(key) or "") for key in ("goal", "change_scope", "done_condition", "verification"))
+                text_parts.extend(str(task.get(key) or "") for key in ("goal", "change_scope", "done_condition"))
+    # Explicit stack constraints are structured requirements, not incidental
+    # prose in shortened execution phases.  Do not inject profile defaults
+    # here: legacy plans may intentionally use a narrower stack contract.
+    required_stack = requirements.get("required_stack")
+    required_stack = required_stack if isinstance(required_stack, list) else []
+    text_parts.extend(str(item) for item in required_stack)
     text = " ".join(text_parts)
     semantic_requirements: set[str] = set()
     for token in _PATH_TOKEN.findall(text):
@@ -166,7 +215,13 @@ def concrete_artifact_contract(plan: dict[str, Any], requirements: dict[str, Any
     for path in _planned_component_paths(text):
         add(path, "NORMALIZED_PHASE_ARTIFACT")
 
-    greenfield = bool(workspace.get("greenfield"))
+    project_state = workspace.get("project_state") or workspace.get("workspace_state")
+    # A new-project task can resume against a partially initialized root.
+    # Treat that state as greenfield for profile-required bootstrap artifacts,
+    # while keeping ESTABLISHED repositories outside this deterministic path.
+    greenfield = bool(workspace.get("greenfield") or
+                      (workspace.get("new_project_intent") and
+                       project_state in {None, "EMPTY_GREENFIELD", "PARTIALLY_INITIALIZED"}))
     profile = str(requirements.get("task_profile") or "")
     stack_terms = {term for term in ("react", "vite", "tailwind", "anime", "shadcn", "typescript")
                    if re.search(rf"\b{re.escape(term)}(?:\.js)?\b", text, re.I)}
@@ -176,6 +231,13 @@ def concrete_artifact_contract(plan: dict[str, Any], requirements: dict[str, Any
     if greenfield and broad_frontend_contract and implementation:
         for path in ("index.html", "src/main.tsx", "src/App.tsx", "src/index.css"):
             add(path, "STACK_PROFILE_ARTIFACT")
+        # A declared Vite stack needs a concrete project configuration in a
+        # greenfield workspace.  Keeping this only in
+        # configuration_requirements made it visible to diagnostics but
+        # invisible to writable-manifest coverage, allowing an approved
+        # empty plan to scaffold an incomplete Vite project.
+        if any(re.search(r"\bvite\b", str(item), re.I) for item in required_stack):
+            add("vite.config.ts", "STACK_PROFILE_ARTIFACT")
     canonical_dependency_records = canonical_dependency_requirements(requirements)
     canonical_dependency_specs = dependency_requirement_specs(canonical_dependency_records)
     dependency_installation_requested = any(
@@ -358,17 +420,60 @@ def deterministic_manifest_completion_diagnostics(plan: dict[str, Any], coverage
     workspace = workspace or {}
     missing = sorted(set(coverage.get("missing_paths") or []))
     diagnostics = {"evaluated": True, "eligible": False, "skip_reason": "NONE",
-                   "added_paths": [], "missing_paths": missing,
-                   "candidate_paths": missing, "candidate_diagnostics": []}
+                   "added_paths": [], "added_create_paths": [], "added_modify_paths": [],
+                   "already_covered_paths": [], "rejected_paths": [], "not_applicable_paths": [],
+                   "missing_paths": missing, "candidate_paths": missing,
+                   "candidate_diagnostics": [], "decisions": []}
+    diagnostics.update({
+        "candidate_create_count": 0, "candidate_modify_count": 0,
+        "candidate_already_covered_count": 0, "candidate_rejected_count": 0,
+        "candidate_not_applicable_count": 0,
+    })
+    def record(candidate_info: dict[str, Any], category: str) -> None:
+        candidate_info["category"] = category
+        diagnostics["candidate_diagnostics"].append(candidate_info)
+        diagnostics["decisions"].append(dict(candidate_info))
+        key = {
+            "ADDED_CREATE": "added_create_paths",
+            "ADDED_MODIFY": "added_modify_paths",
+            "ALREADY_COVERED": "already_covered_paths",
+            "REJECTED": "rejected_paths",
+            "NOT_APPLICABLE": "not_applicable_paths",
+        }[category]
+        diagnostics[key].append(candidate_info["path"])
+        count_key = {
+            "ADDED_CREATE": "candidate_create_count",
+            "ADDED_MODIFY": "candidate_modify_count",
+            "ALREADY_COVERED": "candidate_already_covered_count",
+            "REJECTED": "candidate_rejected_count",
+            "NOT_APPLICABLE": "candidate_not_applicable_count",
+        }[category]
+        diagnostics[count_key] += 1
+    def mark_all(category: str, reason: str) -> None:
+        for path in missing:
+            record({"path": path, "requirement_provenance": [], "workspace_exists": False,
+                    "file_type": "unknown", "current_hash": None, "intended_operation": "none",
+                    "authorization_result": category, "rejection_reason": reason}, category)
+    def finalize() -> dict[str, Any]:
+        diagnostics["added_paths"] = list(diagnostics["added_create_paths"] + diagnostics["added_modify_paths"])
+        diagnostics["candidate_accounting_valid"] = (
+            len(diagnostics["candidate_paths"]) ==
+            sum(diagnostics[key] for key in ("candidate_create_count", "candidate_modify_count",
+                                              "candidate_already_covered_count", "candidate_rejected_count",
+                                              "candidate_not_applicable_count")))
+        return diagnostics
     if not missing:
         diagnostics["skip_reason"] = "NO_MISSING_ARTIFACTS"
-        return diagnostics
+        return finalize()
     if not workspace.get("new_project_intent"):
         diagnostics["skip_reason"] = "NEW_PROJECT_INTENT_FALSE"
-        return diagnostics
-    if workspace.get("workspace_state") not in {None, "EMPTY_GREENFIELD", "PARTIALLY_INITIALIZED"}:
+        mark_all("NOT_APPLICABLE", "NEW_PROJECT_INTENT_FALSE")
+        return finalize()
+    effective_workspace_state = workspace.get("workspace_state") or workspace.get("project_state")
+    if effective_workspace_state not in {None, "EMPTY_GREENFIELD", "PARTIALLY_INITIALIZED"}:
         diagnostics["skip_reason"] = "ESTABLISHED_WORKSPACE"
-        return diagnostics
+        mark_all("NOT_APPLICABLE", "ESTABLISHED_WORKSPACE")
+        return finalize()
     host_authorized = workspace.get("host_workspace_authorized")
     if host_authorized is None:
         # Backward-compatible direct helper callers may only provide the
@@ -378,7 +483,8 @@ def deterministic_manifest_completion_diagnostics(plan: dict[str, Any], coverage
     expected = set((coverage.get("requirement_types") or {}).get("FILESYSTEM_ARTIFACT") or [])
     if not set(missing) <= expected:
         diagnostics["skip_reason"] = "ARTIFACT_NOT_DERIVED_FROM_CANONICAL_CONTRACT"
-        return diagnostics
+        mark_all("NOT_APPLICABLE", "ARTIFACT_NOT_DERIVED_FROM_CANONICAL_CONTRACT")
+        return finalize()
     # Eligibility means the workspace and canonical artifact contract allow a
     # deterministic completion attempt.  Individual candidates can still be
     # rejected below; retaining eligibility makes an eligible/zero-additions
@@ -389,7 +495,8 @@ def deterministic_manifest_completion_diagnostics(plan: dict[str, Any], coverage
         guard = PathGuard([str(root)])
     except Exception:
         diagnostics["skip_reason"] = "PATHGUARD_ROOT_UNAVAILABLE"
-        return diagnostics
+        mark_all("REJECTED", "PATHGUARD_ROOT_UNAVAILABLE")
+        return finalize()
     entries = plan.get("file_manifest") if isinstance(plan, dict) else []
     existing: dict[str, dict[str, Any]] = {}
     for item in entries if isinstance(entries, list) else []:
@@ -398,66 +505,103 @@ def deterministic_manifest_completion_diagnostics(plan: dict[str, Any], coverage
             if path:
                 existing[Path(path).as_posix()] = item
     provenance = (coverage.get("requirement_types") or {}).get("ARTIFACT_PROVENANCE") or {}
-    current_task_provenance = workspace.get("current_task_provenance") or {}
     authorized_mutation = workspace.get("authorized_mutation") or workspace.get("allowed_mutation")
     if isinstance(authorized_mutation, str):
         authorized_mutation = [authorized_mutation]
-    allowed = [str(item).replace("\\", "/").lstrip("./") for item in (authorized_mutation or []) if str(item).strip()]
+    allowed = []
+    for item in (authorized_mutation or []):
+        value = str(item).replace("\\", "/").strip()
+        if not value:
+            continue
+        normalized = value.lstrip("./")
+        # A metadata contract of ``.``/``./`` explicitly authorizes the
+        # selected project root.  Do not turn it into an empty path, which
+        # silently rejects every child candidate.
+        allowed.append("." if not normalized else normalized)
     all_candidates_safe = True
     for path in missing:
         candidate_info = {"path": path,
                           "requirement_provenance": list(provenance.get(path) or []),
                           "workspace_exists": False,
+                          "file_type": "missing",
+                          "current_hash": None,
                           "intended_operation": "create",
                           "authorization_result": "PENDING",
                           "rejection_reason": "NONE"}
         candidate = Path(path)
         if candidate.is_absolute() or ".." in candidate.parts:
             candidate_info.update({"authorization_result": "REJECTED", "rejection_reason": "PATH_NOT_REPOSITORY_RELATIVE"})
-            diagnostics["candidate_diagnostics"].append(candidate_info)
+            record(candidate_info, "REJECTED")
             all_candidates_safe = False
             continue
         if path in existing:
-            candidate_info.update({"authorization_result": "REJECTED", "rejection_reason": "EXPLICIT_CONFLICTING_OPERATION"})
-            diagnostics["candidate_diagnostics"].append(candidate_info)
-            all_candidates_safe = False
+            # Coverage normally excludes this case.  If a stale caller hands
+            # us an already-covered path, account for it explicitly instead
+            # of silently dropping the candidate or creating a duplicate.
+            candidate_info.update({"authorization_result": "ALREADY_COVERED",
+                                   "rejection_reason": "NONE",
+                                   "intended_operation": str(existing[path].get("action") or "modify")})
+            record(candidate_info, "ALREADY_COVERED")
             continue
         try:
             target = guard.resolve(str(root / candidate))
         except (OSError, ValueError, PermissionError):
             candidate_info.update({"authorization_result": "REJECTED", "rejection_reason": "PATH_OUTSIDE_CANONICAL_ROOT"})
-            diagnostics["candidate_diagnostics"].append(candidate_info)
+            record(candidate_info, "REJECTED")
             all_candidates_safe = False
             continue
         exists = target.exists()
         candidate_info["workspace_exists"] = exists
-        if allowed and not any(path == item.rstrip("/") or path.startswith(item.rstrip("/") + "/") for item in allowed):
+        if exists:
+            try:
+                candidate_info["file_type"] = "directory" if target.is_dir() else "file"
+                if target.is_file():
+                    raw = target.read_bytes()
+                    candidate_info["current_hash"] = hashlib.sha256(raw).hexdigest()
+                    candidate_info["current_bytes"] = len(raw)
+            except OSError:
+                candidate_info["file_type"] = "unreadable"
+        if allowed and not any(item in {"", "."} or
+                               path == item.rstrip("/") or
+                               path.startswith(item.rstrip("/") + "/") for item in allowed):
             candidate_info.update({"authorization_result": "REJECTED", "rejection_reason": "ARTIFACT_OUTSIDE_AUTHORIZED_MUTATION_SCOPE"})
-            diagnostics["candidate_diagnostics"].append(candidate_info)
+            record(candidate_info, "REJECTED")
             all_candidates_safe = False
             continue
         if exists:
-            provenance_kind = str(current_task_provenance.get(path) or "")
-            if provenance_kind not in {"CREATED_BY_CURRENT_TASK_SCAFFOLD", "CREATED_BY_CURRENT_TASK_IMPLEMENTATION"}:
+            if not target.is_file():
                 candidate_info.update({"intended_operation": "modify", "authorization_result": "REJECTED",
-                                       "rejection_reason": "ESTABLISHED_ARTIFACT_WITHOUT_ACTIVE_TASK_PROVENANCE"})
-                diagnostics["candidate_diagnostics"].append(candidate_info)
+                                       "rejection_reason": "EXISTING_TARGET_NOT_FILE"})
+                record(candidate_info, "REJECTED")
                 all_candidates_safe = False
                 continue
-            candidate_info.update({"intended_operation": "modify", "authorization_result": "AUTHORIZED"})
+            # The canonical artifact contract is the task/plan scope.  An
+            # existing candidate is safe to represent as MODIFY when that
+            # contract identifies the concrete file; active-task provenance
+            # remains useful evidence, but is not the sole authorization.
+            if not provenance.get(path):
+                candidate_info.update({"intended_operation": "modify", "authorization_result": "REJECTED",
+                                       "rejection_reason": "ARTIFACT_NOT_IN_IMPLEMENTATION_SCOPE"})
+                record(candidate_info, "REJECTED")
+                all_candidates_safe = False
+                continue
+            candidate_info.update({"intended_operation": "modify", "authorization_result": "AUTHORIZED",
+                                   "decision_reason": "CANONICAL_ARTIFACT_EXISTS_IN_AUTHORIZED_SCOPE"})
+            record(candidate_info, "ADDED_MODIFY")
         elif not (workspace.get("host_workspace_authorized") or allowed):
             candidate_info.update({"authorization_result": "REJECTED", "rejection_reason": "HOST_WORKSPACE_NOT_AUTHORIZED"})
-            diagnostics["candidate_diagnostics"].append(candidate_info)
+            record(candidate_info, "REJECTED")
             all_candidates_safe = False
             continue
         else:
-            candidate_info["authorization_result"] = "AUTHORIZED"
-        diagnostics["candidate_diagnostics"].append(candidate_info)
+            candidate_info.update({"authorization_result": "AUTHORIZED",
+                                   "decision_reason": "CANONICAL_ARTIFACT_MISSING_IN_AUTHORIZED_SCOPE"})
+            record(candidate_info, "ADDED_CREATE")
     if not all_candidates_safe:
         diagnostics["skip_reason"] = next((item["rejection_reason"] for item in diagnostics["candidate_diagnostics"]
                                             if item.get("authorization_result") == "REJECTED"), "CANDIDATE_REJECTED")
-        return diagnostics
-    return diagnostics
+        return finalize()
+    return finalize()
 
 
 def manifest_repair_progress(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
@@ -503,9 +647,6 @@ def deterministic_manifest_completion(plan: dict[str, Any], coverage: dict[str, 
     decision = deterministic_manifest_completion_diagnostics(plan, coverage, target_root, workspace)
     if not decision["eligible"]:
         return None, []
-    if any(item.get("authorization_result") != "AUTHORIZED"
-           for item in (decision.get("candidate_diagnostics") or [])):
-        return None, []
     expected = set((coverage.get("requirement_types") or {}).get("FILESYSTEM_ARTIFACT") or [])
     missing = sorted(set(coverage.get("missing_paths") or []))
     if not missing or not set(missing) <= expected:
@@ -523,6 +664,14 @@ def deterministic_manifest_completion(plan: dict[str, Any], coverage: dict[str, 
             existing_operations[Path(path).as_posix()] = item
 
     additions: list[str] = []
+    operations = {item["path"]: str(item.get("intended_operation") or "create")
+                  for item in (decision.get("candidate_diagnostics") or [])
+                  if item.get("category") in {"ADDED_CREATE", "ADDED_MODIFY"}}
+    # Apply every safe deterministic decision even when another candidate is
+    # unresolved.  The caller can then re-run coverage and send only the
+    # remaining candidates through the bounded model-repair path.
+    if not operations:
+        return None, []
     for path in missing:
         candidate = Path(path)
         if candidate.is_absolute() or ".." in candidate.parts:
@@ -536,17 +685,38 @@ def deterministic_manifest_completion(plan: dict[str, Any], coverage: dict[str, 
             target = guard.resolve(str(root / candidate))
         except (OSError, ValueError, PermissionError):
             return None, []
-        if target.exists():
-            provenance = (workspace.get("current_task_provenance") or {}).get(path)
-            if provenance not in {"CREATED_BY_CURRENT_TASK_SCAFFOLD", "CREATED_BY_CURRENT_TASK_IMPLEMENTATION"}:
-                return None, []
+        if path not in operations:
+            continue
+        if target.exists() and operations.get(path) != "modify":
+            return None, []
         additions.append(candidate.as_posix())
     if not additions:
         return None, []
+    # Reconcile existing explicit manifest entries before the candidate
+    # additions are applied.  A planner may conservatively say CREATE for a
+    # file produced by an earlier package/MCP/bootstrap step; retaining CREATE
+    # would make the later safety pass reject the whole otherwise-valid plan.
+    reconciled_entries: list[Any] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            reconciled_entries.append(item)
+            continue
+        path = _path_from_entry(item)
+        action = str(item.get("action") or item.get("operation") or "modify").lower()
+        if path and action in {"create", "add"} and path in expected:
+            try:
+                target = guard.resolve(str(root / Path(path)))
+                if target.is_file():
+                    item = {**item, "action": "modify"}
+            except (OSError, ValueError, PermissionError):
+                pass
+        reconciled_entries.append(item)
     owner_phase = next((str(phase.get("id")) for phase in (plan.get("phases") or [])
-                        if isinstance(phase, dict) and phase.get("execution_mode") != "VERIFICATION_ONLY"), "")
-    manifest = list(entries)
-    manifest.extend({"path": path, "action": "create", "role": "implementation",
+                        if isinstance(phase, dict)
+                        and phase.get("kind") != "ORCHESTRATOR_BLUEPRINT"
+                        and phase.get("execution_mode") != "VERIFICATION_ONLY"), "")
+    manifest = list(reconciled_entries)
+    manifest.extend({"path": path, "action": operations.get(path, "create"), "role": "implementation",
                      "required": True, "owner_phase": owner_phase} for path in additions)
     return {**plan, "file_manifest": manifest}, additions
 
@@ -617,8 +787,13 @@ def workspace_state(target_root: str | Path) -> dict[str, Any]:
     source_files = [path for path in files if Path(path).suffix.lower() in {
         ".js", ".mjs", ".ts", ".tsx", ".jsx", ".py", ".vue", ".svelte", ".html", ".css", ".scss"
     }]
+    # A small bootstrap (for example index.html + src/App.tsx + src/main.tsx)
+    # is a resumable partial project, not an established application.  Keep a
+    # conservative established boundary for a materially populated source
+    # tree; deterministic completion still requires explicit new-project
+    # intent and the exact artifact contract in either case.
     project_state = ("EMPTY_GREENFIELD" if not entries else
-                     "ESTABLISHED" if source_files else "PARTIALLY_INITIALIZED")
+                     "ESTABLISHED" if len(source_files) >= 5 else "PARTIALLY_INITIALIZED")
     return {
         "source": "filesystem_snapshot",
         "root": str(root),
@@ -677,6 +852,75 @@ def _raw_manifest(plan: dict[str, Any]) -> tuple[list[Any], str]:
                                   if not _is_semantic_requirement_token(token))
     seen: set[str] = set()
     return [{"path": value, "action": "modify"} for value in source if not (value in seen or seen.add(value))], "DERIVED"
+
+
+def reconstruct_legacy_file_manifest(plan: dict[str, Any], workspace_root: str | Path,
+                                     prior_task_writes: Iterable[str] = ()) -> list[dict[str, str]] | None:
+    """Restore an old plan's manifest only from its approved exact file scope.
+
+    Legacy plans stored file paths in ``scope.allowed`` but did not bind each
+    path to a producing phase. Reconstructing from that approved list keeps
+    the old authorization boundary intact. A phase owner must be uniquely
+    recoverable from implementation goals or completion criteria; verifier
+    prose is deliberately excluded. A missing approved exact path is a file
+    creation, which does not expand the authorized path set.
+    """
+    if not isinstance(plan, dict) or "file_manifest" in plan:
+        return None
+    scope = plan.get("scope") if isinstance(plan.get("scope"), dict) else {}
+    allowed = scope.get("allowed") if isinstance(scope.get("allowed"), list) else []
+    phases = [phase for phase in plan.get("phases") or [] if isinstance(phase, dict)
+              and phase.get("id") and phase.get("kind") != "ORCHESTRATOR_BLUEPRINT"
+              and phase.get("execution_mode") != "VERIFICATION_ONLY"]
+    if not allowed or not phases:
+        return None
+    root = Path(workspace_root).expanduser().resolve()
+
+    def relative_path(value: str) -> str | None:
+        candidate = value.strip().replace("\\", "/")
+        extracted = _PATH_TOKEN.findall(candidate)
+        if candidate != (extracted[0] if len(extracted) == 1 else candidate):
+            candidate, _ = _canonical_prose_manifest_path(candidate)
+        candidate = candidate.removeprefix("./")
+        if (not candidate or any(mark in candidate for mark in "*?\n\r")
+                or _is_semantic_requirement_token(candidate)):
+            return None
+        path = Path(candidate)
+        if path.is_absolute() or ".." in path.parts or not path.suffix:
+            return None
+        normalized = path.as_posix()
+        try:
+            target = (root / normalized).resolve()
+            target.relative_to(root)
+        except (OSError, ValueError):
+            return None
+        return normalized
+
+    manifest: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for value in allowed:
+        if not isinstance(value, str):
+            return None
+        path = relative_path(value)
+        if not path or path in seen:
+            continue
+        owner_matches = []
+        pattern = re.compile(rf"(?<![\w./-]){re.escape(path)}(?![\w./-])", re.I)
+        for phase in phases:
+            prose = [phase.get("goal"), *(phase.get("done") or [])]
+            if any(isinstance(item, str) and pattern.search(item.replace("\\", "/")) for item in prose):
+                owner_matches.append(phase)
+        if len(owner_matches) == 1:
+            owner = owner_matches[0]
+        elif not owner_matches and len(phases) == 1:
+            owner = phases[0]
+        else:
+            return None
+        target = root / path
+        action = "modify" if target.exists() else "create"
+        manifest.append({"path": path, "action": action, "owner_phase": str(owner["id"])})
+        seen.add(path)
+    return manifest or None
 
 
 def manifest_coverage(plan: dict[str, Any], requirements: dict[str, Any] | None = None,
@@ -851,6 +1095,27 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
     new_project = bool((workspace or {}).get("new_project_intent") or
                        (greenfield and profile in {"FRONTEND_ONLY_MARKETING_SITE", "GENERAL_CODING"}) or
                        (greenfield and str((workspace or {}).get("project_type") or "").lower() in {"frontend", "website", "new_project"}))
+    # A partially initialized workspace can still be the destination for a
+    # new task.  In that case the planner sometimes labels explicitly scoped
+    # new files as MODIFY because it saw other files in the directory.  Only
+    # exact paths from the plan's allowed scope may be converted; arbitrary
+    # missing MODIFY targets remain fail-closed.
+    explicit_new_scope_paths: set[str] = set()
+    scope_allowed = ((plan.get("scope") or {}).get("allowed")
+                     if isinstance(plan.get("scope"), dict) else [])
+    for value in scope_allowed if isinstance(scope_allowed, list) else []:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        scope_path, _ = _canonical_prose_manifest_path(value)
+        try:
+            requested_scope = Path(scope_path).expanduser()
+            scope_target = (requested_scope if requested_scope.is_absolute() else root / requested_scope).resolve()
+            scope_target = guard.resolve(str(scope_target))
+            scope_relative = scope_target.relative_to(root).as_posix()
+        except (OSError, ValueError, PermissionError):
+            continue
+        if scope_relative not in {"", "."}:
+            explicit_new_scope_paths.add(scope_relative)
     normalized_create_from_modify: list[str] = []
     replan_reconciliation = bool((workspace or {}).get("replan_reconciliation"))
     current_task_created_paths = {
@@ -914,6 +1179,9 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
                          phase=phase, reason=str(exc))
             continue
         if relative in seen:
+            # Exact manifest entries are independent grants. Even compatible
+            # create/modify duplicates are malformed and must be rejected
+            # before approval rather than silently merged.
             record_error(f"manifest contains duplicate path: {relative}", path=path_value, field=field,
                          phase=phase, reason=f"duplicate normalized path {relative}")
             continue
@@ -930,7 +1198,8 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
             # remains a hard validation error below.
             action = "modify"
             reconciled_create_to_modify.append(relative)
-        if action == "modify" and not target_exists and greenfield and new_project:
+        if (action == "modify" and not target_exists and new_project and
+                (greenfield or relative in explicit_new_scope_paths)):
             action = "create"
             normalized_create_from_modify.append(relative)
         normalized.append({"path": relative, "action": action,
@@ -967,6 +1236,7 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
     created = 0
     skipped_existing = 0
     scaffold_created_paths: list[str] = []
+    scaffold_created_hashes: dict[str, str] = {}
     for item in normalized:
         if item["action"] != "create":
             continue
@@ -975,11 +1245,30 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
             skipped_existing += 1
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(_safe_stub(target), encoding="utf-8")
+        scaffold_content = _safe_stub(target)
+        target.write_text(scaffold_content, encoding="utf-8")
+        scaffold_created_hashes[item["path"]] = hashlib.sha256(scaffold_content.encode("utf-8")).hexdigest()
         created += 1
         scaffold_created_paths.append(item["path"])
 
     phases = plan.get("phases") or []
+    preimage_evidence: dict[str, dict[str, Any]] = {}
+    for item in normalized:
+        if item.get("action") != "modify":
+            continue
+        target = root / item["path"]
+        try:
+            raw = target.read_bytes()
+            preimage_evidence[item["path"]] = {
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "bytes": len(raw),
+                "captured": "BEFORE_IMPLEMENTATION",
+            }
+        except (OSError, ValueError):
+            # The existence/path checks above remain authoritative.  Keep an
+            # explicit unavailable record rather than inventing a hash.
+            preimage_evidence[item["path"]] = {"sha256": None, "bytes": None,
+                                                 "captured": "UNAVAILABLE"}
     artifact = {
         "artifact_version": 1,
         "task_id": task_id,
@@ -998,6 +1287,7 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
         "scaffold_created_count": created,
         "scaffold_skipped_existing_count": skipped_existing,
         "scaffold_created_paths": scaffold_created_paths,
+        "scaffold_created_hashes": scaffold_created_hashes,
         "current_task_created_paths": sorted(current_task_created_paths | set(scaffold_created_paths)),
         "current_task_provenance": {
             **current_task_provenance,
@@ -1008,6 +1298,7 @@ def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root:
         "workspace_state": dict(workspace or {}),
         "manifest_coverage": coverage,
         "artifact_provenance": (coverage.get("requirement_types") or {}).get("ARTIFACT_PROVENANCE") or {},
+        "preimage_evidence": preimage_evidence,
         "canonicalization_changes": canonicalization_changes,
         "stack_conformance": conformance,
     }

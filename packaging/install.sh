@@ -64,7 +64,8 @@ case "$ARCHIVE_ROOT" in *"/olcr-v${VERSION}-macos-arm64") ;; *) echo "OLCR insta
 mkdir -p "$RUNTIME_ROOT" "$BIN_DIR"
 if [ ! -d "$TARGET" ]; then
   mkdir -p "$TARGET"
-  set -- "$ARCHIVE_ROOT/app" "$ARCHIVE_ROOT/frontend" "$ARCHIVE_ROOT/models" "$ARCHIVE_ROOT/runtime" "$ARCHIVE_ROOT/manifest" "$ARCHIVE_ROOT/licenses"
+  set -- "$ARCHIVE_ROOT/app" "$ARCHIVE_ROOT/frontend" "$ARCHIVE_ROOT/runtime" "$ARCHIVE_ROOT/manifest" "$ARCHIVE_ROOT/licenses"
+  if [ -d "$ARCHIVE_ROOT/models" ]; then set -- "$@" "$ARCHIVE_ROOT/models"; fi
   if [ -d "$ARCHIVE_ROOT/mcp-runtime" ]; then set -- "$@" "$ARCHIVE_ROOT/mcp-runtime"; fi
   if [ -d "$ARCHIVE_ROOT/knowledge" ]; then set -- "$@" "$ARCHIVE_ROOT/knowledge"; fi
   cp -R "$@" "$TARGET/"
@@ -81,8 +82,8 @@ if [ ! -x "$ROOT/runtime/python/bin/python3" ]; then
   echo "OLCR runtime is not installed. Re-run install.sh from the release archive." >&2
   exit 1
 fi
-export PYTHONPATH="$ROOT/app/backend:$ROOT/runtime/python/lib/python3.10/site-packages${PYTHONPATH:+:$PYTHONPATH}"
-export OLCR_RERANKER_MODEL="$ROOT/models/qwen3-reranker-0.6b"
+export PYTHONPATH="$ROOT/app/backend:$ROOT/runtime/python/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export OLCR_LAYA_MODEL_REVISION="$("$ROOT/runtime/python/bin/python3" -c 'import json,sys; print(json.load(open(sys.argv[1]))["laya"]["model_revisions"]["multilingual"])' "$ROOT/manifest/release-manifest.json")"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 exec "$ROOT/runtime/python/bin/python3" -m olcr_cli.main "$@"
 EOF

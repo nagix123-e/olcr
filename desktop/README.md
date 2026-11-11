@@ -15,7 +15,7 @@ From the OLCR source root:
 
 ```sh
 npm --prefix frontend install
-OLCR_PYTHON="$(pwd)/.venv/bin/python" npm --prefix frontend run tauri:dev
+OLCR_PYTHON="$(pwd)/.venv312/bin/python" npm --prefix frontend run tauri:dev
 ```
 
-`OLCR_PYTHON` is deliberately required; the shell will not silently select an arbitrary system interpreter. The child binds to `127.0.0.1` only. A foreign process on port 8000 is never terminated; startup reports failure instead.
+Create `.venv312` with Python 3.12 or newer before installing the backend dependencies. `OLCR_PYTHON` is deliberately required; the shell will not silently select an arbitrary system interpreter. The child binds to `127.0.0.1` only. A foreign process on port 8000 is never terminated; startup reports failure instead.

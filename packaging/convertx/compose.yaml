@@ -1,0 +1,17 @@
+# Independent upstream service; no ConvertX source is bundled into OLCR.
+services:
+  convertx:
+    image: ghcr.io/c4illin/convertx:v0.19.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3047:3000"
+    environment:
+      ALLOW_UNAUTHENTICATED: "true"
+      HTTP_ALLOWED: "true"
+      ACCOUNT_REGISTRATION: "false"
+      AUTO_DELETE_EVERY_N_HOURS: "1"
+      MAX_CONVERT_PROCESS: "1"
+    volumes:
+      - convertx-data:/app/data
+volumes:
+  convertx-data:

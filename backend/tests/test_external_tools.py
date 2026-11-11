@@ -5,6 +5,45 @@ from olcr_api import external_tools as tools
 
 
 class ExternalToolsTests(unittest.TestCase):
+    def test_qiita_fuzzy_agent_query_returns_multiple_relevant_articles(self):
+        request = {"query": "AIエージェント", "page": 1, "per_page": 10}
+        payload = [
+            {"id": f"agent-{index}", "title": f"AIエージェント実装パターン {index}",
+             "url": f"https://qiita.com/example/items/{index}",
+             "user": {"id": "author"}, "tags": [{"name": "AIエージェント"}],
+             "body": "ツール呼び出しと状態管理を説明する記事です。", "likes_count": index}
+            for index in range(1, 4)
+        ]
+        with patch.object(tools, "_request", return_value=payload) as provider:
+            result = tools._qiita_search({
+                "query": "最近の日本語技術記事から、AIエージェントの実装でよく使われる構成と課題を複数記事をもとに整理して。"
+            })
+        self.assertEqual("AIエージェント", provider.call_args.args[2]["query"])
+        self.assertEqual("DATA", result["data"]["semantic_status"])
+        self.assertGreaterEqual(result["data"]["item_count"], 3)
+        self.assertEqual(3, len(result["data"]["items"]))
+
+    def test_qiita_pagination_keeps_compact_page_size_constant(self):
+        calls = []
+
+        def response(_host, _path, params, _headers=None):
+            calls.append(dict(params))
+            count = 10 if params["page"] == 1 else 2
+            return [
+                {"id": f"agent-{params['page']}-{index}",
+                 "title": f"AIエージェント設計 {params['page']}-{index}",
+                 "url": f"https://qiita.com/example/items/{params['page']}-{index}",
+                 "user": {"id": "author"}, "tags": [{"name": "AIエージェント"}],
+                 "body": "AIエージェントの構成と課題を説明する。", "likes_count": index}
+                for index in range(count)
+            ]
+
+        with patch.object(tools, "_request", side_effect=response):
+            result = tools._qiita_search({"query": "AIエージェント", "limit": 12})
+
+        self.assertEqual([(1, 10), (2, 10)], [(call["page"], call["per_page"]) for call in calls])
+        self.assertEqual(12, result["data"]["item_count"])
+
     def test_weather_uses_only_location_and_normalizes_response(self):
         calls=[]
         def response(host, path, params, headers=None):
@@ -106,6 +145,42 @@ class ExternalToolsTests(unittest.TestCase):
         self.assertIn("from_publication_date:", params["filter"])
         self.assertIn("to_publication_date:", params["filter"])
         self.assertGreater(params["per-page"], 3)
+        self.assertIn("title", params["select"])
+        self.assertNotIn("abstract_inverted_index", params["select"])
+
+    def test_llm_environmental_research_fetches_compact_abstract_evidence(self):
+        row = {"id": "https://openalex.org/W1", "title": "Energy Consumption Evaluation for Large Language Models",
+               "publication_year": 2025, "publication_date": "2025-05-01", "type": "article",
+               "authorships": [], "primary_location": {}, "open_access": {}, "relevance_score": 10,
+               "abstract_inverted_index": {"We": [0], "measure": [1], "energy": [2], "use.": [3]}}
+        with patch.object(tools, "_request", return_value={"results": [row]}) as request:
+            result = tools.research(
+                query="large language model inference training energy consumption water consumption measurement",
+                limit=5, recency="recent",
+            )
+        params = request.call_args.args[2]
+        self.assertIn("abstract_inverted_index", params["select"])
+        self.assertEqual("We measure energy use.", result["data"]["works"][0]["abstract"])
+
+    def test_llm_resource_research_rejects_code_generation_energy_papers(self):
+        def abstract(words):
+            return {word: [index] for index, word in enumerate(words.split())}
+        rows = [
+            {"id": "Wcode", "title": "Energy-Efficient Code Generation Using Large Language Models",
+             "publication_year": 2025, "publication_date": "2025-05-01", "type": "article",
+             "authorships": [], "primary_location": {}, "open_access": {}, "relevance_score": 100,
+             "abstract_inverted_index": abstract("We evaluate energy efficiency of generated code from LLMs.")},
+            {"id": "Wdirect", "title": "Measuring Energy and Water Consumption of Large Language Model Inference",
+             "publication_year": 2025, "publication_date": "2025-06-01", "type": "article",
+             "authorships": [], "primary_location": {}, "open_access": {}, "relevance_score": 10,
+             "abstract_inverted_index": abstract("We measure energy consumption and water usage during LLM inference.")},
+        ]
+        with patch.object(tools, "_request", return_value={"results": rows}):
+            result = tools.research(
+                query="large language model inference training energy consumption water consumption measurement",
+                limit=5,
+            )
+        self.assertEqual(["Wdirect"], [work["openalex_id"] for work in result["data"]["works"]])
 
     def test_recent_research_rejects_future_unrelated_and_duplicate_candidates(self):
         rows = [

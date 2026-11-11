@@ -10,12 +10,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prepare_wheelhouse import wheelhouse_preflight
 sys.path.insert(0, str(ROOT / "backend"))
 from olcr_api.knowledge import KnowledgeIndex
-RUNTIME=Path(os.environ.get("OLCR_STANDALONE_PYTHON", "/private/tmp/olcr-release-inputs/cpython-3.10.21+20260825-aarch64-apple-darwin-install_only_stripped.tar.gz"))
-RUNTIME_SHA="78c7cb7cf464985bf8fd30fbf913aa428d152fd76b045e149f00b0f6b681a5ae"
-MODEL=Path(os.environ.get("OLCR_RERANKER_SOURCE", "/private/tmp/olcr-rerank-hf/hub/models--Qwen--Qwen3-Reranker-0.6B/snapshots/e61197ed45024b0ed8a2d74b80b4d909f1255473"))
+PYTHON_VERSION="3.12.15"
+PYTHON_RELEASE="20261003"
+RUNTIME=Path(os.environ.get("OLCR_STANDALONE_PYTHON", f"/private/tmp/olcr-release-inputs/cpython-{PYTHON_VERSION}+{PYTHON_RELEASE}-aarch64-apple-darwin-install_only_stripped.tar.gz"))
+RUNTIME_SHA="ad8d0c637c0a36b967b310e2c07254f4d2ca8cabaa7699e55ed6290aceb481a2"
+LAYA_MULTILINGUAL_REVISION=os.environ.get("OLCR_LAYA_MULTILINGUAL_REVISION", "052592a15d198d9ad47da779604259b10b47b7aa")
 WHEELHOUSE=Path(os.environ["OLCR_WHEELHOUSE"]) if os.environ.get("OLCR_WHEELHOUSE") else None
 SERENA_RUNTIME=Path(os.environ["OLCR_SERENA_RUNTIME"]) if os.environ.get("OLCR_SERENA_RUNTIME") else None
 NODE_MCP_RUNTIME=Path(os.environ["OLCR_NODE_MCP_RUNTIME"]) if os.environ.get("OLCR_NODE_MCP_RUNTIME") else None
+AGENT_RUNTIME=Path(os.environ.get("OLCR_AGENT_RUNTIME_SOURCE",str(ROOT/"agent-runtime")))
 CODING_KNOWLEDGE_INDEX=Path(os.environ["OLCR_CODING_KNOWLEDGE_INDEX"]) if os.environ.get("OLCR_CODING_KNOWLEDGE_INDEX") else None
 
 def run(*args: str, cwd: Path|None=None): subprocess.run(args, cwd=cwd, check=True)
@@ -38,10 +41,10 @@ def collect_licenses(stage: Path, site: Path) -> list[dict]:
     root=stage/"licenses"; root.mkdir(); records=[]
     copy_file(ROOT/"LICENSE",root/"OLCR_LICENSE")
     records.append({"component":"OLCR","version":VERSION,"license":"Apache-2.0","evidence":"repository LICENSE","path":"licenses/OLCR_LICENSE","status":"VERIFIED"})
-    runtime_license=stage/"runtime"/"python"/"lib"/"python3.10"/"LICENSE.txt"
+    runtime_license=stage/"runtime"/"python"/"lib"/f"python{PYTHON_VERSION.rsplit('.', 1)[0]}"/"LICENSE.txt"
     if not runtime_license.is_file(): raise SystemExit("Python runtime license is missing")
     copy_file(runtime_license,root/"python-runtime"/"CPYTHON_LICENSE.txt")
-    records.append({"component":"CPython (Astral python-build-standalone)","version":"3.10.21","license":"PSF-2.0 and bundled notices","evidence":"runtime LICENSE.txt","path":"licenses/python-runtime/CPYTHON_LICENSE.txt","status":"VERIFIED"})
+    records.append({"component":"CPython (Astral python-build-standalone)","version":PYTHON_VERSION,"license":"PSF-2.0 and bundled notices","evidence":"runtime LICENSE.txt","path":"licenses/python-runtime/CPYTHON_LICENSE.txt","status":"VERIFIED"})
     fallback=site/"transformers-4.57.6.dist-info"/"licenses"/"LICENSE"
     for dist in sorted(site.glob("*.dist-info")):
         meta=dist/"METADATA"; name=next((line[6:] for line in meta.read_text(errors="replace").splitlines() if line.startswith("Name: ")),dist.name); version=next((line[9:] for line in meta.read_text(errors="replace").splitlines() if line.startswith("Version: ")),"")
@@ -54,14 +57,15 @@ def collect_licenses(stage: Path, site: Path) -> list[dict]:
         for source in sources: copy_file(source,target/source.name)
         license_line=next((line.split(": ",1)[1] for line in meta.read_text(errors="replace").splitlines() if line.startswith(("License: ","License-Expression: "))),"see bundled license")
         records.append({"component":name,"version":version,"license":license_line,"evidence":"installed distribution metadata and license file","path":str((target/sources[0].name).relative_to(stage)),"status":"VERIFIED"})
-    if not fallback.is_file(): raise SystemExit("Apache-2.0 text for reranker is missing")
-    copy_file(fallback,root/"reranker"/"Qwen3-Reranker-0.6B-APACHE-2.0")
-    records.append({"component":"Qwen/Qwen3-Reranker-0.6B","version":"e61197ed45024b0ed8a2d74b80b4d909f1255473","license":"Apache-2.0","evidence":"official model card metadata plus bundled Apache-2.0 text","path":"licenses/reranker/Qwen3-Reranker-0.6B-APACHE-2.0","status":"VERIFIED"})
-    for package in ("react","react-dom","scheduler"):
-        source=ROOT/"frontend"/"node_modules"/package/"LICENSE"
-        if not source.is_file(): raise SystemExit(f"frontend license missing for {package}")
-        target=root/"frontend"/f"{package}-LICENSE"; copy_file(source,target)
-        records.append({"component":package,"version":"see package-lock.json","license":"MIT","evidence":"installed frontend package LICENSE","path":str(target.relative_to(stage)),"status":"VERIFIED"})
+    for package in ("react","react-dom","scheduler","@xyflow/react","@xyflow/system",
+                    "classcat","zustand","use-sync-external-store","d3-color","d3-dispatch",
+                    "d3-drag","d3-ease","d3-interpolate","d3-selection","d3-timer","d3-transition","d3-zoom"):
+        package_root=ROOT/"frontend"/"node_modules"/package
+        sources=sorted(package_root.glob("LICENSE*"))
+        if not sources: raise SystemExit(f"frontend license missing for {package}")
+        metadata=json.loads((package_root/"package.json").read_text())
+        target=root/"frontend"/f"{package.replace('/', '-')}-LICENSE"; copy_file(sources[0],target)
+        records.append({"component":package,"version":metadata["version"],"license":metadata.get("license","see bundled license"),"evidence":"installed frontend package LICENSE","path":str(target.relative_to(stage)),"status":"VERIFIED"})
     (root/"license-manifest.json").write_text(json.dumps({"components":records},indent=2,sort_keys=True)+"\n")
     notices=["# OLCR v0.5.0 third-party notices","","License materials were collected from the bundled runtime/distribution metadata or installed package license files.",""]+[f"- {x['component']} {x['version']} — {x['license']} — `{x['path']}`" for x in records]
     (root/"THIRD_PARTY_NOTICES.md").write_text("\n".join(notices)+"\n")
@@ -92,6 +96,23 @@ def stage_node_mcp_runtime(stage: Path, source: Path | None) -> dict | None:
     license_manifest.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
     notices=stage/"licenses"/"THIRD_PARTY_NOTICES.md"; notices.write_text(notices.read_text()+f"- Node MCP runtime {metadata.get('node',{}).get('version','')} — see `licenses/node-mcp-runtime/license-inventory.json`\n")
     return {"path":"mcp-runtime/node","node":metadata.get("node"),"package_count":metadata.get("package_count"),"licensed_components":len(licenses.get("components",[])),"inventory":"licenses/node-mcp-runtime/license-inventory.json"}
+def stage_agent_runtime(stage: Path, source: Path) -> dict:
+    marker=source/"runtime-manifest.json"
+    if not marker.is_file(): raise SystemExit("AGENT_RUNTIME_PREPARE_REQUIRED: run scripts/prepare_agent_runtime.py")
+    metadata=json.loads(marker.read_text())
+    if metadata.get("engine_version") != "4.0.4" or metadata.get("node",{}).get("version") != "v24.18.0": raise SystemExit("AGENT_RUNTIME_VERSION_MISMATCH")
+    if metadata.get("package_lock_sha256") != sha(source/"package-lock.json") or metadata.get("runner_sha256") != sha(source/"runner.mjs"): raise SystemExit("AGENT_RUNTIME_SOURCE_CHANGED")
+    if not (source/"node_modules/node/bin/node").is_file(): raise SystemExit("AGENT_NODE_BINARY_MISSING")
+    shutil.copytree(source,stage/"agent-runtime",symlinks=True,ignore=shutil.ignore_patterns(".cache","*.log","*.sqlite*","*.jsonl","__pycache__"))
+    target=stage/"licenses"/"agent-runtime"/"license-inventory.json"
+    copy_file(source/"licenses/license-inventory.json",target)
+    manifest_path=stage/"licenses/license-manifest.json";manifest=json.loads(manifest_path.read_text())
+    manifest["components"].append({"component":"LibreChat Agents runtime","version":"4.0.4","license":"MIT and bundled dependency notices","evidence":"installed pinned npm packages and exact upstream Node notice","path":"licenses/agent-runtime/license-inventory.json","status":"VERIFIED"})
+    manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
+    notices=stage/"licenses/THIRD_PARTY_NOTICES.md"
+    with notices.open("a") as output: output.write("- LibreChat Agents 4.0.4 — MIT and bundled notices — `licenses/agent-runtime/license-inventory.json`\n")
+    return {"path":"agent-runtime",**metadata}
+
 def stage_coding_knowledge(stage: Path, source: Path | None) -> dict:
     """Stage only a completed immutable index; release never creates vectors."""
     if source is None: raise SystemExit("CODING_KNOWLEDGE_INDEX_STAGE_INPUT_REQUIRED")
@@ -110,15 +131,12 @@ def stage_coding_knowledge(stage: Path, source: Path | None) -> dict:
 def main():
     if platform.system()!="Darwin" or platform.machine()!="arm64": raise SystemExit("macOS arm64 build host required")
     if not RUNTIME.is_file() or sha(RUNTIME)!=RUNTIME_SHA: raise SystemExit("verified standalone Python build input is missing")
-    if not MODEL.is_dir() or not (MODEL/"model.safetensors").is_file(): raise SystemExit("validated reranker snapshot is missing")
-    if SERENA_RUNTIME is None: raise SystemExit("SERENA_RUNTIME_STAGE_INPUT_REQUIRED")
-    if NODE_MCP_RUNTIME is None: raise SystemExit("NODE_MCP_RUNTIME_STAGE_INPUT_REQUIRED")
     if CODING_KNOWLEDGE_INDEX is None: raise SystemExit("CODING_KNOWLEDGE_INDEX_STAGE_INPUT_REQUIRED")
     run("npm","run","typecheck",cwd=ROOT/"frontend"); run("npm","run","build",cwd=ROOT/"frontend")
     out=ROOT/"release"; stage=out/NAME; shutil.rmtree(stage,ignore_errors=True); stage.mkdir(parents=True)
     with tarfile.open(RUNTIME,"r:gz") as archive: archive.extractall(stage)
     (stage/"runtime").mkdir(); shutil.move(str(stage/"python"),str(stage/"runtime"/"python"))
-    site=stage/"runtime"/"python"/"lib"/"python3.10"/"site-packages"; site.mkdir(parents=True,exist_ok=True)
+    site=stage/"runtime"/"python"/"lib"/f"python{PYTHON_VERSION.rsplit('.', 1)[0]}"/"site-packages"; site.mkdir(parents=True,exist_ok=True)
     py=stage/"runtime"/"python"/"bin"/"python3"
     pip_args=[str(py),"-m","pip","install","--no-cache-dir","--target",str(site)]
     if WHEELHOUSE:
@@ -129,23 +147,23 @@ def main():
         pip_args += ["--no-index", "--find-links", str(WHEELHOUSE)]
     pip_args += ["-r",str(ROOT/"backend"/"requirements.txt")]
     run(*pip_args)
+    run("sh",str(ROOT/"scripts/build-knowledge-reader.sh"))
+    copy_file(ROOT/"desktop/src-tauri/binaries/olcr-knowledge-reader",stage/"app/knowledge/olcr-knowledge-reader")
     shutil.copytree(ROOT/"backend",stage/"app"/"backend",ignore=shutil.ignore_patterns("__pycache__",".venv","*.pyc"))
     clean_runtime_cache(stage)
     shutil.copytree(ROOT/"frontend"/"dist",stage/"frontend")
-    shutil.copytree(MODEL,stage/"models"/"qwen3-reranker-0.6b",symlinks=False)
     shutil.copy2(ROOT/"packaging"/"install.sh",stage/"install.sh"); (stage/"install.sh").chmod(0o755)
     licenses=collect_licenses(stage,site)
     serena=stage_serena_runtime(stage,SERENA_RUNTIME)
-    node_mcp=stage_node_mcp_runtime(stage,NODE_MCP_RUNTIME)
     coding_knowledge=stage_coding_knowledge(stage,CODING_KNOWLEDGE_INDEX)
     (stage/"README.txt").write_text(
-        "Run ./install.sh, then run olcr. Ollama and its models remain external prerequisites.\n\n"
+        "Run ./install.sh, then run olcr. Laya downloads on initial API setup; agent, Node tool and browser engines download on first use. Ollama and its models remain external prerequisites.\n\n"
         "OLCR v0.5.0 is not Apple-notarized. If macOS quarantine metadata is present, install.sh "
         "warns and removes it only from OLCR's installed runtime and OLCR-managed launcher; it does "
         "not change Gatekeeper system-wide or affect unrelated files. Running install.sh constitutes "
         "consent to this documented installation step.\n"
     )
-    manifest={"archive_structure_version":1,"olcr_version":VERSION,"target":{"os":"macos","architecture":"arm64"},"build_timestamp_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"git_commit":subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),"python":{"distribution":"astral-sh/python-build-standalone","version":"3.10.21","artifact_sha256":RUNTIME_SHA,"architecture":"aarch64-apple-darwin"},"reranker":{"id":"Qwen/Qwen3-Reranker-0.6B","revision":"e61197ed45024b0ed8a2d74b80b4d909f1255473","path":"models/qwen3-reranker-0.6b","license":"Apache-2.0","files":files(stage/"models"/"qwen3-reranker-0.6b")},"licenses":{"manifest":"licenses/license-manifest.json","verified_components":len(licenses)},"serena_runtime":serena,"node_mcp_runtime":node_mcp,"coding_knowledge":coding_knowledge,"external_ollama_models":{"required_for_answer_generation":"qwen3.8:latest","required_for_coding_knowledge_retrieval":"embeddinggemma:latest","dormant_semantic_judge":"qwen3.6:latest"},"dependencies":{d.metadata["Name"]:d.version for d in distributions(path=[str(site)] )}}
+    manifest={"archive_structure_version":1,"olcr_version":VERSION,"target":{"os":"macos","architecture":"arm64"},"build_timestamp_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"git_commit":subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),"python":{"distribution":"astral-sh/python-build-standalone","version":PYTHON_VERSION,"release":PYTHON_RELEASE,"artifact_sha256":RUNTIME_SHA,"architecture":"aarch64-apple-darwin"},"laya":{"package":"laya","package_version":"0.3.5","model_revision":LAYA_MULTILINGUAL_REVISION,"model_revisions":{"multilingual":LAYA_MULTILINGUAL_REVISION},"multilingual_model":"convaiinnovations/laya-multilingual","delivery":"first-launch-download"},"optional_components":{"delivery":"pinned-upstream-first-use","recipes":"app/backend/olcr_api/runtime_recipes","components":["laya","agents","node-tools","browser"]},"licenses":{"manifest":"licenses/license-manifest.json","verified_components":len(licenses)},"serena_runtime":serena,"coding_knowledge":coding_knowledge,"external_ollama_models":{"required_for_answer_generation":"qwen3.8:latest","required_for_coding_knowledge_retrieval":"embeddinggemma:latest","dormant_semantic_judge":"qwen3.6:latest"},"dependencies":{d.metadata["Name"]:d.version for d in distributions(path=[str(site)] )}}
     (stage/"manifest").mkdir(); (stage/"manifest"/"release-manifest.json").write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
     archive=out/f"{NAME}.tar.gz"
     with tarfile.open(archive,"w:gz",format=tarfile.PAX_FORMAT) as tf: tf.add(stage,arcname=NAME,recursive=True)

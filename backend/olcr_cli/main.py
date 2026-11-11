@@ -28,6 +28,7 @@ from olcr_api.config import DEFAULT_MAIN_MODEL, DEFAULT_ROUTER_MODEL, MODEL_REQU
 from olcr_api.web import setup_guidance
 from olcr_api.commands import catalog
 from olcr_api.coding_benchmark import run_case, run_live_case, compare_results
+from olcr_api.skills import SkillManager, SkillPolicyError
 
 VERSION="0.6.0"; API="http://127.0.0.1:8000/api"; ACCENT="\033[38;2;149;227;41m"; RESET="\033[0m"
 OWNED_BACKEND = None
@@ -132,15 +133,19 @@ def configure_backend(state):
 def runtime_status(state):
     checks={"platform":"READY" if platform.system()=="Darwin" and platform.machine()=="arm64" else "UNSUPPORTED","workspace":"READY" if state.workspace() else "MISSING","ripgrep":"READY" if shutil.which("rg") else "DEGRADED (Python fallback)","ollama":"UNAVAILABLE","semantic":"Experimental / unchecked"}
     try:
-        tags=request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2); names={x["name"] for x in json.load(tags).get("models",[])}; checks["ollama"]="READY"; vision=os.environ.get("OLCR_VISION_MODEL","qwen2.5vl:3b"); brain=os.environ.get("OLLAMA_MODEL",DEFAULT_MAIN_MODEL); router=os.environ.get("OLLAMA_ROUTER_MODEL",DEFAULT_ROUTER_MODEL); checks.update({name:("READY" if name in names else "MISSING") for name in ("embeddinggemma:latest",brain,router,vision)})
+        tags=request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2); names={x["name"] for x in json.load(tags).get("models",[])}; checks["ollama"]="READY"; vision=os.environ.get("OLCR_VISION_FALLBACK_MODEL","qwen3-vl:2b-instruct"); brain=os.environ.get("OLLAMA_MODEL",DEFAULT_MAIN_MODEL); router=os.environ.get("OLLAMA_ROUTER_MODEL",DEFAULT_ROUTER_MODEL); checks.update({name:("READY" if name in names else "MISSING") for name in ("embeddinggemma:latest",brain,router,vision)})
     except (error.URLError,TimeoutError): pass
     try:
-        health=api("GET","/health"); checks["backend"]="READY"; checks["model configuration"]="READY" if health.get("model_configuration")=="ready" else "NOT READY (set a main Ollama model)"; checks["semantic"]="Experimental" if health.get("vector_enabled") else "DISABLED"
+        health=api("GET","/health"); checks["backend"]="READY"; checks["model configuration"]="READY" if health.get("model_configuration")=="ready" else "NOT READY (set a main Ollama model)"; checks["semantic"]="Experimental" if health.get("vector_enabled") else "DISABLED"; checks["laya"]="READY" if (health.get("routing") or {}).get("ready") else "DEGRADED (preflight required)"
     except (error.URLError,error.HTTPError,TimeoutError): checks["backend"]="NOT RUNNING"
     return checks
 
 def context_text(state):
     item=state.context(); return item.get("content","") if item else ""
+
+
+def skill_manager(state):
+    return SkillManager(state.root / "skills")
 
 def _auto_image_path(value: str) -> str | None:
     if "\n" in value: return None
@@ -223,7 +228,7 @@ def request_text(state,text):
         if state.external(): payload["external"]=state.external()
         if image_relevant: payload["image"]=image
         result=api("POST", "/chat", payload)
-        if image_relevant and any(c.get("stage")=="QWEN36_MAIN_MODEL" for c in result.get("task",{}).get("model_calls",[])):
+        if image_relevant and any(c.get("stage")=="MAIN_LANGUAGE_MODEL" for c in result.get("task",{}).get("model_calls",[])):
             progress_label="generating..."
             if sys.stdout.isatty(): print("generating...", flush=True)
         return result["response"]
@@ -293,8 +298,30 @@ def command(state,parts,input_fn=input,output=print):
             output(f"Error: {exc}"); return 2
     if head=="models":
         for k,v in runtime_status(state).items():
-            if k in {"ollama","embeddinggemma:latest","semantic"} or k.startswith(("qwen3:","qwen3.5:","LiquidAI/lfm2.5-","qwen2.5vl:")): output(f"{k}: {v}")
+            if k in {"ollama","embeddinggemma:latest","semantic","laya"} or k.startswith(("qwen3:","qwen3.5:","qwen2.5vl:")): output(f"{k}: {v}")
         return 0
+    if head=="skill":
+        manager=skill_manager(state)
+        action=tail[0] if tail else "show"
+        try:
+            if action=="show":
+                output(json.dumps({"skills": manager.registry(), "lock": manager.lock()}, ensure_ascii=False, indent=2)); return 0
+            if action=="intake" and len(tail)>=3:
+                name,source=tail[1],Path(" ".join(tail[2:]).strip('"')).resolve()
+                workspace=state.workspace()
+                if workspace is None or workspace not in source.parents:
+                    raise SkillPolicyError("SKILL_SOURCE_OUTSIDE_WORKSPACE")
+                record=manager.intake(name=name, version="0", source=str(source), content=source.read_text(encoding="utf-8"))
+                output(json.dumps(record, ensure_ascii=False)); return 0
+            if action=="validate" and len(tail)>=2:
+                output(json.dumps(manager.validate(tail[1]), ensure_ascii=False)); return 0
+            if action=="activate" and len(tail)>=2:
+                permission=tail[tail.index("--permission")+1] if "--permission" in tail and tail.index("--permission")+1<len(tail) else "explicit"
+                output(json.dumps(manager.activate(tail[1], permission=permission), ensure_ascii=False)); return 0
+            output("Error: usage /skill show | /skill intake <name> <workspace-file> | /skill validate <name> | /skill activate <name> [--permission explicit|approved]")
+            return 2
+        except (OSError, ValueError, SkillPolicyError) as exc:
+            output(f"Error: {exc}"); return 2
     if head=="memory":
         action=tail[0] if tail else "show"
         if action not in {"show", "on", "off"}:
@@ -322,7 +349,7 @@ def command(state,parts,input_fn=input,output=print):
             if action not in {"set","reset"} or len(tail)<2 or tail[1] not in roles:
                 output("Error: usage /option show|set <brain|router|vision> \"model\" | /option reset <brain|router|vision>"); return 2
             role,key=tail[1],roles[tail[1]]
-            value=(DEFAULT_MAIN_MODEL if role=="brain" else "qwen2.5vl:3b" if role=="vision" else DEFAULT_ROUTER_MODEL) if action=="reset" else " ".join(tail[2:]).strip('"')
+            value=(DEFAULT_MAIN_MODEL if role=="brain" else "role:gui_grounding" if role=="vision" else DEFAULT_ROUTER_MODEL) if action=="reset" else " ".join(tail[2:]).strip('"')
             if value:
                 tags=json.load(request.urlopen("http://127.0.0.1:11434/api/tags",timeout=2)).get("models",[])
                 if value not in {item.get("name") for item in tags}: output(f"Error: model unavailable: {value}"); return 2
@@ -375,7 +402,7 @@ def command(state,parts,input_fn=input,output=print):
             output(setup_guidance())
         elif action=="show":
             try:
-                current=api("GET", "/settings"); mode=current.get("web_mode", "off")
+                current=api("GET", "/settings"); mode=current.get("web_mode", "auto")
                 output(f"WEB_MODE={mode} EXTERNAL_NETWORK_ALLOWED={'YES' if mode != 'off' else 'NO'}")
             except Exception as exc: output(f"Error: {exc}")
         elif action=="clear": state.data.pop("web_context",None); state.save(); output("Web context cleared.")

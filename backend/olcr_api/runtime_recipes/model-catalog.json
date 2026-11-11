@@ -1,0 +1,313 @@
+{
+  "manifest_kind": "olcr_model_readiness",
+  "schema_version": 1,
+  "verified_at_utc": "2026-09-22T23:54:35Z",
+  "workspace_root": "/Users/nagimachino/Documents/ChatGPT/lightweight local llm",
+  "target": {
+    "machine": "MacBook Air Mac17,3",
+    "chip": "Apple M5",
+    "cores": 10,
+    "memory_gb": 32,
+    "os": "macOS 26.5.2",
+    "architecture": "arm64",
+    "mps": "available",
+    "disk_free_gib_at_verification": 465
+  },
+  "runtime_environments": {
+    "olcr_venv": {
+      "python": "3.11.16",
+      "laya": "0.3.5",
+      "torch": "2.8.0",
+      "transformers": "4.57.6",
+      "torchvision": "0.23.0",
+      "timm": "1.0.30"
+    },
+    "mlx_venv": {
+      "python": "3.11",
+      "mlx": "0.32.0",
+      "mlx_lm": "0.31.3",
+      "mlx_vlm": "0.6.3",
+      "transformers": "5.5.0",
+      "torch": "2.14.0",
+      "torchvision": "0.29.0",
+      "timm": "1.0.30"
+    },
+    "ollama": {
+      "version": "0.32.15",
+      "endpoint": "http://127.0.0.1:11434"
+    }
+  },
+  "models": [
+    {
+      "id": "embeddinggemma",
+      "role": "semantic_embedding",
+      "canonical_repo": "google/embeddinggemma-300m",
+      "canonical_revision": "57c266a740f537b4dc058e1b0cda161fd15afa75",
+      "deployment_repo": "ollama/embeddinggemma:latest",
+      "deployment_revision": "82f094e4c0e19bc4208c692996d4f1ecf14e82a8dee579ee1d2ca1175260058e",
+      "runtime": "Ollama 0.32.15",
+      "quantization": "BF16 (verified via local Ollama /api/show)",
+      "local_path": "Ollama model store",
+      "license": "gemma",
+      "artifact_size_bytes_upstream": 1269643611,
+      "artifact_size_ollama": "621 MB",
+      "provenance": {
+        "upstream": "google/embeddinggemma-300m@57c266a740f537b4dc058e1b0cda161fd15afa75",
+        "conversion": "Ollama package digest 82f094e4c0e19bc4208c692996d4f1ecf14e82a8dee579ee1d2ca1175260058e; local metadata verified as gemma-embedding, 307581696 parameters, BF16, 768 embedding dimensions; conversion recipe not exposed"
+      },
+      "smoke": {
+        "load": "PASS",
+        "inference": "PASS",
+        "embedding_dimensions": 768
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "laya_multilingual",
+      "role": "multilingual_choice_router",
+      "canonical_repo": "convaiinnovations/laya-multilingual",
+      "canonical_revision": "052592a15d198d9ad47da779604259b10b47b7aa",
+      "deployment_repo": "convaiinnovations/laya-multilingual",
+      "deployment_revision": "052592a15d198d9ad47da779604259b10b47b7aa",
+      "runtime": "laya 0.3.5 + torch 2.8.0 CPU",
+      "quantization": "source checkpoint",
+      "local_path": "olcr/.cache/laya/models/multilingual",
+      "license": "apache-2.0",
+      "artifact_size_bytes_upstream": 678210151,
+      "provenance": {
+        "upstream": "convaiinnovations/laya-multilingual@052592a15d198d9ad47da779604259b10b47b7aa",
+        "conversion": "none"
+      },
+      "smoke": {
+        "preflight": "PASS",
+        "load": "PASS",
+        "japanese_choice": "PASS"
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "ternary_bonsai_2_27b",
+      "role": "local_reasoning_code_planning",
+      "canonical_repo": "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",
+      "canonical_revision": "fcba37d2117a7077eac6b613b2668d14d9779edd",
+      "deployment_repo": "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",
+      "deployment_revision": "fcba37d2117a7077eac6b613b2668d14d9779edd",
+      "runtime": "bundled runtime/vision_artifact.py + mlx 0.32.0 + mlx-vlm 0.6.3",
+      "quantization": "Hadamard-aware ternary 2-bit packed Qwen3.5; schema 2; vision enabled",
+      "local_path": "olcr/models/bonsai/Ternary-Bonsai-2-27B-mlx-2bit",
+      "license": "apache-2.0",
+      "artifact_size_bytes_upstream": 8608739065,
+      "artifact_size_local_du_bytes": 8608972800,
+      "provenance": {
+        "upstream": "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit@fcba37d2117a7077eac6b613b2668d14d9779edd",
+        "conversion": "publisher-supplied packed MLX artifact; runtime source PrismML-Eng/Bonsai-demo@ca8c3fb03ccc3fd6a6faa10263f6c82ba9cf555d"
+      },
+      "smoke": {
+        "runtime_import": "PASS",
+        "generic_mlx_loader_guard": "PASS_REJECTED",
+        "bundled_schema2_loader": "PASS",
+        "text_reasoning": "PASS (42)",
+        "code_correction": "PASS",
+        "planning": "PASS",
+        "deterministic_inference": "PASS"
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "ui_venus_official",
+      "role": "gui_grounding_reference",
+      "canonical_repo": "inclusionAI/UI-Venus-1.5-2B",
+      "canonical_revision": "bc4c6e62a1c545e043761439be95646d801853a4",
+      "deployment_repo": "inclusionAI/UI-Venus-1.5-2B",
+      "deployment_revision": "bc4c6e62a1c545e043761439be95646d801853a4",
+      "runtime": "transformers 4.57.6 + torch 2.8.0 + MPS",
+      "quantization": "official source checkpoint",
+      "local_path": "olcr/models/vision/UI-Venus-1.5-2B-official",
+      "license": "apache-2.0",
+      "artifact_size_bytes_upstream": 4884530005,
+      "artifact_size_local_du_bytes": 4884598784,
+      "provenance": {
+        "upstream": "inclusionAI/UI-Venus-1.5-2B@bc4c6e62a1c545e043761439be95646d801853a4",
+        "conversion": "none"
+      },
+      "smoke": {
+        "load": "PASS",
+        "grounding_contract": "PASS",
+        "grounding_parity": "PASS (6/6; normalized [0,1000] bbox hit; includes Retina 2x)"
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "ui_venus_mlx_6bit",
+      "role": "gui_grounding_deployment",
+      "canonical_repo": "inclusionAI/UI-Venus-1.5-2B",
+      "canonical_revision": "bc4c6e62a1c545e043761439be95646d801853a4",
+      "deployment_repo": "mlx-community/UI-Venus-1.5-2B-6bit",
+      "deployment_revision": "95e3994ac9d74fe047cf44c072f6569db62856e7",
+      "runtime": "mlx 0.32.0 + mlx-vlm 0.6.3",
+      "quantization": "6-bit MLX conversion",
+      "local_path": "olcr/models/vision/UI-Venus-1.5-2B-6bit",
+      "license": "apache-2.0",
+      "artifact_size_bytes_upstream": 4884530005,
+      "artifact_size_bytes_deployment": 2476509719,
+      "artifact_size_local_du_bytes": 2476601344,
+      "provenance": {
+        "upstream": "inclusionAI/UI-Venus-1.5-2B@bc4c6e62a1c545e043761439be95646d801853a4",
+        "conversion": "mlx-community/UI-Venus-1.5-2B-6bit@95e3994ac9d74fe047cf44c072f6569db62856e7"
+      },
+      "smoke": {
+        "load": "PASS",
+        "grounding_contract": "PASS",
+        "grounding_parity": "PASS (6/6; normalized [0,1000] bbox hit; includes Retina 2x)",
+        "peak_mlx_memory_gb": 3.79
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "fastvlm_official",
+      "role": "general_image_reference",
+      "canonical_repo": "apple/FastVLM-0.5B",
+      "canonical_revision": "16375720c2d673fa583e57e9876afde27549c7d0",
+      "deployment_repo": "apple/FastVLM-0.5B",
+      "deployment_revision": "16375720c2d673fa583e57e9876afde27549c7d0",
+      "runtime": "transformers 4.57.6 + torch 2.8.0 + MPS + official remote code",
+      "quantization": "official source checkpoint",
+      "local_path": "olcr/models/vision/FastVLM-0.5B-official",
+      "license": "apple-amlr",
+      "artifact_size_bytes_upstream": 1529997227,
+      "artifact_size_local_du_bytes": 1530109952,
+      "provenance": {
+        "upstream": "apple/FastVLM-0.5B@16375720c2d673fa583e57e9876afde27549c7d0",
+        "conversion": "none"
+      },
+      "smoke": {
+        "load": "PASS",
+        "general_image_inference": "PASS (5/5 cases generated output)",
+        "keyword_parity": "2/5 on synthetic fixtures; retained as official reference, not deployment backend",
+        "mps_peak_gb": 1.252
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "fastvlm_mlx_bf16",
+      "role": "general_image_deployment",
+      "canonical_repo": "apple/FastVLM-0.5B",
+      "canonical_revision": "16375720c2d673fa583e57e9876afde27549c7d0",
+      "deployment_repo": "mlx-community/FastVLM-0.5B-bf16",
+      "deployment_revision": "81ffe929046666c43de53691147b1669ba0f3a4c",
+      "runtime": "mlx 0.32.0 + mlx-vlm 0.6.3",
+      "quantization": "bf16 MLX conversion",
+      "local_path": "olcr/models/vision/FastVLM-0.5B-bf16",
+      "license": "apple-amlr",
+      "artifact_size_bytes_upstream": 1529997227,
+      "artifact_size_bytes_deployment": 1268367611,
+      "artifact_size_local_du_bytes": 1268494336,
+      "provenance": {
+        "upstream": "apple/FastVLM-0.5B@16375720c2d673fa583e57e9876afde27549c7d0",
+        "conversion": "mlx-community/FastVLM-0.5B-bf16@81ffe929046666c43de53691147b1669ba0f3a4c; README cites mlx-vlm PR 502"
+      },
+      "smoke": {
+        "load": "PASS",
+        "general_image_inference": "PASS (5/5 expected-keyword cases)",
+        "cases": ["object photo", "scene", "several objects", "text in image", "ambiguous similar controls"],
+        "peak_mlx_memory_gb": 2.058
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "ornith_1_5_9b",
+      "role": "local_general_language_model",
+      "canonical_repo": "ollama/ornith-1.5:9b",
+      "canonical_revision": "e5df7dcdd8a263994df62d610317e07be0d6af23f96fcbd8543273058fce575e",
+      "deployment_repo": "ollama/ornith-1.5:9b",
+      "deployment_revision": "e5df7dcdd8a263994df62d610317e07be0d6af23f96fcbd8543273058fce575e",
+      "runtime": "Ollama 0.32.15",
+      "quantization": "Ollama packaged artifact; tag does not expose quantization",
+      "local_path": "Ollama model store",
+      "license": "not exposed by Ollama tag",
+      "artifact_size_ollama": "6.6 GB",
+      "provenance": {
+        "upstream": "Ollama package digest e5df7dcdd8a263994df62d610317e07be0d6af23f96fcbd8543273058fce575e",
+        "conversion": "Ollama package recipe not exposed"
+      },
+      "smoke": {
+        "load": "PASS",
+        "text_inference": "PASS (READY)"
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "qwen3_vl_2b_instruct",
+      "role": "local_vision_language",
+      "canonical_repo": "ollama/qwen3-vl:2b-instruct",
+      "canonical_revision": "ea422f1e73652a95479954d8572d3c8c6022f628ce2d38a1a04aae1b7f2d5300",
+      "deployment_repo": "ollama/qwen3-vl:2b-instruct",
+      "deployment_revision": "ea422f1e73652a95479954d8572d3c8c6022f628ce2d38a1a04aae1b7f2d5300",
+      "runtime": "Ollama 0.32.15",
+      "quantization": "Ollama packaged artifact; tag does not expose quantization",
+      "local_path": "Ollama model store",
+      "license": "not exposed by Ollama tag",
+      "artifact_size_ollama": "1.9 GB",
+      "provenance": {
+        "upstream": "Ollama package digest ea422f1e73652a95479954d8572d3c8c6022f628ce2d38a1a04aae1b7f2d5300",
+        "conversion": "Ollama package recipe not exposed"
+      },
+      "smoke": {
+        "load": "PASS",
+        "image_inference": "PASS"
+      },
+      "ready": "YES"
+    },
+    {
+      "id": "plamo_3_translate_2b",
+      "role": "translation",
+      "canonical_repo": "pfnet/plamo-3-translate-2b",
+      "canonical_revision": "355637cc04db67195ba87a97da85eaf1d52a22e8",
+      "deployment_repo": "pfnet/plamo-3-translate-2b",
+      "deployment_revision": "355637cc04db67195ba87a97da85eaf1d52a22e8",
+      "runtime": "plamo-translate 1.2.0 + MLX",
+      "quantization": "4bit MLX quantization at load time",
+      "local_path": "olcr/models/plamo-3-translate-2b",
+      "license": "PLaMo Community License",
+      "artifact_size_bytes_upstream": 5760000000,
+      "provenance": {
+        "upstream": "pfnet/plamo-3-translate-2b@355637cc04db67195ba87a97da85eaf1d52a22e8",
+        "conversion": "none; PFN plamo-translate CLI 1.2.0 runs the original PLaMo 3 checkpoint with MLX"
+      },
+      "smoke": {
+        "runtime": "NOT_RUN_IN_THIS_WORKSPACE",
+        "translation": "NOT_RUN_IN_THIS_WORKSPACE"
+      },
+      "ready": "YES"
+    }
+  ],
+  "residency_tests": {
+    "method": "Each case held EmbeddingGemma through Ollama and Laya multilingual in the parent process; the target was loaded in a child runtime and unloaded before child exit. Ollama ps and vm.swapusage were sampled before/after.",
+    "ollama_baseline_during_runs": ["embeddinggemma:latest 85462619ee72", "ornith-1.5:9b e5df7dcdd8a2"],
+    "cases": {
+      "A_embeddinggemma_laya": {"status": "PASS", "embedding_reuse_s": 0.051, "laya_load_s": 6.553, "laya_inference_s": 0.046, "parent_maxrss_gb": 2.777, "swap_used_before_mb": 54707, "swap_used_after_mb": 54699},
+      "B_embeddinggemma_laya_ui": {"status": "PASS", "target_load_s": 1.232, "target_inference_s": 1.175, "target_unload_s": 0.084, "target_active_gb": 2.465, "target_peak_gb": 3.510},
+      "C_embeddinggemma_laya_fast": {"status": "PASS", "target_load_s": 0.718, "target_inference_s": 0.427, "target_unload_s": 0.087, "target_active_gb": 1.246, "target_peak_gb": 2.058},
+      "D_embeddinggemma_laya_bonsai": {"status": "PASS", "target_load_s": 2.730, "target_inference_s": 1.305, "target_unload_s": 0.166, "target_active_gb": 8.796, "target_peak_gb": 9.199, "text_output": "42"},
+      "E_embeddinggemma_laya_ornith": {"status": "PASS", "target_load_or_reuse_s": 0.003, "target_inference_s": 1.480, "ollama_ps": "ornith-1.5:9b and embeddinggemma:latest resident"}
+    }
+  },
+  "readiness_gate": {
+    "EMBEDDINGGEMMA_READY": "YES",
+    "LAYA_MULTILINGUAL_READY": "YES",
+    "BONSAI_READY": "YES",
+    "ORNITH_READY": "YES",
+    "UI_VENUS_READY": "YES",
+    "FASTVLM_READY": "YES",
+    "QWEN3_VL_READY": "YES",
+    "LAYA_ENGLISH": "NOT_REQUIRED",
+    "MODEL_READINESS_GATE": "PASS"
+  },
+  "open_issues": [],
+  "resolved_issues": [
+    "Bonsai schema 2 vision pack rejected by generic mlx_lm.load; resolved by using the bundled vision_artifact.py Hadamard-aware loader.",
+    "UI-Venus evaluation initially used the wrong output contract; resolved to the official normalized [0,1000] point format and bbox-hit parity.",
+    "FastVLM official and MLX remote code required timm; installed timm 1.0.30 in both runtime environments before validation."
+  ],
+  "next_phase": "Architecture integration may proceed: add model adapters/routing using this manifest; do not redownload or replace the pinned artifacts without a new manifest revision."
+}

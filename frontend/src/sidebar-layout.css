@@ -1,0 +1,64 @@
+/* Keep the sidebar sections inside the viewport; long conversation histories
+   scroll within their own list so the section heading stays in place. */
+.side {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side > .brand,
+.side > .primary,
+.side > input,
+.side > .label,
+.side > .chat-title {
+  flex: 0 0 auto;
+}
+
+.side > .project-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(24vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.side > .chat-list {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: min(54vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+}
+
+@media (max-width: 700px) {
+  .side {
+    overflow-y: auto;
+  }
+
+  .side > .project-list {
+    max-height: 56px;
+  }
+
+  .side > .chat-list {
+    flex: 0 1 auto;
+    max-height: 96px;
+  }
+}
+
+.conversation-running{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:8px;background:var(--accent-soft,#edf6df);color:var(--fg,#344623);font-size:11px;white-space:nowrap}
+.conversation-delete:disabled{opacity:.35;cursor:default}
+
+/* Keep pin and delete controls in their own columns, including projects with
+   an overlaid workspace chooser. The list height/inner scrolling stays intact. */
+.side .project-row,.side .conversation-row{display:grid;grid-template-columns:minmax(0,1fr) 30px 30px;gap:4px;padding-right:0;min-width:0}
+.side .project-row .project-item{grid-column:1;width:100%;padding-right:10px}
+.side .project-row:has(.workspace-assign) .project-item{width:100%;padding-left:48px}
+.side .project-row .sidebar-pin{grid-column:2}
+.side .project-row .project-delete{grid-column:3;position:static;transform:none}
+.sidebar-pin{display:inline-grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--olcr-text-secondary);cursor:pointer}
+.sidebar-pin:hover{background:#f1f8e9;color:var(--olcr-text-primary)}
+.sidebar-pin[aria-pressed=true]{color:#3b6d35;background:#f1f8e9}
+.sidebar-pin[aria-pressed=true] .ui-icon path:first-child{fill:currentColor}
+.sidebar-pin:focus-visible{outline:3px solid rgba(149,227,41,.4);outline-offset:1px}
+.sidebar-pin:disabled{opacity:.4;cursor:default}

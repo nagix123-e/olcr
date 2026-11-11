@@ -1,0 +1,5 @@
+.trip-plan-card{border:1px solid var(--olcr-border);border-radius:12px;padding:12px 16px;margin:12px 0;background:var(--olcr-surface);overflow-wrap:anywhere}
+.trip-plan-card summary{cursor:pointer;min-height:28px;font-weight:600;line-height:1.7}
+.trip-plan-card summary:focus-visible{outline:2px solid var(--olcr-accent);outline-offset:4px}
+.trip-plan-card dl{margin:12px 0}.trip-plan-card dl>div{display:grid;grid-template-columns:minmax(70px,100px) 1fr;gap:12px;margin:8px 0}
+.trip-plan-card dt{font-weight:600}.trip-plan-card dd{margin:0;white-space:pre-wrap}.trip-plan-card p{font-size:.9em;line-height:1.6}

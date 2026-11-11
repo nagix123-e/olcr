@@ -9,7 +9,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 import olcr_api.app as api
 from olcr_api.continuation import task_continuation_policy, major_phase_plan, phase_lifecycle_stages
-from olcr_api.coding_tasks import derive_task_graph, normalize_coding_requirements, normalize_task_graph, validate_plan
+from olcr_api.coding_tasks import (derive_task_graph, normalize_coding_requirements,
+                                   normalize_task_graph, reconcile_graph_references, validate_plan)
 from olcr_api.db import Database
 from olcr_api.models import Task, TaskState
 
@@ -68,7 +69,8 @@ class MajorPolicyTests(unittest.TestCase):
         original = plan(WEBSITE, 1)
         original["phases"][0].update(goal="Inspect repository; MCP preflight; install dependencies; implement homepage; browser verification; finalize report",
                                       done=["Homepage implemented", "Browser responsive checks pass"], verify=["typecheck passes", "Playwright checks pass"])
-        normalized = major_phase_plan(original, task_continuation_policy(WEBSITE, normalize_coding_requirements(WEBSITE)))
+        normalized = major_phase_plan(original, task_continuation_policy(WEBSITE, normalize_coding_requirements(WEBSITE)),
+                                      verification_requested=True)
         self.assertEqual(3, len(normalized["phases"]))
         self.assertEqual([], validate_plan(normalized, WEBSITE))
         self.assertEqual(original["scope"], normalized["scope"])
@@ -78,6 +80,88 @@ class MajorPolicyTests(unittest.TestCase):
         self.assertNotIn("finalization", phase_lifecycle_stages(work))
         self.assertIn("typecheck passes", work["verify"])
         self.assertIn("Playwright checks pass", normalized["phases"][-1]["verify"])
+
+    def test_major_phase_plan_keeps_verification_only_contracts_out_of_implementation(self):
+        original = plan(WEBSITE, 2)
+        original["phases"][0].update(
+            goal="Inspect repository; implement the homepage; finalize the implementation",
+            done=["Homepage implemented"], verify=["typecheck passes"],
+            file_manifest=[{"path": "src/App.tsx", "action": "modify"}],
+            requires_repo_mutation=True, requires_dependency_installation=True,
+            package_json_config_mutation=True)
+        original["phases"][1].update(
+            goal="Consolidated browser verification",
+            execution_mode="VERIFICATION_ONLY",
+            required_mcp=["playwright"],
+            done=["Implementation-caused console errors are absent"],
+            verify=["Playwright checks pass"])
+
+        normalized = normalize_task_graph(
+            original, "FRONTEND_ONLY_MARKETING_SITE", ["animejs", "shadcn", "playwright"],
+            verification_requested=True)
+        major = major_phase_plan(
+            normalized, task_continuation_policy(WEBSITE, normalize_coding_requirements(WEBSITE)),
+            verification_requested=True)
+
+        implementation = [phase for phase in major["phases"]
+                          if phase.get("kind") != "ORCHESTRATOR_BLUEPRINT"
+                          and phase.get("execution_mode") != "VERIFICATION_ONLY"]
+        verification_only = [phase for phase in major["phases"]
+                             if phase.get("execution_mode") == "VERIFICATION_ONLY"]
+        self.assertTrue(implementation)
+        self.assertEqual(1, len(verification_only))
+        self.assertEqual([], validate_plan(major, WEBSITE))
+        self.assertFalse(any("Implement" in phase.get("goal", "")
+                             for phase in verification_only))
+        self.assertTrue(all(contract in {"FRONTEND_STACK", "MARKETING_STRUCTURE"}
+                            for phase in major["phases"]
+                            for contract in phase.get("acceptance_contract", [])))
+        self.assertTrue(all("MARKETING_STRUCTURE" not in phase.get("acceptance_contract", [])
+                            for phase in verification_only))
+        self.assertTrue(all("file_manifest" not in phase and not phase.get("requires_repo_mutation")
+                            and not phase.get("requires_dependency_installation")
+                            and not phase.get("package_json_config_mutation")
+                            for phase in verification_only))
+
+    def test_replan_prompt_context_omits_duplicated_blueprint_evidence(self):
+        source = plan("Create a site", 2)
+        source["file_manifest"] = [{"path": "src/App.tsx", "action": "modify", "owner_phase": "p1"}]
+        source["implementation_plan_artifact"] = {
+            "target_root": "/tmp/project",
+            "file_manifest": copy.deepcopy(source["file_manifest"]),
+            "manifest_coverage": {"valid": True},
+            "preimage_evidence": [{"source": "x" * 2000} for _ in range(30)],
+        }
+        source["blueprint"] = {"source_phases": copy.deepcopy(source["phases"]),
+                               "evidence": "x" * 50000}
+
+        compact = api._bounded_replan_plan_context(source, {"p1"}, "p2")
+
+        self.assertEqual(["src/App.tsx"], [item["path"] for item in compact["file_manifest"]])
+        self.assertEqual({"valid": True}, compact["implementation_plan_artifact"]["manifest_coverage"])
+        self.assertEqual(["p1", "p2"], [item["id"] for item in compact["phases"]])
+        self.assertNotIn("blueprint", compact)
+        self.assertNotIn("preimage_evidence", compact["implementation_plan_artifact"])
+        self.assertLess(len(json.dumps(compact)), 5000)
+
+    def test_major_phase_renumbering_remaps_manifest_owners_including_merged_phases(self):
+        original = plan(WEBSITE, 5)
+        original["file_manifest"] = [
+            {"path": f"src/Section{index}.tsx", "action": "create", "owner_phase": f"p{index}"}
+            for index in range(1, 5)
+        ]
+
+        major = major_phase_plan(original, {"task_size": "LARGE"}, verification_requested=True)
+        reconciled, changes, diagnostics = reconcile_graph_references(
+            major, major.get("graph_replacement_map"))
+
+        self.assertEqual({"p1": "major-1", "p2": "major-2", "p3": "major-3", "p4": "major-3",
+                          "p5": "major-4"}, major["graph_replacement_map"]["phase_ids"])
+        self.assertEqual(["major-1", "major-2", "major-3", "major-3"],
+                         [entry["owner_phase"] for entry in reconciled["file_manifest"]])
+        self.assertIn("file-owner:src/Section2.tsx:p2->major-2", changes)
+        self.assertTrue(diagnostics["valid"])
+        self.assertEqual([], validate_plan(reconciled, WEBSITE))
 
     def test_preserves_medium_plan_and_bounds_large_plan(self):
         medium = plan("Add a component", 2)
@@ -102,7 +186,8 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
         self.old_db, self.old_settings = api.db, api.settings
         api.db = Database(str(Path(self.tmp.name, "test.sqlite")))
         api.db.initialize()
-        api.rebuild(self.old_settings.with_overrides({"db_path": api.db.path, "task_manager_enabled": True}))
+        api.rebuild(self.old_settings.with_overrides({"db_path": api.db.path, "task_manager_enabled": True,
+                                                      "permission_level": "automatic"}))
         api.db.create_project("test", self.tmp.name, time.time(), "project")
         api.db.create_conversation("test", time.time(), "conversation", "project")
         self.client = TestClient(api.app)
@@ -125,8 +210,21 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
             api._run_coding_planning(task)
         return api.db.coding_task("task")
 
+    def test_planning_pipeline_keeps_manifest_owners_valid_after_profile_and_major_normalization(self):
+        model_plan = plan(WEBSITE, 3)
+        model_plan["file_manifest"] = [
+            {"path": "src/App.tsx", "action": "create", "owner_phase": "p1"},
+            {"path": "src/index.css", "action": "create", "owner_phase": "p2"},
+        ]
+
+        saved = self.prepare(model_plan=model_plan)
+
+        self.assertIsInstance(saved["plan"], dict)
+        self.assertEqual([], validate_plan(saved["plan"], WEBSITE))
+        self.assertEqual({"major-1"}, {item["owner_phase"] for item in saved["plan"]["file_manifest"]})
+
     def test_checkpoint_survives_restart_and_all_continue_paths_reuse_identity(self):
-        saved = self.prepare()
+        saved = self.prepare(goal=WEBSITE+'\npause after each major phase')
         self.assertEqual("RESUMABLE", saved["status"])
         self.assertEqual("RESOURCE_CHECKPOINT", saved["recovery_reason"])
         self.assertIsNone(saved["pending_authorization"])
@@ -146,6 +244,49 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
                 self.assertEqual(saved[key], resumed[key], key)
             self.assertEqual(1, len(api.db.coding_tasks("conversation")))
 
+    def test_recovery_resume_rechecks_saved_evidence_before_calling_planner(self):
+        goal = "Create output.txt and verify it exists"
+        task_plan = plan(goal, count=2)
+        phase = task_plan["phases"][0]
+        phase.update(done=["Create output.txt"], verify=["Verify output.txt exists"],
+                     required_mcp=["None"])
+        task_plan["phases"][1]["status"] = "pass"
+        task_plan["implementation_plan_artifact"] = {"target_root": self.tmp.name}
+        output = Path(self.tmp.name, "output.txt")
+        output.write_text("verified", encoding="utf-8")
+        task_id = "resume-complete-saved-evidence"
+        api.db.create_coding_task(task_id, "conversation", goal, "QUEUED", "NONE", task_plan, time.time())
+        api.db.update_coding_task(task_id, current_phase_id="p1", plan_revision=0,
+                                  recovery_action="RECOVERY_REVIEW", recovery_reason="MODEL_CALL",
+                                  replan_count=2, replan_count_in_epoch=2)
+        prior_report = {
+            "phase_id": "p1", "attempt": 2, "plan_revision": 0, "status": "PASS",
+            "implemented": ["output.txt created and read back"], "changed_files": [str(output)],
+            "test_executed": [], "test_pass": [], "test_fail": [], "build_executed": "NOT_RUN",
+            "build_pass": "NOT_RUN", "errors": [], "blockers": [], "risks": [],
+            "required_mcp": ["None"],
+            "typed_execution_summary": {"state": "completed", "operations": [
+                {"tool": "workspace_write", "status": "success", "output": {"path": str(output)}},
+                {"tool": "workspace_read", "status": "success", "output": {"path": str(output)}},
+            ]},
+            "phase_evaluation": {"phase_complete": False, "missing_mcp": ["None"]},
+            "manager_decision": {"decision": "REPLAN_REQUIRED", "reason": "phase retry budget exhausted"},
+        }
+        api.db.add_coding_phase_report(task_id, "p1", 2, prior_report, "PASS", time.time())
+
+        with patch.object(api, "_replan_task", side_effect=AssertionError("complete evidence must skip replan")), \
+             patch.object(api, "_complete_task", return_value="finished"):
+            result = api._run_managed_task(task_id, self.tmp.name)
+
+        self.assertEqual("finished", result)
+        saved_task = api.db.coding_task(task_id)
+        self.assertEqual("NONE", saved_task["recovery_action"])
+        self.assertEqual("NONE", saved_task["recovery_reason"])
+        self.assertEqual("pass", saved_task["plan"]["phases"][0]["status"])
+        saved_report = api.db.coding_phase_reports(task_id)[0]["structured_report"]
+        self.assertEqual("PASS", saved_report["manager_decision"]["decision"])
+        self.assertTrue(saved_report["phase_evaluation"]["phase_complete"])
+
     def test_continuous_override_and_small_task_queue_automatically(self):
         for goal in (WEBSITE + "\n# Current Task\nExecute uninterrupted", "スマホでタイトルが右にはみ出すのでそこだけ直して"):
             with self.subTest(goal=goal[:30]):
@@ -159,7 +300,7 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
                 self.assertNotEqual("RESOURCE_CHECKPOINT", saved["recovery_reason"])
 
     def test_retry_is_local_then_checkpoint_precedes_final_verification(self):
-        saved = self.prepare()
+        saved = self.prepare(goal=WEBSITE+'\npause after each major phase')
         api.db.enqueue_coding_task("task")
         attempts = []
         def execute(*args, **kwargs):
@@ -201,13 +342,23 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
         def review(task_id, managed, phase, row, *args):
             api.db.update_coding_phase_report(row["id"], {**row["structured_report"], "manager_decision": {"decision": "PASS"}}, "PASS")
             return "PASS"
+        verified = []
+        def verify(phase, workspace):
+            if phase.get("execution_mode") != "VERIFICATION_ONLY":
+                return None
+            verified.append(phase["id"])
+            execution = Task("verify"); execution.state = TaskState.COMPLETED
+            return execution, {"passed": True, "command": ["node", "--test"], "output": "test passed",
+                               "changed_targets": [], "targets": ["app.js"], "elapsed_ms": 1}
         with patch.object(api.runtime, "execute", side_effect=execute) as executor, \
+             patch.object(api, "_run_read_only_verification", side_effect=verify), \
              patch.object(api, "_report_from_execution", side_effect=lambda phase, attempt, *args: report(phase["id"], attempt)), \
              patch.object(api, "_review_phase", side_effect=review), \
              patch.object(api, "coding_knowledge_context_for_subtask", return_value=""), \
              patch.object(api, "_complete_task", return_value="finished"):
             self.assertEqual("finished", api._run_managed_task("task", self.tmp.name))
-        self.assertEqual(2, executor.call_count)
+        self.assertEqual(1, executor.call_count)
+        self.assertEqual(1, len(verified))
         self.assertNotEqual("RESOURCE_CHECKPOINT", api.db.coding_task("task")["recovery_reason"])
 
     def test_checkpoint_transaction_rolls_back_report_on_storage_failure(self):
@@ -228,9 +379,13 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
         self.assertEqual({"requested_scope": ["deploy"]}, api.db.coding_task("task")["pending_authorization"])
 
     def test_protected_plan_waits_for_authorization_before_checkpoint(self):
-        protected = plan(WEBSITE)
-        protected["scope"]["allowed"].append("deploy")
-        saved = self.prepare(model_plan=protected)
+        goal = WEBSITE + '\npause after each major phase'
+        protected = plan(goal)
+        protected["scope"]["allowed"].extend(["index.html", "deploy"])
+        protected["file_manifest"] = [
+            {"path": "index.html", "action": "create", "owner_phase": "p1"},
+        ]
+        saved = self.prepare(goal=goal, model_plan=protected)
         self.assertEqual("WAITING_FOR_USER", saved["status"])
         self.assertIsNotNone(saved["pending_authorization"])
         self.assertEqual([], api.db.coding_phase_reports("task"))
@@ -242,6 +397,12 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
         self.assertEqual("RESOURCE_CHECKPOINT", after["recovery_reason"])
         self.assertEqual("RESUMABLE", after["status"])
         self.assertTrue(after["approved_scopes"])
+        self.assertNotIn("deploy", json.dumps(after["approved_scopes"]))
+
+    def test_feature_named_delete_is_not_treated_as_protected_file_deletion(self):
+        candidate = {"scope": {"allowed": ["Add, list, total, delete, and input validation"]},
+                     "phases": [{"goal": "Implement a CLI delete command"}], "tasks": []}
+        self.assertEqual([], api._plan_authorization_boundary(candidate))
 
     def test_final_graph_cycle_fails_closed_before_execution(self):
         saved = self.prepare()

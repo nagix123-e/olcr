@@ -1,0 +1,4459 @@
+{
+  "date": "2026-10-11",
+  "scope": "269 recorded cases; source-only repair batch",
+  "source_records": [
+    "olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+    "olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+    "olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl"
+  ],
+  "case_count": 269,
+  "post_change_e2e_run": false,
+  "cases_with_specific_changes": 47,
+  "offline_regression_tests": {
+    "run": 23,
+    "passed": 23
+  },
+  "existing_suites": {
+    "run": 194,
+    "skipped": 7,
+    "remaining_failures_or_errors": 14,
+    "baseline_failures_or_errors": 22
+  },
+  "runtime_rechecks": [
+    135,
+    168,
+    206,
+    260,
+    287,
+    288,
+    332
+  ],
+  "previous_missing_persisted_answer_cases": [
+    89,
+    90,
+    92,
+    168,
+    206,
+    260,
+    287,
+    288,
+    332
+  ],
+  "source_changes": {
+    "backend/olcr_api/external_tools.py": {
+      "sha256": "247978e7030e4ea736c031a66c494f6fd1b4017f42307032321e643cd8335942",
+      "added_lines": 483,
+      "removed_lines": 68
+    },
+    "backend/olcr_api/app.py": {
+      "sha256": "fee503f7ac1116720a8b5129f44910467ae120be84bf74a327d217446b29a304",
+      "added_lines": 215,
+      "removed_lines": 20
+    },
+    "backend/olcr_api/runtime.py": {
+      "sha256": "0a6b1e0b32f575e818743feb0412ada464854f79b0be92b8909770e5a9de597a",
+      "added_lines": 32,
+      "removed_lines": 9
+    }
+  },
+  "cases": [
+    {
+      "global_index": 2,
+      "case_id": "calendar.public_holidays#2",
+      "expected_tool": "calendar.public_holidays",
+      "prompt": "来週旅行するなら、行き先で祝日に重なって店が閉まりそうな日はある？フランスの日程を確認して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 3,
+      "case_id": "calendar.public_holidays#3",
+      "expected_tool": "calendar.public_holidays",
+      "prompt": "日本と韓国で、今年の連休の並び方にどんな違いがある？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 7,
+      "case_id": "space.launches#3",
+      "expected_tool": "space.launches",
+      "prompt": "直近の打ち上げ予定で、延期や変更が出ているものはある？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "launch_source_updates"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 15,
+      "case_id": "space.satellite_orbit#3",
+      "expected_tool": "space.satellite_orbit",
+      "prompt": "ISSの軌道が最近変わったか確認できる最新の要素を出して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 21,
+      "case_id": "space.iss_position#1",
+      "expected_tool": "space.iss_position",
+      "prompt": "ISSは今、陸地の上と海の上のどちらを飛んでいる？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 22,
+      "case_id": "space.iss_position#2",
+      "expected_tool": "space.iss_position",
+      "prompt": "今の位置から、ISSが日本の近くへ来る方向を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 24,
+      "case_id": "space.iss_position#4",
+      "expected_tool": "space.iss_position",
+      "prompt": "今ISSがいる場所を、近い都市や地域の目安と一緒に説明して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 27,
+      "case_id": "space.exoplanets#3",
+      "expected_tool": "space.exoplanets",
+      "prompt": "ケプラーで見つかった惑星のうち、半径が地球に近いものを探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 30,
+      "case_id": "japan.diet_transcript#2",
+      "expected_tool": "japan.diet_transcript",
+      "prompt": "最近の国会質疑で、少子化対策をめぐって与野党の論点がどう違ったか調べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 34,
+      "case_id": "japan.law#2",
+      "expected_tool": "japan.law",
+      "prompt": "個人情報保護法の目的条文と、事業者の義務に関係する条文を見比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "law_article_body"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 37,
+      "case_id": "geo.elevation#1",
+      "expected_tool": "geo.elevation",
+      "prompt": "富士山の山頂と東京駅の標高差はどれくらい？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 40,
+      "case_id": "geo.elevation#4",
+      "expected_tool": "geo.elevation",
+      "prompt": "登山口から山頂までの標高差を見積もりたい。富士山五合目と山頂を比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 41,
+      "case_id": "earth.streamflow#1",
+      "expected_tool": "earth.streamflow",
+      "prompt": "ポトマック川の水位は平年より高そう？直近の観測値を見たい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 42,
+      "case_id": "earth.streamflow#2",
+      "expected_tool": "earth.streamflow",
+      "prompt": "ワシントン周辺で、今流量が大きい河川観測所を確認して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "streamflow_regional_ranking"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 43,
+      "case_id": "earth.streamflow#3",
+      "expected_tool": "earth.streamflow",
+      "prompt": "川遊びに行く前に、近くの水位・流量の最新状況を知りたい。ポトマック川で。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 45,
+      "case_id": "biology.occurrence#1",
+      "expected_tool": "biology.occurrence",
+      "prompt": "カワセミは東京のどの地域でよく観察されている？記録を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 47,
+      "case_id": "biology.occurrence#3",
+      "expected_tool": "biology.occurrence",
+      "prompt": "近所で最近見られた野鳥を調べたい。上野公園周辺の記録を見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "gbif_geographic_filter"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 49,
+      "case_id": "biology.phylogeny#1",
+      "expected_tool": "biology.phylogeny",
+      "prompt": "犬と猫は進化の系統樹で、どのあたりから別の枝になったの？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 50,
+      "case_id": "biology.phylogeny#2",
+      "expected_tool": "biology.phylogeny",
+      "prompt": "オオカミとキツネの共通祖先に近い分類ノードを知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 51,
+      "case_id": "biology.phylogeny#3",
+      "expected_tool": "biology.phylogeny",
+      "prompt": "ヒトとチンパンジーの系統関係を、共通祖先をたどって説明して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 52,
+      "case_id": "biology.phylogeny#4",
+      "expected_tool": "biology.phylogeny",
+      "prompt": "クジラとカバが近縁だと言われる根拠になる系統上のつながりを見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 53,
+      "case_id": "biology.structure#1",
+      "expected_tool": "biology.structure",
+      "prompt": "ヘモグロビンの立体構造を、酸素結合状態が異なるもの同士で比べたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 54,
+      "case_id": "biology.structure#2",
+      "expected_tool": "biology.structure",
+      "prompt": "ヒト以外の生物のヘモグロビン構造も登録されている？代表例を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 55,
+      "case_id": "biology.structure#3",
+      "expected_tool": "biology.structure",
+      "prompt": "タンパク質構造を論文で引用したいので、解像度や登録情報が分かるPDB記録を見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 56,
+      "case_id": "biology.structure#4",
+      "expected_tool": "biology.structure",
+      "prompt": "ヘモグロビンの複合体構造と単独構造を見つけて違いを確認したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 57,
+      "case_id": "biology.protein#1",
+      "expected_tool": "biology.protein",
+      "prompt": "BRCA1は細胞の中でどんな役割を担っている？信頼できるタンパク質記録を見たい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 58,
+      "case_id": "biology.protein#2",
+      "expected_tool": "biology.protein",
+      "prompt": "ヒトTP53とマウスの対応タンパク質を比べて、基本機能を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 59,
+      "case_id": "biology.protein#3",
+      "expected_tool": "biology.protein",
+      "prompt": "インスリンの前駆体から成熟タンパク質までの情報を確認して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 60,
+      "case_id": "biology.protein#4",
+      "expected_tool": "biology.protein",
+      "prompt": "あるタンパク質の別名や配列長も知りたい。ヒトのEGFRを調べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 63,
+      "case_id": "security.cve#3",
+      "expected_tool": "security.cve",
+      "prompt": "Apache Log4jの脆弱性について、修正版と暫定回避策が記録されているか調べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 64,
+      "case_id": "security.cve#4",
+      "expected_tool": "security.cve",
+      "prompt": "CVE-2021-44228と同じ製品に関係する関連脆弱性を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 65,
+      "case_id": "security.exploit_probability#1",
+      "expected_tool": "security.exploit_probability",
+      "prompt": "CVEの深刻度が高くても悪用されにくい場合はある？Log4ShellのEPSSと合わせて判断したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 67,
+      "case_id": "security.exploit_probability#3",
+      "expected_tool": "security.exploit_probability",
+      "prompt": "いくつかの未修正CVEを優先順位付けしたい。Log4ShellとCVE-2023-34362のEPSSを比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 72,
+      "case_id": "crypto.bitcoin_network#4",
+      "expected_tool": "crypto.bitcoin_network",
+      "prompt": "直近のBitcoin手数料水準が落ち着いているか、混雑状況と一緒に確認して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 75,
+      "case_id": "internet.domain_registration#3",
+      "expected_tool": "internet.domain_registration",
+      "prompt": "example.orgの登録者情報が公開されている範囲と、登録状況を調べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "rdap_redirect_and_empty_evidence"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 76,
+      "case_id": "internet.domain_registration#4",
+      "expected_tool": "internet.domain_registration",
+      "prompt": "2つのドメインのネームサーバー設定を比較したい：openai.comとwikipedia.org。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "rdap_redirect_and_empty_evidence"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 77,
+      "case_id": "internet.ip_info#1",
+      "expected_tool": "internet.ip_info",
+      "prompt": "自社ログに出たこのIPのネットワーク運営者と国を確認したい：1.1.1.1。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 78,
+      "case_id": "internet.ip_info#2",
+      "expected_tool": "internet.ip_info",
+      "prompt": "8.8.8.8を広告で見たけれど、どの組織のASNから告知されている？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 79,
+      "case_id": "internet.ip_info#3",
+      "expected_tool": "internet.ip_info",
+      "prompt": "2つのDNSサービスのIPが同じ事業者ネットワークに属するか比べて：1.1.1.1と8.8.8.8。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 80,
+      "case_id": "internet.ip_info#4",
+      "expected_tool": "internet.ip_info",
+      "prompt": "この接続元IPの地域とネットワーク情報をインシデント記録に残したい：9.9.9.9。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 83,
+      "case_id": "media.tv#3",
+      "expected_tool": "media.tv",
+      "prompt": "「Ozymandias」というタイトルのBreaking Badの話数と放送日を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 85,
+      "case_id": "games.pokemon#1",
+      "expected_tool": "games.pokemon",
+      "prompt": "ピカチュウから進化するポケモンと、その進化条件を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "pokemon_outgoing_evolution"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 86,
+      "case_id": "games.pokemon#2",
+      "expected_tool": "games.pokemon",
+      "prompt": "ピカチュウとライチュウを比べて、タイプと能力値の違いを見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 87,
+      "case_id": "games.pokemon#3",
+      "expected_tool": "games.pokemon",
+      "prompt": "じめんタイプに弱いポケモンを育成する前に、ピカチュウの相性を確認したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 88,
+      "case_id": "games.pokemon#4",
+      "expected_tool": "games.pokemon",
+      "prompt": "カントー地方の電気タイプで、素早さが高いポケモンを探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 89,
+      "case_id": "games.trivia#1",
+      "expected_tool": "games.trivia",
+      "prompt": "小学生と遊べる宇宙のクイズを、やさしい四択で1問出して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 90,
+      "case_id": "games.trivia#2",
+      "expected_tool": "games.trivia",
+      "prompt": "映画好き向けに、少し難しめのクイズを一つお願い。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 92,
+      "case_id": "games.trivia#4",
+      "expected_tool": "games.trivia",
+      "prompt": "答えをすぐ表示せず、科学の四択問題だけ先に出して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 93,
+      "case_id": "food.recipe#1",
+      "expected_tool": "food.recipe",
+      "prompt": "冷蔵庫に鶏肉とキャベツがある。平日の夕食に作れる料理をいくつか教えて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 94,
+      "case_id": "food.recipe#2",
+      "expected_tool": "food.recipe",
+      "prompt": "乳製品を避けたい人向けに、手元の豆腐ときのこで作れる料理を提案して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 95,
+      "case_id": "food.recipe#3",
+      "expected_tool": "food.recipe",
+      "prompt": "余ったご飯を使い切れる、辛くない昼食の作り方を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 97,
+      "case_id": "art.met_collection#1",
+      "expected_tool": "art.met_collection",
+      "prompt": "ゴッホの作品のうち、風景画と自画像をそれぞれ探して所蔵情報を見たい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "met_theme_filters"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 98,
+      "case_id": "art.met_collection#2",
+      "expected_tool": "art.met_collection",
+      "prompt": "19世紀フランス絵画の代表作を、作家や制作年と一緒に見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 99,
+      "case_id": "art.met_collection#3",
+      "expected_tool": "art.met_collection",
+      "prompt": "メトロポリタン美術館にある日本美術で、江戸時代の版画を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 100,
+      "case_id": "art.met_collection#4",
+      "expected_tool": "art.met_collection",
+      "prompt": "ゴッホの作品がいつ制作され、どんな素材で描かれたか記録を確認したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 101,
+      "case_id": "games.pc_deals#1",
+      "expected_tool": "games.pc_deals",
+      "prompt": "Steamで遊べるCyberpunk 2077が、今どのストアで一番安い？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 102,
+      "case_id": "games.pc_deals#2",
+      "expected_tool": "games.pc_deals",
+      "prompt": "セール中の協力プレイ用PCゲームを、価格と割引率で比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "cooperative_deal_verification"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 103,
+      "case_id": "games.pc_deals#3",
+      "expected_tool": "games.pc_deals",
+      "prompt": "Elden Ringを買うなら、Steamキーと公式ストアの現在価格に差がある？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 104,
+      "case_id": "games.pc_deals#4",
+      "expected_tool": "games.pc_deals",
+      "prompt": "予算20ドル以内で評価の高いPCゲームのセールを探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 105,
+      "case_id": "games.chess#1",
+      "expected_tool": "games.chess",
+      "prompt": "Hikaru Nakamuraの最近の対局で、よく使っているオープニングを見たい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 107,
+      "case_id": "games.chess#3",
+      "expected_tool": "games.chess",
+      "prompt": "Nakamuraが黒番で指した最近の対局を棋譜付きで探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "chess_pgn_sample_comparison"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 108,
+      "case_id": "games.chess#4",
+      "expected_tool": "games.chess",
+      "prompt": "彼の最近の対局から、短手数で決着したものと長いものを比べたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "chess_pgn_sample_comparison"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 111,
+      "case_id": "sports.formula1#3",
+      "expected_tool": "sports.formula1",
+      "prompt": "2025年のコンストラクターズ順位とドライバーズ順位を照らし合わせて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 113,
+      "case_id": "knowledge.wikidata#1",
+      "expected_tool": "knowledge.wikidata",
+      "prompt": "EU加盟国を人口と面積の両方で並べると、順位はどう変わる？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 114,
+      "case_id": "knowledge.wikidata#2",
+      "expected_tool": "knowledge.wikidata",
+      "prompt": "ノーベル物理学賞を受賞した日本出身者と受賞年を探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 115,
+      "case_id": "knowledge.wikidata#3",
+      "expected_tool": "knowledge.wikidata",
+      "prompt": "東京と大阪について、人口・座標・行政区分を同じ形式で比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 116,
+      "case_id": "knowledge.wikidata#4",
+      "expected_tool": "knowledge.wikidata",
+      "prompt": "ある作家の著作と言語、出生地のつながりを構造化データで確認したい。村上春樹で。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 117,
+      "case_id": "environment.air_quality#1",
+      "expected_tool": "environment.air_quality",
+      "prompt": "今日、東京で屋外運動をするなら、空気が比較的きれいな時間帯はいつ？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 118,
+      "case_id": "environment.air_quality#2",
+      "expected_tool": "environment.air_quality",
+      "prompt": "東京と横浜のPM2.5を比べて、外出時に気をつける差があるか教えて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 119,
+      "case_id": "environment.air_quality#3",
+      "expected_tool": "environment.air_quality",
+      "prompt": "AQIが悪化しているとき、今の東京で主に問題になっている汚染指標を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "dominant_aqi"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 120,
+      "case_id": "environment.air_quality#4",
+      "expected_tool": "environment.air_quality",
+      "prompt": "明日の東京の空気の状態を見て、子どもの屋外活動に注意が必要か判断したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 121,
+      "case_id": "geo.routing#1",
+      "expected_tool": "geo.routing",
+      "prompt": "東京駅から皇居まで、徒歩と自転車なら距離と所要時間はどれくらい違う？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "routing_actual_profiles_steps"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 122,
+      "case_id": "geo.routing#2",
+      "expected_tool": "geo.routing",
+      "prompt": "渋谷駅から東京駅へ、車で行く場合のルート距離を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 123,
+      "case_id": "geo.routing#3",
+      "expected_tool": "geo.routing",
+      "prompt": "新宿駅から羽田空港まで、車と徒歩で経路の長さを比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 124,
+      "case_id": "geo.routing#4",
+      "expected_tool": "geo.routing",
+      "prompt": "東京駅から皇居まで、移動距離が短い道順を出して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "routing_actual_profiles_steps"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 125,
+      "case_id": "geo.country_facts#1",
+      "expected_tool": "geo.country_facts",
+      "prompt": "フランスと日本で、通貨・公用語・人口規模を比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 126,
+      "case_id": "geo.country_facts#2",
+      "expected_tool": "geo.country_facts",
+      "prompt": "海に面していないヨーロッパの国を挙げて、首都と通貨も知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 127,
+      "case_id": "geo.country_facts#3",
+      "expected_tool": "geo.country_facts",
+      "prompt": "ブラジルの面積と人口を、南米の近隣国と比べた位置づけで教えて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 128,
+      "case_id": "geo.country_facts#4",
+      "expected_tool": "geo.country_facts",
+      "prompt": "出張準備のため、スイスの首都、通貨、主要言語をまとめて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 129,
+      "case_id": "econ.worldbank#1",
+      "expected_tool": "econ.worldbank",
+      "prompt": "日本と韓国の一人当たりGDPは、この10年でどう差が変わった？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 133,
+      "case_id": "econ.oecd#1",
+      "expected_tool": "econ.oecd",
+      "prompt": "日本の失業率は、OECDの中で高い方？最近の各国値で比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 134,
+      "case_id": "econ.oecd#2",
+      "expected_tool": "econ.oecd",
+      "prompt": "ここ数年の日本の実質賃金と物価の動きを比較できるデータを探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 135,
+      "case_id": "econ.oecd#3",
+      "expected_tool": "econ.oecd",
+      "prompt": "OECD諸国で高齢者の就業率がどう違うか、直近年で見たい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 136,
+      "case_id": "econ.oecd#4",
+      "expected_tool": "econ.oecd",
+      "prompt": "景気の弱さが雇用に出ているか判断するため、日本の失業率の年次推移を教えて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 140,
+      "case_id": "earth.earthquakes#4",
+      "expected_tool": "earth.earthquakes",
+      "prompt": "最近の地震が特定地域に集中しているか、地図に載せる位置情報付きで出して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 141,
+      "case_id": "earth.disasters#1",
+      "expected_tool": "earth.disasters",
+      "prompt": "今、世界で避難が必要な規模の洪水やサイクロンは起きている？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 142,
+      "case_id": "earth.disasters#2",
+      "expected_tool": "earth.disasters",
+      "prompt": "東南アジアで進行中の災害について、発生地域と開始日を知りたい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "disaster_registered_dates"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 143,
+      "case_id": "earth.disasters#3",
+      "expected_tool": "earth.disasters",
+      "prompt": "現在の山火事と洪水を、災害の種類ごとに比べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 144,
+      "case_id": "earth.disasters#4",
+      "expected_tool": "earth.disasters",
+      "prompt": "旅行先のチリで最近発生した大規模災害があるか確認して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 145,
+      "case_id": "ocean.tides#1",
+      "expected_tool": "ocean.tides",
+      "prompt": "サンフランシスコで明日、海岸を歩くなら潮が一番低いのは何時？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 146,
+      "case_id": "ocean.tides#2",
+      "expected_tool": "ocean.tides",
+      "prompt": "今日の満潮と干潮の高さの差を知りたい。場所はサンフランシスコ。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "tides_date_timezone"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 148,
+      "case_id": "ocean.tides#4",
+      "expected_tool": "ocean.tides",
+      "prompt": "同じ日にサンフランシスコとオークランドで潮汐時刻がどれくらい違う？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "tides_date_timezone"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 151,
+      "case_id": "astronomy.sunrise#3",
+      "expected_tool": "astronomy.sunrise",
+      "prompt": "今月末の大阪の日の入りは何時ごろ？",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 152,
+      "case_id": "astronomy.sunrise#4",
+      "expected_tool": "astronomy.sunrise",
+      "prompt": "来週のキャンプで使うので、長野市の日の出と日の入りを調べて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 153,
+      "case_id": "books.openlibrary#1",
+      "expected_tool": "books.openlibrary",
+      "prompt": "『ナルニア国物語』のシリーズ順と、最初に読む巻を確認したい。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 154,
+      "case_id": "books.openlibrary#2",
+      "expected_tool": "books.openlibrary",
+      "prompt": "Ursula K. Le Guinの代表的な本を、出版年と一緒に探して。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 155,
+      "case_id": "books.openlibrary#3",
+      "expected_tool": "books.openlibrary",
+      "prompt": "この本の別版や翻訳版があるか調べて：ISBN 9780140328721。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [
+        "isbn_redirect"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 156,
+      "case_id": "books.openlibrary#4",
+      "expected_tool": "books.openlibrary",
+      "prompt": "児童向けの海洋冒険小説で、書誌情報が見つかる本をいくつか教えて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 158,
+      "case_id": "web.archive#2",
+      "expected_tool": "web.archive",
+      "prompt": "このサイトが閉鎖される前のページを見たい：example.com。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 160,
+      "case_id": "web.archive#4",
+      "expected_tool": "web.archive",
+      "prompt": "ある企業サイトのリニューアル前後を比較したい。openai.comの過去版を見せて。",
+      "source_record": ".live/olcr-e2e-r44-20261011-semantic-001-100-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 161,
+      "case_id": "chemistry.pubchem#1",
+      "expected_tool": "chemistry.pubchem",
+      "prompt": "カフェインとテオブロミンは、分子式や分子量がどう違う？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 162,
+      "case_id": "chemistry.pubchem#2",
+      "expected_tool": "chemistry.pubchem",
+      "prompt": "アスピリンの化学構造と基本的な物性を知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 163,
+      "case_id": "chemistry.pubchem#3",
+      "expected_tool": "chemistry.pubchem",
+      "prompt": "この化合物の同義名や識別番号を調べて：水に含まれる塩化ナトリウム。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 164,
+      "case_id": "chemistry.pubchem#4",
+      "expected_tool": "chemistry.pubchem",
+      "prompt": "分子量が約180の糖類を探して、化学式を確認して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 165,
+      "case_id": "health.clinical_trials#1",
+      "expected_tool": "health.clinical_trials",
+      "prompt": "日本で募集中の2型糖尿病の試験は、どんな介入を比較している？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [
+        "clinical_country_recruitment"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 166,
+      "case_id": "health.clinical_trials#2",
+      "expected_tool": "health.clinical_trials",
+      "prompt": "アルツハイマー病の臨床試験を、募集状況と実施地域で探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 167,
+      "case_id": "health.clinical_trials#3",
+      "expected_tool": "health.clinical_trials",
+      "prompt": "小児喘息を対象にした試験で、現在参加者を募集しているものはある？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 168,
+      "case_id": "health.clinical_trials#4",
+      "expected_tool": "health.clinical_trials",
+      "prompt": "がん免疫療法の試験について、試験段階と主な評価項目を確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 169,
+      "case_id": "health.openfda#1",
+      "expected_tool": "health.openfda",
+      "prompt": "ibuprofenで報告されている副作用の種類を、最近の報告から確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [
+        "drug_report_matching"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 170,
+      "case_id": "health.openfda#2",
+      "expected_tool": "health.openfda",
+      "prompt": "FDAの添付文書では、アセトアミノフェンの重大な注意事項はどう書かれている？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 172,
+      "case_id": "health.openfda#4",
+      "expected_tool": "health.openfda",
+      "prompt": "この薬に関するリコールや安全性情報が出ていないか調べて：ibuprofen。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 173,
+      "case_id": "food.product#1",
+      "expected_tool": "food.product",
+      "prompt": "このシリアルにアレルゲンや添加物が含まれているか見たい。バーコード3017620422003。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 174,
+      "case_id": "food.product#2",
+      "expected_tool": "food.product",
+      "prompt": "砂糖が多い商品か判断したいので、栄養成分と100g当たりの値を確認して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [
+        "product_clarification"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 175,
+      "case_id": "food.product#3",
+      "expected_tool": "food.product",
+      "prompt": "同じブランドの商品の原材料と栄養スコアを比べたい：3017620422003。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 177,
+      "case_id": "news.hackernews#1",
+      "expected_tool": "news.hackernews",
+      "prompt": "Hacker Newsで、今日開発者の間で議論が盛り上がっている話題は何？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 178,
+      "case_id": "news.hackernews#2",
+      "expected_tool": "news.hackernews",
+      "prompt": "AIではなくデータベースに関する人気投稿を探して、コメントの多い順に見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 180,
+      "case_id": "news.hackernews#4",
+      "expected_tool": "news.hackernews",
+      "prompt": "最近のHacker Newsで、Rustの新しい使い方に関する投稿が注目されている？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 181,
+      "case_id": "knowledge.devto#1",
+      "expected_tool": "knowledge.devto",
+      "prompt": "Find practical DEV posts explaining how teams debug flaky tests, with authors and links.",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 182,
+      "case_id": "knowledge.devto#2",
+      "expected_tool": "knowledge.devto",
+      "prompt": "What are people publishing about accessibility in React lately? Show a few useful articles.",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 183,
+      "case_id": "knowledge.devto#3",
+      "expected_tool": "knowledge.devto",
+      "prompt": "I’m new to containers; find beginner-friendly DEV.to guides and tell me when they were posted.",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 184,
+      "case_id": "knowledge.devto#4",
+      "expected_tool": "knowledge.devto",
+      "prompt": "Find recent posts comparing server-side rendering approaches, including tags and reaction counts.",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 185,
+      "case_id": "dev.github#1",
+      "expected_tool": "dev.github",
+      "prompt": "FastAPIの直近のリリースで、前の版から何が変わったか知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 186,
+      "case_id": "dev.github#2",
+      "expected_tool": "dev.github",
+      "prompt": "このライブラリの最近の更新頻度を、リリース日から把握したい：pydantic。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 187,
+      "case_id": "dev.github#3",
+      "expected_tool": "dev.github",
+      "prompt": "Kubernetesの最新安定版がいつ公開され、どんな変更を含むか調べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 188,
+      "case_id": "dev.github#4",
+      "expected_tool": "dev.github",
+      "prompt": "リリースノートを見て、Node.jsの現行LTS系列で追加された機能を確認して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 190,
+      "case_id": "aviation.opensky#2",
+      "expected_tool": "aviation.opensky",
+      "prompt": "羽田周辺の航空機を、高度や速度も含めて確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 192,
+      "case_id": "aviation.opensky#4",
+      "expected_tool": "aviation.opensky",
+      "prompt": "東京上空にいる航空機の位置を、地図に使える座標付きで一覧にして。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [
+        "aviation_tokyo_bounds"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 193,
+      "case_id": "language.dictionary#1",
+      "expected_tool": "language.dictionary",
+      "prompt": "“resilient” は仕事の文脈でどんな意味？例文と品詞も知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 194,
+      "case_id": "language.dictionary#2",
+      "expected_tool": "language.dictionary",
+      "prompt": "“affect” と “effect” の使い分けを、辞書的な意味と発音から説明して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 195,
+      "case_id": "language.dictionary#3",
+      "expected_tool": "language.dictionary",
+      "prompt": "“record” が名詞と動詞で発音のどこが変わるか教えて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 196,
+      "case_id": "language.dictionary#4",
+      "expected_tool": "language.dictionary",
+      "prompt": "「思いがけない幸運」に近い英単語の意味と使い方を調べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 197,
+      "case_id": "language.translation#1",
+      "expected_tool": "language.translation",
+      "prompt": "“Could you give me a hand?” を、友人向けと仕事向けで自然に訳し分けて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 198,
+      "case_id": "language.translation#2",
+      "expected_tool": "language.translation",
+      "prompt": "「検討します」が必ずしも承諾ではないことを、英語で誤解なく伝えたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 199,
+      "case_id": "language.translation#3",
+      "expected_tool": "language.translation",
+      "prompt": "この案内文を、旅行者に分かりやすい日本語にして：Please proceed to the designated boarding area.",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 200,
+      "case_id": "language.translation#4",
+      "expected_tool": "language.translation",
+      "prompt": "“お疲れさま” を会議後の同僚に言う場合、自然な英語表現をいくつか教えて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 201,
+      "case_id": "render.quickchart#1",
+      "expected_tool": "render.quickchart",
+      "prompt": "月ごとの売上が 10, 14, 9, 18 だったので、変化が分かる折れ線グラフにして。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 202,
+      "case_id": "render.quickchart#2",
+      "expected_tool": "render.quickchart",
+      "prompt": "東京・大阪・福岡の人口を比べる棒グラフを作りたい。値は1400、880、160万人。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 203,
+      "case_id": "render.quickchart#3",
+      "expected_tool": "render.quickchart",
+      "prompt": "予算の内訳が人件費50%、開発30%、その他20%だと分かる円グラフを作って。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 204,
+      "case_id": "render.quickchart#4",
+      "expected_tool": "render.quickchart",
+      "prompt": "2022年から2025年までの温度を 18, 19, 20, 21 度として、軸ラベル付きで画像にして。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 205,
+      "case_id": "policy.us_federal_register#1",
+      "expected_tool": "policy.us_federal_register",
+      "prompt": "米国のAIに関する最近の政府指針で、企業に新たな義務を課すものはある？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 206,
+      "case_id": "policy.us_federal_register#2",
+      "expected_tool": "policy.us_federal_register",
+      "prompt": "連邦官報で提案段階と最終決定済みの環境規則を区別して探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 208,
+      "case_id": "policy.us_federal_register#4",
+      "expected_tool": "policy.us_federal_register",
+      "prompt": "2025年以降に発効したプライバシー関連の連邦規則を見つけて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 209,
+      "case_id": "conflict.ucdp#1",
+      "expected_tool": "conflict.ucdp",
+      "prompt": "ウクライナ東部で直近に記録された戦闘イベントは、どの地域に集中している？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 210,
+      "case_id": "conflict.ucdp#2",
+      "expected_tool": "conflict.ucdp",
+      "prompt": "今年のウクライナの紛争イベントを、月ごとの件数と死者数で比べたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 211,
+      "case_id": "conflict.ucdp#3",
+      "expected_tool": "conflict.ucdp",
+      "prompt": "UCDPの記録で、民間人が被害を受けた最近の暴力イベントを探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 212,
+      "case_id": "conflict.ucdp#4",
+      "expected_tool": "conflict.ucdp",
+      "prompt": "ある州の紛争状況を説明するため、日付・場所・暴力種別が分かる記録を見せて：ドネツク州。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 213,
+      "case_id": "humanitarian.hdx#1",
+      "expected_tool": "humanitarian.hdx",
+      "prompt": "スーダンの避難民に関するデータは、どの機関がいつ更新している？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 214,
+      "case_id": "humanitarian.hdx#2",
+      "expected_tool": "humanitarian.hdx",
+      "prompt": "食料不安が深刻な国を比べたいので、最新の関連指標を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 215,
+      "case_id": "humanitarian.hdx#3",
+      "expected_tool": "humanitarian.hdx",
+      "prompt": "ハイチの人道状況を把握するため、避難・食料・保健のデータセットを見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 216,
+      "case_id": "humanitarian.hdx#4",
+      "expected_tool": "humanitarian.hdx",
+      "prompt": "HDXに登録されているウクライナの人口移動データについて、期間と提供元を確認して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 217,
+      "case_id": "humanitarian.unhcr#1",
+      "expected_tool": "humanitarian.unhcr",
+      "prompt": "シリアから逃れた人々は、トルコ以外ではどの国に多く滞在している？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 218,
+      "case_id": "humanitarian.unhcr#2",
+      "expected_tool": "humanitarian.unhcr",
+      "prompt": "近年、ウガンダで受け入れている難民数はどう変化した？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 219,
+      "case_id": "humanitarian.unhcr#3",
+      "expected_tool": "humanitarian.unhcr",
+      "prompt": "国籍別と受入国別で難民数を見比べたい。アフガニスタン出身者について。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 220,
+      "case_id": "humanitarian.unhcr#4",
+      "expected_tool": "humanitarian.unhcr",
+      "prompt": "最新の公表統計で、世界の難民・庇護申請者の規模を知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 221,
+      "case_id": "sanctions.unsc#1",
+      "expected_tool": "sanctions.unsc",
+      "prompt": "北朝鮮制裁リストに載る団体について、指定理由と制裁委員会を確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 222,
+      "case_id": "sanctions.unsc#2",
+      "expected_tool": "sanctions.unsc",
+      "prompt": "国連制裁対象として指定された船舶があるか調べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 223,
+      "case_id": "sanctions.unsc#3",
+      "expected_tool": "sanctions.unsc",
+      "prompt": "国連安保理の制裁対象について、別名や指定日がどう登録されているか確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 224,
+      "case_id": "sanctions.unsc#4",
+      "expected_tool": "sanctions.unsc",
+      "prompt": "イラン関連の国連制裁対象が現在のリストに含まれるか探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 225,
+      "case_id": "sanctions.opensanctions#1",
+      "expected_tool": "sanctions.opensanctions",
+      "prompt": "Rosneftに関連する企業や別名が、どの制裁リストに載っている？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 226,
+      "case_id": "sanctions.opensanctions#2",
+      "expected_tool": "sanctions.opensanctions",
+      "prompt": "この会社と同名の人物・法人が複数あるか、識別情報を比べて確認したい：Acme Holdings。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 228,
+      "case_id": "sanctions.opensanctions#4",
+      "expected_tool": "sanctions.opensanctions",
+      "prompt": "取引先の名前が制裁・PEPデータに一致するか、候補と出典を確認して：Rosneft。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 229,
+      "case_id": "econ.imf#1",
+      "expected_tool": "econ.imf",
+      "prompt": "日本と米国の消費者物価上昇率は、最近どちらの方が速い？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 230,
+      "case_id": "econ.imf#2",
+      "expected_tool": "econ.imf",
+      "prompt": "ここ10年の日本の経常収支を、GDP比で見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 231,
+      "case_id": "econ.imf#3",
+      "expected_tool": "econ.imf",
+      "prompt": "IMF統計で、新興国グループのインフレ率を国ごとに比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 232,
+      "case_id": "econ.imf#4",
+      "expected_tool": "econ.imf",
+      "prompt": "日本の失業率と物価上昇率を同じ期間で並べ、景気の背景を把握したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 233,
+      "case_id": "trade.un_comtrade#1",
+      "expected_tool": "trade.un_comtrade",
+      "prompt": "日本は米国以外に、乗用車をどの国へ多く輸出している？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 234,
+      "case_id": "trade.un_comtrade#2",
+      "expected_tool": "trade.un_comtrade",
+      "prompt": "2020年以降、日本の自動車輸出額は年ごとにどう変わった？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 235,
+      "case_id": "trade.un_comtrade#3",
+      "expected_tool": "trade.un_comtrade",
+      "prompt": "日本とドイツの対米乗用車輸出額を、同じ年で比較して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 236,
+      "case_id": "trade.un_comtrade#4",
+      "expected_tool": "trade.un_comtrade",
+      "prompt": "半導体製造装置の主要な輸出国を、相手国別の金額で調べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 237,
+      "case_id": "finance.bis#1",
+      "expected_tool": "finance.bis",
+      "prompt": "日本の家計向け信用と企業向け信用で、伸び方に差がある？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 238,
+      "case_id": "finance.bis#2",
+      "expected_tool": "finance.bis",
+      "prompt": "国境を越えた銀行債権が大きい国を、最新のBIS統計で比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 239,
+      "case_id": "finance.bis#3",
+      "expected_tool": "finance.bis",
+      "prompt": "ここ数年、日本の不動産向け信用は増えているか時系列で見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 240,
+      "case_id": "finance.bis#4",
+      "expected_tool": "finance.bis",
+      "prompt": "為替変動を踏まえて国際与信の変化を確認するため、BISの関連系列を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 241,
+      "case_id": "development.un_sdg#1",
+      "expected_tool": "development.un_sdg",
+      "prompt": "日本の目標8.5.2（失業率）は、性別や年齢層でどんな差がある？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 242,
+      "case_id": "development.un_sdg#2",
+      "expected_tool": "development.un_sdg",
+      "prompt": "SDG 7の再生可能エネルギー指標を、東アジア各国で比べたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 243,
+      "case_id": "development.un_sdg#3",
+      "expected_tool": "development.un_sdg",
+      "prompt": "日本の目標13に関する最新指標と、データが対象とする年を教えて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 244,
+      "case_id": "development.un_sdg#4",
+      "expected_tool": "development.un_sdg",
+      "prompt": "目標4の教育指標で、過去数年に改善が見られる国を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 245,
+      "case_id": "aviation.adsb_live#1",
+      "expected_tool": "aviation.adsb_live",
+      "prompt": "今、羽田に着陸しそうな航空機を、進行方向や高度から見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 248,
+      "case_id": "aviation.adsb_live#4",
+      "expected_tool": "aviation.adsb_live",
+      "prompt": "東京湾上空の航空機を、今の座標と高度付きで一覧にして。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 249,
+      "case_id": "econ.adb#1",
+      "expected_tool": "econ.adb",
+      "prompt": "フィリピンの成長率を、インドネシアやベトナムと比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 250,
+      "case_id": "econ.adb#2",
+      "expected_tool": "econ.adb",
+      "prompt": "ADBの予測では、アジア太平洋のインフレ見通しは国ごとにどう違う？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 251,
+      "case_id": "econ.adb#3",
+      "expected_tool": "econ.adb",
+      "prompt": "フィリピンの貧困率や雇用に関する長期指標を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 252,
+      "case_id": "econ.adb#4",
+      "expected_tool": "econ.adb",
+      "prompt": "ADBの統計で、南アジア各国の電力アクセスの変化を見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 253,
+      "case_id": "econ.afdb#1",
+      "expected_tool": "econ.afdb",
+      "prompt": "アフリカ開発銀行の公開データで、ケニアとタンザニアのGDP成長率を最近の年で比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 254,
+      "case_id": "econ.afdb#2",
+      "expected_tool": "econ.afdb",
+      "prompt": "AfDBの指標で、東アフリカの物価上昇率が高い国を確認したい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 255,
+      "case_id": "econ.afdb#3",
+      "expected_tool": "econ.afdb",
+      "prompt": "ケニアの一人当たり所得や雇用の推移を見せて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 256,
+      "case_id": "econ.afdb#4",
+      "expected_tool": "econ.afdb",
+      "prompt": "アフリカ諸国の電力アクセスがどう改善してきたか、国別データを探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 257,
+      "case_id": "econ.cepalstat#1",
+      "expected_tool": "econ.cepalstat",
+      "prompt": "アルゼンチンとチリの物価上昇率を、最近の期間で比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 258,
+      "case_id": "econ.cepalstat#2",
+      "expected_tool": "econ.cepalstat",
+      "prompt": "ラテンアメリカで若年失業率が高い国を、同じ指標で見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 259,
+      "case_id": "econ.cepalstat#3",
+      "expected_tool": "econ.cepalstat",
+      "prompt": "ブラジルの所得格差が近年どう動いているか、統計系列を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 260,
+      "case_id": "econ.cepalstat#4",
+      "expected_tool": "econ.cepalstat",
+      "prompt": "中南米の女性労働参加率を国別・年別に比較して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 261,
+      "case_id": "development.idb#1",
+      "expected_tool": "development.idb",
+      "prompt": "ブラジルで進んでいる交通インフラ案件の規模と進捗を知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 262,
+      "case_id": "development.idb#2",
+      "expected_tool": "development.idb",
+      "prompt": "カリブ海諸国で、気候変動対策に資金を出しているIDB事業を探して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 263,
+      "case_id": "development.idb#3",
+      "expected_tool": "development.idb",
+      "prompt": "直近に承認された教育プロジェクトを国ごとに比べて。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 264,
+      "case_id": "development.idb#4",
+      "expected_tool": "development.idb",
+      "prompt": "ある国で完了した保健分野の案件と、現在実施中の案件を見比べたい：ペルー。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 265,
+      "case_id": "econ.eurostat#1",
+      "expected_tool": "econ.eurostat",
+      "prompt": "ドイツとフランスのインフレ率は、ユーロ圏平均と比べてどう？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 266,
+      "case_id": "econ.eurostat#2",
+      "expected_tool": "econ.eurostat",
+      "prompt": "EU各国の若年失業率を、最新年で高い順に見たい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 267,
+      "case_id": "econ.eurostat#3",
+      "expected_tool": "econ.eurostat",
+      "prompt": "ドイツの地域別人口変化を、州に相当する地域単位で比べられる？",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 268,
+      "case_id": "econ.eurostat#4",
+      "expected_tool": "econ.eurostat",
+      "prompt": "ユーロ圏で再生可能エネルギーの割合が増えたか、年次データを確認して。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 269,
+      "case_id": "finance.ecb#1",
+      "expected_tool": "finance.ecb",
+      "prompt": "ユーロを円に替える目安として、今日のECB参考レートを知りたい。",
+      "source_record": ".live/olcr-e2e-r45-20261011-semantic-101-200-all100.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 270,
+      "case_id": "finance.ecb#2",
+      "expected_tool": "finance.ecb",
+      "prompt": "ユーロ対ドルのレートが先週からどう動いたか、日ごとに見せて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "ecb_base_quote_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 271,
+      "case_id": "finance.ecb#3",
+      "expected_tool": "finance.ecb",
+      "prompt": "ユーロと英ポンド、スイスフランの参考レートを同じ日付で比べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 272,
+      "case_id": "finance.ecb#4",
+      "expected_tool": "finance.ecb",
+      "prompt": "旅行の両替計画のため、直近のユーロ対円レートを確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "ecb_base_quote_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 273,
+      "case_id": "politics.eu_parliament#1",
+      "expected_tool": "politics.eu_parliament",
+      "prompt": "欧州議会でAI法の実施状況について最近どんな議論があった？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 274,
+      "case_id": "politics.eu_parliament#2",
+      "expected_tool": "politics.eu_parliament",
+      "prompt": "欧州議会の委員会で、再生可能エネルギーに関する報告書や質疑を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 277,
+      "case_id": "law.eu_cellar#1",
+      "expected_tool": "law.eu_cellar",
+      "prompt": "AI Actの条文で、高リスクAIの事業者に求められることを確認したい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 278,
+      "case_id": "law.eu_cellar#2",
+      "expected_tool": "law.eu_cellar",
+      "prompt": "このEU規則の公式番号、採択日、適用開始日を調べて：GDPR。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 279,
+      "case_id": "law.eu_cellar#3",
+      "expected_tool": "law.eu_cellar",
+      "prompt": "消費者保護に関するEU指令の改正前後の公式文書を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 280,
+      "case_id": "law.eu_cellar#4",
+      "expected_tool": "law.eu_cellar",
+      "prompt": "ある法令が現在も有効か、改正や統合版の公式記録を確認したい：AI Act。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 281,
+      "case_id": "politics.uk_parliament#1",
+      "expected_tool": "politics.uk_parliament",
+      "prompt": "英国議会で最近提出されたAI関連法案は、審議のどこまで進んだ？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 284,
+      "case_id": "politics.uk_parliament#4",
+      "expected_tool": "politics.uk_parliament",
+      "prompt": "英国議会でデジタル市場規制がどんな論点で議論されたか確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 285,
+      "case_id": "politics.br_chamber#1",
+      "expected_tool": "politics.br_chamber",
+      "prompt": "ブラジル下院で、AI規制法案にどんな変更案が出ている？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 286,
+      "case_id": "politics.br_chamber#2",
+      "expected_tool": "politics.br_chamber",
+      "prompt": "教育予算に関する下院の法案と、委員会審査の状況を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 287,
+      "case_id": "politics.br_chamber#3",
+      "expected_tool": "politics.br_chamber",
+      "prompt": "最近提出された環境関連の議員提案を、提出者と日付付きで見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 288,
+      "case_id": "politics.br_chamber#4",
+      "expected_tool": "politics.br_chamber",
+      "prompt": "ブラジル下院で労働法改正が審議された記録を調べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 289,
+      "case_id": "politics.br_senate#1",
+      "expected_tool": "politics.br_senate",
+      "prompt": "ブラジル上院でAI法案は、下院案と比べてどこが争点になっている？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 290,
+      "case_id": "politics.br_senate#2",
+      "expected_tool": "politics.br_senate",
+      "prompt": "上院で審議中の最近の気候・森林保護法案を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 291,
+      "case_id": "politics.br_senate#3",
+      "expected_tool": "politics.br_senate",
+      "prompt": "年金制度に関する上院の採決や議案の進捗を確認したい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 292,
+      "case_id": "politics.br_senate#4",
+      "expected_tool": "politics.br_senate",
+      "prompt": "ブラジル上院で議論された公衆衛生法案を、議案番号付きで見せて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 293,
+      "case_id": "politics.ca_openparliament#1",
+      "expected_tool": "politics.ca_openparliament",
+      "prompt": "カナダ議会でAIと著作権の関係が最近どう議論された？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 295,
+      "case_id": "politics.ca_openparliament#3",
+      "expected_tool": "politics.ca_openparliament",
+      "prompt": "下院での住宅供給に関する採決や発言を、最近のものから探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 296,
+      "case_id": "politics.ca_openparliament#4",
+      "expected_tool": "politics.ca_openparliament",
+      "prompt": "カナダ議会の委員会が出したプライバシー関連報告書を見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 297,
+      "case_id": "politics.us_congress#1",
+      "expected_tool": "politics.us_congress",
+      "prompt": "米議会のAI法案で、超党派の共同提案者がいるものを探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 299,
+      "case_id": "politics.us_congress#3",
+      "expected_tool": "politics.us_congress",
+      "prompt": "法案が委員会を通過したか、最新の議会アクションを確認して：S. 1234。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 300,
+      "case_id": "politics.us_congress#4",
+      "expected_tool": "politics.us_congress",
+      "prompt": "米議会でデータプライバシーを扱う法案を、上下院別に比べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 301,
+      "case_id": "policy.us_rulemaking#1",
+      "expected_tool": "policy.us_rulemaking",
+      "prompt": "米国のAI規制案に対する意見募集で、締め切りがまだ先の案件はある？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 302,
+      "case_id": "policy.us_rulemaking#2",
+      "expected_tool": "policy.us_rulemaking",
+      "prompt": "環境規則案について、一般から寄せられたコメント数と募集期間を確認したい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 303,
+      "case_id": "policy.us_rulemaking#3",
+      "expected_tool": "policy.us_rulemaking",
+      "prompt": "最近の規則案で、医療機器メーカーに影響しそうなものを探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 304,
+      "case_id": "policy.us_rulemaking#4",
+      "expected_tool": "policy.us_rulemaking",
+      "prompt": "ある規則が提案段階なのか最終化されたのか、公式 docket 情報で見分けたい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 305,
+      "case_id": "politics.us_campaign_finance#1",
+      "expected_tool": "politics.us_campaign_finance",
+      "prompt": "2024年選挙で、候補者本人の選挙委員会と外部PACの収入を比べたい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 306,
+      "case_id": "politics.us_campaign_finance#2",
+      "expected_tool": "politics.us_campaign_finance",
+      "prompt": "大統領候補の選挙資金は、どの時期に大きく集まった？四半期ごとに見せて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 308,
+      "case_id": "politics.us_campaign_finance#4",
+      "expected_tool": "politics.us_campaign_finance",
+      "prompt": "2024年の主要候補について、資金調達額と支出額の差を比較して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 309,
+      "case_id": "gov.us_spending#1",
+      "expected_tool": "gov.us_spending",
+      "prompt": "NASAがSpaceXに発注した契約のうち、金額が大きいものと目的を知りたい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "award_amount_and_purpose"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 310,
+      "case_id": "gov.us_spending#2",
+      "expected_tool": "gov.us_spending",
+      "prompt": "2024年度の契約額と実際の支出額は、NASAから同じ会社にどれくらい出た？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 311,
+      "case_id": "gov.us_spending#3",
+      "expected_tool": "gov.us_spending",
+      "prompt": "米政府機関別に、SpaceXへの契約がどこから出ているか比べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 312,
+      "case_id": "gov.us_spending#4",
+      "expected_tool": "gov.us_spending",
+      "prompt": "ある受注者への連邦契約を、年度と契約機関で絞って一覧にしたい：Space Exploration Technologies Corp.",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 313,
+      "case_id": "law.us_courts#1",
+      "expected_tool": "law.us_courts",
+      "prompt": "Section 230を引用した判決の中で、プラットフォーム責任を最近どう判断している？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 315,
+      "case_id": "law.us_courts#3",
+      "expected_tool": "law.us_courts",
+      "prompt": "この判例の裁判所、判決日、引用関係を調べて：Gonzalez v. Google。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 316,
+      "case_id": "law.us_courts#4",
+      "expected_tool": "law.us_courts",
+      "prompt": "著作権とオンラインサービスに関する最近の連邦判決を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "court_opinion_body_and_federal_filter"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 317,
+      "case_id": "defense.us_contracts#1",
+      "expected_tool": "defense.us_contracts",
+      "prompt": "国防総省のLockheed Martin向け契約で、最近金額が大きかった案件を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 318,
+      "case_id": "defense.us_contracts#2",
+      "expected_tool": "defense.us_contracts",
+      "prompt": "2025年に契約された航空機関連案件を、発注機関と金額で見比べたい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 320,
+      "case_id": "defense.us_contracts#4",
+      "expected_tool": "defense.us_contracts",
+      "prompt": "防衛企業への契約がどの軍種から出ているか、最近の発表を分類して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 321,
+      "case_id": "sanctions.us_ofac#1",
+      "expected_tool": "sanctions.us_ofac",
+      "prompt": "Iran AirがOFACリストに載っているか、別名や制裁プログラムも含めて確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "ofac_alias_and_program"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 322,
+      "case_id": "sanctions.us_ofac#2",
+      "expected_tool": "sanctions.us_ofac",
+      "prompt": "取引先の法人名に表記揺れがあるので、制裁リスト上の別名を探したい：Rosneft。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 323,
+      "case_id": "sanctions.us_ofac#3",
+      "expected_tool": "sanctions.us_ofac",
+      "prompt": "指定対象の住所や識別番号が公開されているか確認して：Iran Air。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 325,
+      "case_id": "econ.fred#1",
+      "expected_tool": "econ.fred",
+      "prompt": "米国の政策金利は、過去3年でどの局面に上がったり下がったりした？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 326,
+      "case_id": "econ.fred#2",
+      "expected_tool": "econ.fred",
+      "prompt": "政策金利とインフレ率を同じ期間で並べて、金融引き締めの流れを見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 327,
+      "case_id": "econ.fred#3",
+      "expected_tool": "econ.fred",
+      "prompt": "2000年以降のFF金利を年平均で比較したい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 328,
+      "case_id": "econ.fred#4",
+      "expected_tool": "econ.fred",
+      "prompt": "次の会議の準備に、米国の長期金利と短期金利の最近の推移を確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 329,
+      "case_id": "econ.us_labor#1",
+      "expected_tool": "econ.us_labor",
+      "prompt": "米国の失業率を州ごとに比べて、最も高い地域を知りたい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 330,
+      "case_id": "econ.us_labor#2",
+      "expected_tool": "econ.us_labor",
+      "prompt": "建設業と医療分野で雇用者数が最近どう変わった？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 331,
+      "case_id": "econ.us_labor#3",
+      "expected_tool": "econ.us_labor",
+      "prompt": "若年層の労働参加率が、ここ数年で上がっているか調べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 332,
+      "case_id": "econ.us_labor#4",
+      "expected_tool": "econ.us_labor",
+      "prompt": "雇用統計の中で、平均時給と失業率を同じ期間で見せて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": true
+    },
+    {
+      "global_index": 333,
+      "case_id": "energy.us_eia#1",
+      "expected_tool": "energy.us_eia",
+      "prompt": "米国の原油在庫は、過去数か月の季節パターンと比べて多い？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 335,
+      "case_id": "energy.us_eia#3",
+      "expected_tool": "energy.us_eia",
+      "prompt": "ガソリン価格の地域差を、州別データで確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 336,
+      "case_id": "energy.us_eia#4",
+      "expected_tool": "energy.us_eia",
+      "prompt": "エネルギー輸入依存度を考えるため、米国の石油輸出入の月次変化を調べて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 337,
+      "case_id": "econ.jp_estat#1",
+      "expected_tool": "econ.jp_estat",
+      "prompt": "日本の消費者物価を、食料とエネルギーを分けて最近の動きを見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 338,
+      "case_id": "econ.jp_estat#2",
+      "expected_tool": "econ.jp_estat",
+      "prompt": "東京と全国平均で、物価上昇の傾向に差がある？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 339,
+      "case_id": "econ.jp_estat#3",
+      "expected_tool": "econ.jp_estat",
+      "prompt": "世帯の年齢層によって消費支出の内訳がどう違うか、最新統計を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 340,
+      "case_id": "econ.jp_estat#4",
+      "expected_tool": "econ.jp_estat",
+      "prompt": "日本の人口が減っている地域を、都道府県別の統計で確認して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 341,
+      "case_id": "maritime.us_vessel_traffic#1",
+      "expected_tool": "maritime.us_vessel_traffic",
+      "prompt": "ニューヨーク港で貨物船の交通が多い水域を、年別に見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 344,
+      "case_id": "maritime.us_vessel_traffic#4",
+      "expected_tool": "maritime.us_vessel_traffic",
+      "prompt": "港湾計画の参考に、船舶位置の集中箇所を地図用データで取得したい：ニューヨーク港。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 345,
+      "case_id": "aviation.operational_weather#1",
+      "expected_tool": "aviation.operational_weather",
+      "prompt": "羽田では今、着陸に影響しそうな風や視程の条件がある？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "metar_taf_units_and_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 346,
+      "case_id": "aviation.operational_weather#2",
+      "expected_tool": "aviation.operational_weather",
+      "prompt": "現在のMETARと数時間先のTAFを比べて、天候が変わりそうか教えて。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [
+        "metar_taf_units_and_direction"
+      ],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 347,
+      "case_id": "aviation.operational_weather#3",
+      "expected_tool": "aviation.operational_weather",
+      "prompt": "成田と羽田の風向・視程を比べて、運航条件に違いがあるか見たい。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 348,
+      "case_id": "aviation.operational_weather#4",
+      "expected_tool": "aviation.operational_weather",
+      "prompt": "RJTTの最新観測で、雲底と気圧がどう報告されている？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 349,
+      "case_id": "knowledge.qiita#1",
+      "expected_tool": "knowledge.qiita",
+      "prompt": "日本語で、Next.jsのApp Routerへ移行した人の実例や注意点を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 351,
+      "case_id": "knowledge.qiita#3",
+      "expected_tool": "knowledge.qiita",
+      "prompt": "ReactとVueでフォームの状態管理を比べた日本語記事はある？",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    },
+    {
+      "global_index": 352,
+      "case_id": "knowledge.qiita#4",
+      "expected_tool": "knowledge.qiita",
+      "prompt": "最近の投稿から、生成AIを使った開発で実際に役立った工夫を探して。",
+      "source_record": ".live/olcr-e2e-r46-20261011-semantic-201-269-all69.jsonl",
+      "specific_changes": [],
+      "shared_changes": [
+        "configured_web_provider_selection",
+        "grounded_composition_time_language_and_budget",
+        "honest_fallback_status"
+      ],
+      "post_change_e2e_status": "NOT_RUN",
+      "semantic_verdict": "UNVERIFIED_AFTER_CHANGE",
+      "recorded_runtime_recheck_needed": false
+    }
+  ]
+}

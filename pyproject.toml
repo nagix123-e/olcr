@@ -6,13 +6,32 @@ build-backend = "setuptools.build_meta"
 name = "olcr"
 version = "0.6.0"
 description = "Ollama Local Cognitive Runtime terminal client"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-dependencies = ["fastapi==0.116.1", "httpx==0.28.1", "pydantic==2.11.7", "uvicorn==0.35.0", "torch==2.8.0", "transformers==4.57.6", "sympy>=1.12,<2.0", "scipy>=1.11,<2.0"]
+dependencies = ["fastapi==0.116.1", "httpx==0.28.1", "websockets>=15,<16", "pydantic==2.11.7", "uvicorn==0.35.0", "PyJWT[crypto]>=2.10,<3", "PyNaCl==1.6.2", "keyring==25.7.0", "qrcode==8.2", "torch==2.8.0", "torchaudio==2.8.0", "transformers==4.57.6", "liquid-audio>=1.0,<2", "huggingface_hub>=0.20.0", "sympy>=1.12,<2.0", "scipy>=1.11,<2.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
 
 [project.scripts]
 olcr = "olcr_cli.main:main"
+olcr-acp = "olcr_cli.acp:main"
+olcr-mobile-host = "olcr_cli.mobile_host:main"
 
 [tool.setuptools]
 package-dir = {"" = "backend"}
 packages = ["olcr_api", "olcr_cli"]
+
+[tool.setuptools.package-data]
+olcr_api = ["coding_verification_runner.cjs", "node_test_imports.cjs", "help_knowledge/*.md", "help_knowledge/topics.json", "help_knowledge/graphify-out/graph.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend", "."]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Correctness checks only; existing formatting is intentionally preserved.
+select = ["F821", "F822", "F823", "F811", "F601", "F602", "F631", "F632", "F634", "B012"]

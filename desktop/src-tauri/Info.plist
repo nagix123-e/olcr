@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCalendarsUsageDescription</key>
+  <string>OLCR uses Calendar to view and manage the events you request in chat.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>OLCR uses Calendar to view and manage the events you request in chat.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>OLCR Mail reads requested messages and sends emails only when an agent is asked to send them. Sent messages always include an AI-agent disclosure.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>OLCR uses the microphone for voice input and, only while hands-free mode is enabled, local wake-word detection.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>OLCR uses macOS on-device speech recognition when you select macOS as the voice input engine.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>OLCR uses the camera only while you enable hands-free gestures to recognize your hand movements locally.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>OLCR captures the screen only while you start screen perception, so it can observe visual changes and help with local computer tasks.</string>
+</dict>
+</plist>

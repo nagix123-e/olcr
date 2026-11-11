@@ -7,6 +7,7 @@ from olcr_api.implementation_plan import (PlanManifestCoverageError, PlanPathVal
                                           PlanStackConformanceError,
                                           canonical_stack_contract,
                                           deterministic_manifest_completion, deterministic_manifest_completion_diagnostics,
+                                          concrete_artifact_contract,
                                           manifest_coverage,
                                           manifest_coverage_message, manifest_repair_no_progress_message,
                                           manifest_repair_progress,
@@ -20,6 +21,17 @@ from olcr_api.runtime import Runtime
 
 
 class ImplementationPlanTests(unittest.TestCase):
+    def test_verification_paths_do_not_become_mutable_artifacts(self):
+        plan={'scope':{'allowed':['src/ui.js','package.json','tests/logic.test.js'],'forbidden':[]},
+              'file_manifest':[],
+              'phases':[{'id':'repair','execution_mode':'IMPLEMENTATION',
+                  'goal':'Fix the duplicate declaration in src/ui.js',
+                  'done':['src/ui.js parses without duplicate declarations'],
+                  'verify':['Validate package.json and run node --test tests/logic.test.js'],
+                  'verification_targets':['package.json','tests/logic.test.js']} ]}
+        artifacts=concrete_artifact_contract(plan)['artifacts']
+        self.assertEqual({'src/ui.js'},set(artifacts))
+
     def test_path_validation_messages_preserve_failure_semantics(self):
         self.assertIn("存在しないファイル", path_validation_message("MISSING_MODIFY_TARGET", replan=True))
         self.assertIn("再計画します", path_validation_message("MISSING_MODIFY_TARGET", replan=True))
@@ -88,6 +100,23 @@ class ImplementationPlanTests(unittest.TestCase):
             self.assertEqual(["src/main.tsx"], artifact["normalized_create_from_modify"])
             self.assertTrue(Path(directory, "src/main.tsx").exists())
 
+    def test_partial_new_project_converts_only_explicit_scope_missing_modify(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            (root / "existing.txt").write_text("already here", encoding="utf-8")
+            target = root / "E2E_LONG_FIX_SINGLE.txt"
+            state = {"greenfield": False, "new_project_intent": True,
+                     "project_state": "PARTIALLY_INITIALIZED"}
+            plan = {"scope": {"allowed": [str(target)], "forbidden": []},
+                    "file_manifest": [{"path": str(target), "action": "modify"}],
+                    "phases": []}
+            prepared, artifact = prepare_implementation_plan(
+                "partial-new-project", plan, directory,
+                {"task_profile": "GENERAL_CODING"}, state)
+            self.assertEqual("create", prepared["file_manifest"][0]["action"])
+            self.assertEqual(["E2E_LONG_FIX_SINGLE.txt"], artifact["normalized_create_from_modify"])
+            self.assertTrue(target.exists())
+
     def test_greenfield_manifest_must_cover_detected_frontend_stack(self):
         with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
             state = workspace_state(directory)
@@ -103,6 +132,43 @@ class ImplementationPlanTests(unittest.TestCase):
                                             {"task_profile": "FRONTEND_ONLY_MARKETING_SITE"}, state)
             self.assertIn("src/App.tsx", caught.exception.missing)
             self.assertFalse(Path(directory, "src").exists())
+
+    def test_compacted_greenfield_plan_uses_blueprint_and_required_stack_for_manifest_coverage(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            state = workspace_state(directory)
+            state.update({"new_project_intent": True, "host_workspace_authorized": True,
+                          "workspace_state": "EMPTY_GREENFIELD"})
+            plan = {
+                "file_manifest": [],
+                "blueprint": {"source_phases": [{
+                    "id": "p1", "goal": "Build the approved public product website",
+                    "done": ["The homepage contains seven responsive sections"],
+                }]},
+                "phases": [
+                    {"id": "major-blueprint", "kind": "ORCHESTRATOR_BLUEPRINT",
+                     "execution_mode": "IMPLEMENTATION", "goal": "Repository context and blueprint"},
+                    {"id": "major-1", "execution_mode": "IMPLEMENTATION",
+                     "requires_dependency_installation": True,
+                     "goal": "Implement approved deliverables"},
+                ],
+            }
+            requirements = {
+                "task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                "new_project_intent": True,
+                "required_stack": ["Vite", "React", "TypeScript", "Tailwind", "shadcn", "Anime.js v4"],
+            }
+
+            coverage = manifest_coverage(plan, requirements, state)
+
+            self.assertEqual(
+                ["index.html", "package.json", "src/App.tsx", "src/index.css", "src/main.tsx", "vite.config.ts"],
+                coverage["missing_paths"],
+            )
+            self.assertFalse(coverage["valid"])
+            completed, _ = deterministic_manifest_completion(plan, coverage, directory, state)
+            self.assertEqual("major-1", next(item["owner_phase"] for item in completed["file_manifest"]
+                                               if item["path"] == "index.html"))
+
 
     def test_componentized_phase_requires_explicit_component_paths(self):
         with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
@@ -171,6 +237,69 @@ class ImplementationPlanTests(unittest.TestCase):
             self.assertEqual("src/App.tsx", normalized["file_manifest"][0]["path"])
             self.assertEqual("VITE_REACT_CANONICAL_PROFILE", changes[0]["source"])
 
+    def test_descriptive_manifest_path_is_canonicalized_to_exact_filename(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            plan = {
+                "scope": {"allowed": ["Create E2E_SENTINEL.md in the repository root"], "forbidden": []},
+                "file_manifest": [{"path": "Create E2E_SENTINEL.md in the repository root", "action": "create"}],
+                "phases": [{"id": "p1", "goal": "Create E2E_SENTINEL.md in the repository root",
+                             "done": ["file exists"], "verify": ["content matches"],
+                             "dependencies": [], "risks": []}],
+            }
+            normalized, changes = normalize_plan_artifact_paths(plan, {"task_profile": "GENERAL_CODING"})
+            self.assertEqual("E2E_SENTINEL.md", normalized["file_manifest"][0]["path"])
+            self.assertEqual(["E2E_SENTINEL.md"], normalized["scope"]["allowed"])
+            self.assertEqual("PROSE_EMBEDDED_PATH", changes[0]["source"])
+            prepared, artifact = prepare_implementation_plan("exact-file", normalized, directory,
+                                                              {"task_profile": "GENERAL_CODING"})
+            self.assertEqual("E2E_SENTINEL.md", prepared["file_manifest"][0]["path"])
+            self.assertTrue((Path(directory) / "E2E_SENTINEL.md").exists())
+
+    def test_duplicate_compatible_manifest_entries_are_preserved_for_preapproval_rejection(self):
+        plan = {
+            "file_manifest": [
+                {"path": "E2E_LONG_FIX_SINGLE.txt", "action": "create", "owner_phase": "p1"},
+                {"path": "E2E_LONG_FIX_SINGLE.txt", "action": "modify", "owner_phase": "p2"},
+            ],
+            "phases": [],
+        }
+        normalized, changes = normalize_plan_artifact_paths(plan, {"task_profile": "GENERAL_CODING"})
+        self.assertEqual(["E2E_LONG_FIX_SINGLE.txt"] * 2,
+                         [item["path"] for item in normalized["file_manifest"]])
+        self.assertEqual("create", normalized["file_manifest"][0]["action"])
+        self.assertNotIn("DUPLICATE_MANIFEST_ENTRY_COLLAPSED", [item["source"] for item in changes])
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            with self.assertRaisesRegex(PlanPathValidationError, "duplicate path"):
+                prepare_implementation_plan("duplicate-manifest", normalized, directory,
+                                            {"task_profile": "GENERAL_CODING"})
+            self.assertFalse((Path(directory) / "E2E_LONG_FIX_SINGLE.txt").exists())
+
+    def test_conflicting_manifest_actions_are_not_collapsed(self):
+        plan = {
+            "file_manifest": [
+                {"path": "result.txt", "action": "create"},
+                {"path": "result.txt", "action": "delete"},
+            ],
+            "phases": [],
+        }
+        normalized, changes = normalize_plan_artifact_paths(plan, {"task_profile": "GENERAL_CODING"})
+        self.assertEqual(2, len(normalized["file_manifest"]))
+        self.assertNotIn("DUPLICATE_MANIFEST_ENTRY_COLLAPSED", [item["source"] for item in changes])
+
+    def test_prepare_rejects_absolute_and_relative_duplicate_paths_before_scaffold(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            absolute = str(Path(directory) / "result.txt")
+            plan = {"file_manifest": [
+                {"path": absolute, "action": "create"},
+                {"path": "result.txt", "action": "modify"},
+            ], "phases": []}
+            with self.assertRaisesRegex(PlanPathValidationError, "duplicate path"):
+                prepare_implementation_plan(
+                    "absolute-relative-duplicate", plan, directory,
+                    {"task_profile": "GENERAL_CODING"},
+                    {"greenfield": True, "new_project_intent": True, "project_state": "EMPTY_GREENFIELD"})
+            self.assertFalse((Path(directory) / "result.txt").exists())
+
     def test_unknown_component_prose_does_not_invent_a_path(self):
         with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
             state = workspace_state(directory)
@@ -196,10 +325,76 @@ class ImplementationPlanTests(unittest.TestCase):
             coverage = manifest_coverage(plan, {"task_profile": "FRONTEND_ONLY_MARKETING_SITE"}, state)
             decision = deterministic_manifest_completion_diagnostics(plan, coverage, directory, state)
             self.assertTrue(decision["eligible"])
-            self.assertEqual([], decision["added_paths"])
+            self.assertEqual(["index.html", "src/App.tsx"], decision["added_paths"])
+            self.assertEqual(2, decision["candidate_create_count"])
+            self.assertEqual(len(decision["candidate_paths"]) - 2, decision["candidate_rejected_count"])
             self.assertTrue(decision["candidate_diagnostics"])
             self.assertTrue(any(item["rejection_reason"] == "ARTIFACT_OUTSIDE_AUTHORIZED_MUTATION_SCOPE"
                                 for item in decision["candidate_diagnostics"]))
+
+    def test_partial_completion_accounts_for_create_modify_and_captures_preimages(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            for path, content in (("index.html", "index"), ("src/App.tsx", "app"), ("src/main.tsx", "main")):
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            state = workspace_state(directory)
+            state.update({"new_project_intent": True, "host_workspace_authorized": True,
+                          "workspace_state": "PARTIALLY_INITIALIZED", "authorized_mutation": ["."]})
+            plan = {"file_manifest": [{"path": "package.json", "action": "create"}],
+                    "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                                 "goal": "Build Vite React TypeScript Tailwind shadcn Anime.js componentized homepage sections Hero Philosophy API"}]}
+            coverage = manifest_coverage(plan, {"task_profile": "FRONTEND_ONLY_MARKETING_SITE"}, state)
+            decision = deterministic_manifest_completion_diagnostics(plan, coverage, directory, state)
+            self.assertEqual(4, decision["candidate_create_count"])
+            self.assertEqual(3, decision["candidate_modify_count"])
+            self.assertEqual(7, sum(decision[key] for key in ("candidate_create_count", "candidate_modify_count",
+                                                               "candidate_already_covered_count", "candidate_rejected_count",
+                                                               "candidate_not_applicable_count")))
+            # Existing bootstrap files are explicit in the current plan in a
+            # partially initialized task and must become MODIFY entries.
+            plan["file_manifest"].extend({"path": path, "action": "create"}
+                                         for path in ("index.html", "src/App.tsx", "src/main.tsx"))
+            coverage = manifest_coverage(plan, {"task_profile": "FRONTEND_ONLY_MARKETING_SITE"}, state)
+            candidate, additions = deterministic_manifest_completion(plan, coverage, directory, state)
+            self.assertEqual(4, len(additions))
+            prepared, artifact = prepare_implementation_plan(
+                "partial", candidate, directory, {"task_profile": "FRONTEND_ONLY_MARKETING_SITE"}, state)
+            self.assertTrue(artifact["manifest_coverage"]["valid"])
+            self.assertEqual(3, artifact["file_manifest_modify_count"])
+            self.assertEqual(5, artifact["file_manifest_create_count"])
+            self.assertEqual(64, len(artifact["preimage_evidence"]["index.html"]["sha256"]))
+            self.assertEqual("index", (root / "index.html").read_text(encoding="utf-8"))
+
+    def test_existing_candidate_without_concrete_scope_is_rejected(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            target = Path(directory, "src", "App.tsx")
+            target.parent.mkdir(parents=True)
+            target.write_text("existing", encoding="utf-8")
+            state = workspace_state(directory)
+            state.update({"new_project_intent": True, "host_workspace_authorized": True,
+                          "workspace_state": "PARTIALLY_INITIALIZED", "authorized_mutation": ["."]})
+            plan = {"file_manifest": [], "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                                                     "goal": "Implement the requested page"}]}
+            coverage = {"missing_paths": ["src/App.tsx"],
+                        "requirement_types": {"FILESYSTEM_ARTIFACT": ["src/App.tsx"],
+                                               "ARTIFACT_PROVENANCE": {"src/App.tsx": []}}}
+            decision = deterministic_manifest_completion_diagnostics(plan, coverage, directory, state)
+            item = decision["candidate_diagnostics"][0]
+            self.assertEqual("REJECTED", item["category"])
+            self.assertEqual("ARTIFACT_NOT_IN_IMPLEMENTATION_SCOPE", item["rejection_reason"])
+
+    def test_mixed_manifest_scaffolds_only_create_entries(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            existing = Path(directory, "existing.tsx")
+            existing.write_text("preserve", encoding="utf-8")
+            plan = {"phases": [], "file_manifest": [{"path": "existing.tsx", "action": "modify"},
+                                                       {"path": "new.tsx", "action": "create"}]}
+            _, artifact = prepare_implementation_plan("mixed", plan, directory)
+            self.assertEqual(1, artifact["scaffold_created_count"])
+            self.assertEqual(1, artifact["file_manifest_modify_count"])
+            self.assertEqual("preserve", existing.read_text(encoding="utf-8"))
 
     def test_partial_workspace_active_task_provenance_allows_modify_but_unrelated_file_does_not(self):
         with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:

@@ -1,0 +1,220 @@
+{
+  "date_local": "2026-10-12 Asia/Tokyo",
+  "run_id": "olcr-e2e-semantic-fix-retest-20261012b",
+  "build_id": "olcr-e2e-semantic-fix-retest-20261012b",
+  "source_fix_record": "SEMANTIC_FOLLOWUP_REPAIRS_AFTER_28_20261011.json",
+  "target_global_indices": [
+    24,
+    27,
+    42,
+    47,
+    59,
+    90,
+    97,
+    107,
+    108,
+    124,
+    142,
+    316
+  ],
+  "run_status": "COMPLETED_12_VALID_GUI_PROMPTS",
+  "valid_gui_prompts": 12,
+  "cancelled_input_setup_attempts": 1,
+  "cancelled_attempt_note": "Japanese typeText input was truncated to “ISS”; it was stopped before answer and its conversation was removed from the isolated profile. Actual prompts were pasted and verified in the entry field before send.",
+  "started_at_local": "2026-10-12T17:12:26.965889+09:00",
+  "finished_at_local": "2026-10-12T17:21:15+09:00",
+  "execution_method": "Real signed macOS GUI E2E using scripts/start-cua-gui-test.sh and cua_repl; exact absolute app path bound. External provider requests authorized by user request to E2E these API-backed cases.",
+  "bundle": "/private/tmp/olcr-e2e-semantic-fix-retest-20261012b-target/debug/bundle/macos/OLCR.app",
+  "app_support": "/private/tmp/olcr-e2e-semantic-fix-retest-20261012b-profile",
+  "db": "/private/tmp/olcr-e2e-semantic-fix-retest-20261012b-profile/olcr.db",
+  "build_log": "/private/tmp/olcr-e2e-semantic-fix-retest-20261012b.log",
+  "build_id_verified": "olcr-e2e-semantic-fix-retest-20261012b",
+  "app_pid": 13031,
+  "backend_pid": 13567,
+  "backend_port": 61519,
+  "launch_checks": {
+    "signed_identity": "OLCR Local Debug Code Signing",
+    "signature_verified": true,
+    "keychain_restore_enabled": true,
+    "keychain_restore": "completed; web_credentials=1; external_credentials=12 (counts only)",
+    "launcher_ready": true,
+    "gui_ready": true,
+    "health_build_id_matches": true,
+    "app_support_and_db_isolated": true,
+    "backend_owned_by_exact_app": true,
+    "model_registry": "PASS",
+    "model_runtime_bindings": "FAIL (diagnostic; normal_chat MLX still timed out on two fallback cases)"
+  },
+  "summary": {
+    "PASS": 6,
+    "PARTIAL": 3,
+    "FAIL": 3
+  },
+  "loader_result": "For the 3 slow synthesis paths (27,42,97), GUI left Generating and reached a terminal assistant response/error after about 65–67 seconds; the loader cleared. Cases 24,47,59,90,107,108,124,142,316 also reached terminal UI state.",
+  "app_left_open": true,
+  "app_final_visible_case": 316,
+  "cases": [
+    {
+      "global_index": 24,
+      "prompt": "今ISSがいる場所を、近い都市や地域の目安と一緒に説明して。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "Where The ISS At\nISSの現在位置：緯度 18.168215004707°、経度 -48.727585909621°、高度 423.24847344342 km、速度 27570.906497906 km/h（観測時刻：2026-10-12 08:12:25 UTC）。\n地図用座標：18.168215, -48.727586（緯度, 経度）\n地図で開く：https://www.openstreetmap.org/?mlat=18.168215&mlon=-48.727586#map=5/18.168215/-48.727586\n座標と海岸線からの地域の目安：北大西洋の中央部（座標範囲と粗い海岸線からの概略海域。近隣都市は未確認）",
+      "notes": "Where The ISS At HTTP 200。終端回答に座標と「北大西洋の中央部（座標範囲と粗い海岸線からの概略海域。近隣都市は未確認）」を表示。未取得の都市名は補っていない。"
+    },
+    {
+      "global_index": 27,
+      "prompt": "ケプラーで見つかった惑星のうち、半径が地球に近いものを探して。",
+      "semantic_verdict": "FAIL",
+      "task_rows": 2,
+      "terminal_tasks": 2,
+      "task_states": [
+        "failed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "NASA Exoplanet Archive：外部データを取得できませんでした。しばらくしてから再試行してください。\n代替ソースによる確認も完了していません。",
+      "notes": "NASA APIの403後、代替Web検索は10件取得・WEB_SUCCESS_GATE=PASS。しかしローカル合成が60秒でtimeoutし、回答は「外部データを取得できませんでした／代替ソースによる確認も完了していません」のみ。取得済み根拠を回答へ保持する修正はGUI経路で未達。タスクは約67秒でfailedとなりローダーは終了。"
+    },
+    {
+      "global_index": 42,
+      "prompt": "ワシントン周辺で、今流量が大きい河川観測所を確認して。",
+      "semantic_verdict": "FAIL",
+      "task_rows": 2,
+      "terminal_tasks": 2,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "# ワシントン周辺で流量が大きい河川観測所\n\nUSGS Water Data（2026年10月12日）で取得した上位5件の観測所が、現在ワシントン周辺で流量が大きい順です。\n\n| 順位 | 観測所 | 流量 | 時刻（現地EDT） |\n|------|--------|------|-----------------|\n| 1 | POTOMAC RIVER NEAR WASH, DC LITTLE FALLS PUMP STA（ポトマック川、ワシントン近、リトルフォールズポンプ駅） | **7,660 ft³/s** | 03:50 |\n| 2 | GOOSE CREEK NEAR LEESBURG, VA（グースクリーク、リーズバーグ近、バージニア州） | 2,630 ft³/s | 03:45 |\n| 3 | BROAD RUN NEAR LEESBURG, VA（ブロードラン、リーズバーグ近、バージニア州） | 1,380 ft³/s | 03:40 |\n| 4 | PATUXENT RIVER NEAR BOWIE, MD（パタксент川、ボウイ近、メリーランド州） | 852 ft³/s | 03:45 |\n| 5 | ANACOSTIA RIVER AT KENILWORTH AT WASHINGTON, DC（アナコスタ川、ケニルワース、ワシントンDC） | 832 ft³/s | 03:35 |\n\n**流量が最も大きいのはポトマック川のリトルフォールズポンプ駅で、約7,660 ft³/s（約217,000 m³/s）です。** これが5件中最も大きく、2位のグースクリーク（約2,630 ft³/s）の約2.9倍に達しています。\n\n## 補足と注意\n\n- **単位は流量ではなく、標高水位を示す可能性が高いです。** 全項目のqualifierに「P」が付いており、これはUSGSで**水位（gage height, ft）**を意味することが一般的です。ft³/s（流量）に単位が付けられていますが、P qualifierは通常水位コードなので、これが流量そのものか水位かを確認する必要があります。\n- **これはサンプル（上位5件）です。** 該当フィールドの station_count は48件で、流量順の完全なリストではありません。\n- **データは2026年10月12日08:14（UTC）現在のものであり、evidence_truncated が true です。** 上位5件のみで、流量が大きい他の観測所が省略されている可能性があり、完全なランキングや「これが最大」という結論は保証できません。\n\n出典：https://waterdata.usgs.gov/",
+      "notes": "USGS HTTP 200で5件、終端回答とローダー終了は確認。回答はPOTOMAC 7,660 ft³/sを約217,000 m³/sと誤換算（約217 m³/sが正しい）し、USGS qualifier Pを水位gage heightと誤解している。"
+    },
+    {
+      "global_index": 47,
+      "prompt": "近所で最近見られた野鳥を調べたい。上野公園周辺の記録を見せて。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "GBIF\n2026-07-14T10:16:56 · Zosterops japonicus japonicus Temminck & Schlegel, 1845 · 座標（緯度, 経度）：35.718835, 139.776521 · Tokyo\nhttps://www.gbif.org/occurrence/6451630859\n2026-07-14T10:14:07 · Parus cinereus Vieillot, 1818 · 座標（緯度, 経度）：35.718835, 139.776521 · Tokyo\nhttps://www.gbif.org/occurrence/6451820679\n2026-07-14T09:03:20 · Spodiopsar cineraceus (Temminck, 1835) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451586918\n2026-07-14T08:40:46 · Tachybaptus ruficollis poggei (Reichenow, 1902) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451649564\n2026-07-14T08:34:27 · Anas zonorhyncha Swinhoe, 1866 · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451543409\n取得記録の日付範囲：2026-07-14〜2026-07-14。最新の返却記録が今日の観察という意味ではありません。\n検索期間：2026-07-14,2026-10-12\n学名は登録された表記です。和名を推測して置き換えていません。",
+      "notes": "GBIF HTTP 200、5観察行すべて日付・学名・座標・地域名を表示。以前欠落した5件目のAnas zonorhynchaも復元。日付範囲と最新取得日≠今日の注意も表示。"
+    },
+    {
+      "global_index": 59,
+      "prompt": "インスリンの前駆体から成熟タンパク質までの情報を確認して。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "UniProt · 前駆体と成熟鎖の登録情報\nP01308 · Homo sapiens · 前駆体配列長 110アミノ酸\nシグナル領域：Signal · 前駆体上の残基位置 1〜24（24残基）\nペプチド：Insulin B chain · 前駆体上の残基位置 25〜54（30残基）\nプロペプチド領域：C peptide · 前駆体上の残基位置 57〜87（31残基）\nペプチド：Insulin A chain · 前駆体上の残基位置 90〜110（21残基）\nhttps://www.uniprot.org/uniprotkb/P01308/entry\n残基位置は前駆体配列を基準にしています。前駆体の全長と成熟鎖の長さを区別して示しました。",
+      "notes": "UniProt HTTP 200。P01308、前駆体110 aa、Signal 1–24、B chain 25–54、C peptide 57–87、A chain 90–110を直接表示。"
+    },
+    {
+      "global_index": 90,
+      "prompt": "映画好き向けに、少し難しめのクイズを一つお願い。",
+      "semantic_verdict": "PARTIAL",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "Open Trivia DB\nWhat year did the James Cameron film \"Titanic\" come out in theaters?\n1. 1999\n2. 1998\n3. 1997\n4. 1996\n回答を選んでください。\n\n出典：https://opentdb.com/",
+      "notes": "Open Trivia DB HTTP 200、四択を表示し正答を漏らさない。「少し難しめ」の難度要件は弱く、応答は英語で質問言語（日本語）にも合わせていない。"
+    },
+    {
+      "global_index": 97,
+      "prompt": "ゴッホの作品のうち、風景画と自画像をそれぞれ探して所蔵情報を見たい。",
+      "semantic_verdict": "FAIL",
+      "task_rows": 2,
+      "terminal_tasks": 2,
+      "task_states": [
+        "failed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "Metropolitan Museum Collection API：外部データを取得できませんでした。しばらくしてから再試行してください。\n代替ソースによる確認も完了していません。",
+      "notes": "Met APIの取得後、代替Web検索は8件取得・WEB_SUCCESS_GATE=PASS。しかしローカル合成が60秒でtimeoutし、回答はデータ未取得・代替確認未完了という一般文のみ。風景画／自画像・所蔵情報が出ず、取得済み根拠も回答に残らない。タスクは約65秒でfailed、ローダーは終了。"
+    },
+    {
+      "global_index": 107,
+      "prompt": "Nakamuraが黒番で指した最近の対局を棋譜付きで探して。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "Chess.com · hikaruの最近の公開対局\n2026-10-10 17:58 UTC · 白 wonderfultime / 黒 Hikaru · bullet\n結果（登録値）：白 resigned / 黒 win\n着手数：100半手（片側の1着手を1半手として集計）\nオープニング：https://www.chess.com/openings/Indian-Game-Knights-Variation-East-Indian-Defense...5.O-O-d6-6.c4-Nbd7\nhttps://www.chess.com/game/live/185968590171\n棋譜（PGN）：\n```pgn\n[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.10.10\"]\n[Round \"-\"]\n[White \"wonderfultime\"]\n[Black \"Hikaru\"]\n[Result \"0-1\"]\n[Tournament \"https://www.chess.com/tournament/live/bullet-brawl-october-10-2026-31380641\"]\n[CurrentPosition \"8/7k/3Q2q1/2pP4/4N1p1/4P3/P2nKr2/8 w - - 0 51\"]\n[Timezone \"UTC\"]\n[ECO \"A48\"]\n[ECOUrl \"https://www.chess.com/openings/Indian-Game-Knights-Variation-East-Indian-Defense...5.O-O-d6-6.c4-Nbd7\"]\n[UTCDate \"2026.10.10\"]\n[UTCTime \"17:56:41\"]\n[WhiteElo \"3280\"]\n[BlackElo \"3403\"]\n[TimeControl \"60\"]\n[Termination \"Hikaru won by resignation\"]\n[StartTime \"17:56:41\"]\n[EndDate \"2026.10.10\"]\n[EndTime \"17:58:26\"]\n[Link \"https://www.chess.com/game/live/185968590171\"]\n\n1. d4 {[%clk 0:00:59.6]} 1... g6 {[%clk 0:00:59.4]} 2. e3 {[%clk 0:00:59.3]} 2... Bg7 {[%clk 0:00:59]} 3. Nf3 {[%clk 0:00:59.2]} 3... Nf6 {[%clk 0:00:58.8]} 4. Be2 {[%clk 0:00:59.1]} 4... d6 {[%clk 0:00:58.7]} 5. O-O {[%clk 0:00:59]} 5... O-O {[%clk 0:00:58.6]} 6. c4 {[%clk 0:00:58.8]} 6... Nbd7 {[%",
+      "notes": "Chess.com HTTP 200。Hikaruの黒番最近対局を型付き結果として表示し、結果・100半手・PGN・対局URLをDBの保存応答で確認。UIカードは折りたたみだが本文は保存済み。"
+    },
+    {
+      "global_index": 108,
+      "prompt": "彼の最近の対局から、短手数で決着したものと長いものを比べたい。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "Chess.com · hikaruの最近の公開対局\n2026-10-10 17:23 UTC · 白 Hikaru / 黒 wonderfultime · bullet\n結果（登録値）：白 win / 黒 resigned\n着手数：25半手（片側の1着手を1半手として集計）\nオープニング：https://www.chess.com/openings/Scandinavian-Defense-Closed-2...dxe4-3.Nxe4-Nf6-4.Nxf6\nhttps://www.chess.com/game/live/185966789619\n棋譜（PGN）：\n```pgn\n[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.10.10\"]\n[Round \"-\"]\n[White \"Hikaru\"]\n[Black \"wonderfultime\"]\n[Result \"1-0\"]\n[Tournament \"https://www.chess.com/tournament/live/bullet-brawl-october-10-2026-31380641\"]\n[CurrentPosition \"r1b5/pppn1kpp/3b1p2/8/3P1B2/8/PPP1NPPP/R4RK1 b - - 2 13\"]\n[Timezone \"UTC\"]\n[ECO \"B01\"]\n[ECOUrl \"https://www.chess.com/openings/Scandinavian-Defense-Closed-2...dxe4-3.Nxe4-Nf6-4.Nxf6\"]\n[UTCDate \"2026.10.10\"]\n[UTCTime \"17:22:47\"]\n[WhiteElo \"3385\"]\n[BlackElo \"3305\"]\n[TimeControl \"60\"]\n[Termination \"Hikaru won by resignation\"]\n[StartTime \"17:22:47\"]\n[EndDate \"2026.10.10\"]\n[EndTime \"17:23:09\"]\n[Link \"https://www.chess.com/game/live/185966789619\"]\n\n1. e4 {[%clk 0:00:59.6]} 1... d5 {[%clk 0:00:58.9]} 2. Nc3 {[%clk 0:00:59.5]} 2... dxe4 {[%clk 0:00:58.8]} 3. Nxe4 {[%clk 0:00:59.1]} 3... Nf6 {[%clk 0:00:58.7]} 4. Nxf6+ {[%clk 0:00:58.3]} 4... exf6 {[%clk 0:00:58.6]} 5. Bc4 {[%clk 0:00:57.9]} 5... Bd6 {[%clk 0:00:57]} 6. Qh5 {[%clk 0:00:56.8]} 6... O-O {[%clk 0:00:56.1]",
+      "notes": "同一会話内のNakamura→「彼」をHikaruとして解決。Chess.comから短い25半手と長い192半手の2件を返し、各PGN付き。DB保存応答で比較対象を確認。"
+    },
+    {
+      "global_index": 124,
+      "prompt": "東京駅から皇居まで、移動距離が短い道順を出して。",
+      "semantic_verdict": "PASS",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "waiting_for_confirmation"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "移動手段（徒歩・自転車・車）を指定してください。出発地と目的地が未指定の場合は、それぞれも教えてください。",
+      "notes": "最短経路で交通手段が未指定のため、徒歩・自転車・車の指定を求める確認応答。OSRMへ車を既定指定しない。"
+    },
+    {
+      "global_index": 142,
+      "prompt": "東南アジアで進行中の災害について、発生地域と開始日を知りたい。",
+      "semantic_verdict": "PARTIAL",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "現在EONETに登録されている自然災害の例です。\n\n1. Mayon Volcano, Philippines\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Volcanoes\n   初回登録観測日：2026-01-07T00:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2026-01-07T00:00:00Z · [123.685, 13.257]\n\n2. Kanlaon Volcano, Philippines\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Volcanoes\n   初回登録観測日：2025-09-10T00:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-09-10T00:00:00Z · [123.13, 10.4096]\n\n3. Wildfire in Laos 1023696\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Wildfires\n   初回登録観測日：2025-04-17T19:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-04-17T19:00:00Z · [101.5951508074957, 20.701027346261032]\n\n4. Wildfire in Myanmar 1023656\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Wildfires\n   初回登録観測日：2025-03-28T19:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-03-28T19:00:00Z · [92.76503877746704, 21.894352137316375]\n\n5. Wildfire in Thailand 1023658\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Wildfires\n   初回登録観測日：2025-03-28T19:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-03-28T19:00:00Z · [97.7073078944757, 18.184866698944987]\n\n6. Wildfire in Thailand 1023660\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Wildfires\n   初回登録観測日：2025-03-25T19:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-03-25T19:00:00Z · [97.91715298776595, 19.184945665656038]\n\n7. Wildfire in Laos 1023644\n   場所：東南アジア周辺の座標範囲（国境照合なし）\n   種別：Wildfires\n   初回登録観測日：2025-03-24T19:00:00Z（災害の実際の発生日とは限りません）\n   登録観測：2025-03-24T19:0",
+      "notes": "NASA EONET HTTP 200、55イベント取得。終端の型付き回答を生成。地域は国境照合なしの座標概略、開始日欄は初回登録観測日で実災害の発生日とは限らないと明記。ただし「進行中」の確認は十分でなく、例に2025年の火災記録を含む。"
+    },
+    {
+      "global_index": 316,
+      "prompt": "著作権とオンラインサービスに関する最近の連邦判決を探して。",
+      "semantic_verdict": "PARTIAL",
+      "task_rows": 1,
+      "terminal_tasks": 1,
+      "task_states": [
+        "completed"
+      ],
+      "assistant_response_saved": true,
+      "assistant_response_excerpt": "CourtListener · 条件に一致した判例候補\n1. Americans for Prosperity v. Meyer（2026-09-30 · Court of Appeals for the Ninth Circuit）\n   https://www.courtlistener.com/opinion/10988846/americans-for-prosperity-v-meyer/\n   判決本文を取得できていないため、争点・判断内容・検索語句との実質的な関連は未確認です。\n2. Thomson Reuters Enterprise Centre GmbH v. Ross Intelligence Inc（2026-09-30 · Court of Appeals for the Third Circuit）\n   https://www.courtlistener.com/opinion/10988837/thomson-reuters-enterprise-centre-gmbh-v-ross-intelligence-inc/\n   判決本文を取得できていないため、争点・判断内容・検索語句との実質的な関連は未確認です。\n3. Doe v. Github, Inc.（2026-09-16 · Court of Appeals for the Ninth Circuit）\n   https://www.courtlistener.com/opinion/10974713/doe-v-github-inc/\n   判決本文を取得できていないため、争点・判断内容・検索語句との実質的な関連は未確認です。\n4. Doe v. Smith（2026-09-15 · Court of Appeals for the First Circuit）\n   https://www.courtlistener.com/opinion/10974403/doe-v-smith/\n   判決本文を取得できていないため、争点・判断内容・検索語句との実質的な関連は未確認です。\n5. Emmerich Nwspr v. Particle Media（2026-08-27 · Court of Appeals for the Fifth Circuit）\n   https://www.courtlistener.com/opinion/10960641/emmerich-nwspr-v-particle-media/\n   判決本文を取得できていないため、争点・判断内容・検索語句との実質的な関連は未確認です。\n検索結果の並び順：dateFiled desc。検索条件に一致した候補を表示しており、関連する全判決の網羅性は保証できません。\n出典：https://www.courtlistener.com/\n\n一部の要求項目を取得できていないため、取得済みの範囲だけを示しています。",
+      "notes": "CourtListenerの検索200、本文取得は401が複数回。5候補の名称・日付・裁判所・URLを示し、各件の本文・争点・検索語句との実質的関連は未確認と明記。取得可能範囲は正確だが、判決の内容を知る要求自体は満たせない。"
+    }
+  ],
+  "limitations": [
+    "Cases 27 and 97 fetched web evidence but failed to render that evidence after local MLX timeout.",
+    "Case 42 contains factual unit and qualifier interpretation errors despite terminal completion.",
+    "Case 142 and 316 are transparent but only partial answers.",
+    "No source changes or installed-app update were made during this E2E run."
+  ]
+}

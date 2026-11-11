@@ -1,0 +1,7 @@
+{
+  "source": "https://github.com/elblanco2/devdocs-mcp-server",
+  "commit": "bf45371ef74ff7e96339397d5f057042ff081348",
+  "source_sha256": "c27ed80231e58cc481ae7a3e9bae4e95b7122bf2593ca7223481dad2f62a20eb",
+  "adaptation": "TypeScript transpiled to ESM; Node 20 native fetch replaces node-fetch. No other behavior changes.",
+  "license": "MIT"
+}

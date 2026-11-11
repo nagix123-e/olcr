@@ -1,0 +1,95 @@
+{
+  "GET_META_INDICATOR_INF": {
+    "RESULT": {
+      "status": "0",
+      "errorMsg": "正常に終了しました。",
+      "date": "Mon Oct 26 13:56:08 JST 2026"
+    },
+    "PARAMETER": {
+      "lang": "JP",
+      "RegionalRank": "4",
+      "SearchIndicatorWord": "総面積"
+    },
+    "METADATA_INF": {
+      "CLASS_INF": {
+        "CLASS_OBJ": [
+          {
+            "@name": "総面積（北方地域及び竹島を除く）",
+            "@code": "0101010000000010010",
+            "details": {
+              "detail": [
+                {
+                  "@code": "0101010001",
+                  "@name": "総面積（北方地域及び竹島を除く）",
+                  "$": "北方地域及び竹島を除く日本の面積。"
+                }
+              ]
+            },
+            "CLASS": [
+              {
+                "@name": "総面積（北方地域及び竹島を除く）",
+                "@sname": "",
+                "@fromDate": "1981CY00",
+                "@toDate": "9999CY00",
+                "cycle": {
+                  "@code": "3",
+                  "@name": "年"
+                },
+                "RegionalRank": {
+                  "@code": "4",
+                  "@name": "市区町村"
+                },
+                "IsSeasonal": {
+                  "@code": "1",
+                  "@name": "原数値"
+                },
+                "@statName": "社会・人口統計体系",
+                "@unit": "ha"
+              }
+            ]
+          },
+          {
+            "@name": "総面積（北方地域及び竹島を含む）",
+            "@code": "0101010000000010020",
+            "details": {
+              "detail": [
+                {
+                  "@code": "0101010002",
+                  "@name": "総面積（北方地域及び竹島を含む）",
+                  "$": "北方地域及び竹島を含む日本の面積。"
+                },
+                {
+                  "@code": "0101010015",
+                  "@name": "総面積",
+                  "$": "内水面を含む全面積。極地及び居住不可能な島を除く。"
+                }
+              ]
+            },
+            "CLASS": [
+              {
+                "@name": "総面積（北方地域及び竹島を含む）",
+                "@sname": "",
+                "@fromDate": "2000CY00",
+                "@toDate": "9999CY00",
+                "cycle": {
+                  "@code": "3",
+                  "@name": "年"
+                },
+                "RegionalRank": {
+                  "@code": "4",
+                  "@name": "市区町村"
+                },
+                "IsSeasonal": {
+                  "@code": "1",
+                  "@name": "原数値"
+                },
+                "@statName": "社会・人口統計体系",
+                "@unit": "ha"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

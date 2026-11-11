@@ -18,7 +18,7 @@ from olcr_api.coding_tasks import (evaluate_phase, frontend_stack_acceptance,
                                    marketing_design_structure_acceptance,
                                    canonical_coding_requirements, normalize_task_graph,
                                    required_mcp_contract, required_verification_contract, task_profile,
-                                   normalize_coding_requirements)
+                                   normalize_coding_requirements, verification_requested_by_user)
 from olcr_api.mcp_manifest import server_definition
 from olcr_api.db import Database
 from olcr_api.models import Route, Task, TaskState
@@ -66,6 +66,20 @@ def plan(goal=BENCHMARK):
 
 
 class BenchmarkProfileTests(unittest.TestCase):
+    def test_node_test_runner_in_japanese_is_an_explicit_verification_request(self):
+        request = "昼食ルーレットを作成し、node:testで検証してください。"
+        self.assertTrue(verification_requested_by_user(request))
+        self.assertEqual(["tests"], required_verification_contract(request))
+        self.assertFalse(verification_requested_by_user("node:testを使った例をアプリに表示する。"))
+
+    def test_natural_verification_requests_survive_the_opt_in_gate(self):
+        self.assertTrue(verification_requested_by_user("Verify the actual existing app."))
+        self.assertTrue(verification_requested_by_user("Implement and verify the requested behavior."))
+        browser_request = "Verify the existing application in the browser."
+        self.assertTrue(verification_requested_by_user(browser_request))
+        self.assertIn("browser", required_verification_contract(browser_request))
+        self.assertFalse(verification_requested_by_user("Create an app that handles empty data and save errors."))
+
     def test_negated_backend_and_database_are_not_positive(self):
         profile = task_profile(BENCHMARK)
         self.assertNotIn("backend", profile["POSITIVE_SIGNALS"])
@@ -113,7 +127,7 @@ class BenchmarkProfileTests(unittest.TestCase):
         self.assertEqual(["typecheck", "build", "browser"], requirements["required_verification"])
 
     def test_graph_has_no_report_phase_or_duplicate_browser_phase(self):
-        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"])
+        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         self.assertLessEqual(len(normalized["phases"]), 2)
         self.assertFalse(any("report" in phase["goal"].lower() for phase in normalized["phases"]))
         self.assertEqual(1, sum("browser" in phase["goal"].lower() for phase in normalized["phases"]))
@@ -121,7 +135,7 @@ class BenchmarkProfileTests(unittest.TestCase):
         self.assertEqual(["playwright"], normalized["tasks"][-1]["required_mcp"])
 
     def test_preflight_only_phase_is_removed_before_the_implementation_executor(self):
-        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"])
+        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         self.assertEqual(2, len(normalized["phases"]))
         self.assertEqual("p1", normalized["phases"][0]["id"])
         self.assertIn("UI implementation", normalized["phases"][0]["goal"])
@@ -287,6 +301,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
              patch.object(api, "_generate_plan", return_value=(None, [])) as planner:
             api._run_coding_planning(task)
         mcp.assert_called_once()
+        self.assertEqual("shadcn reference lookup for the requested coding task", mcp.call_args.args[3])
         planner.assert_called_once()
 
     def test_gui_chat_endpoint_persists_and_consumes_one_canonical_benchmark_pipeline(self):
@@ -329,7 +344,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertEqual("TASK_PROFILE_MISMATCH", saved["recovery_reason"])
 
     def test_lost_shadcn_preflight_evidence_fails_as_a_control_plane_invariant(self):
-        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"])
+        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         api.db.create_coding_task("lost-shadcn-evidence", "conversation", BENCHMARK, "QUEUED", "NONE", normalized, time.time())
         requirements = {**canonical_coding_requirements(BENCHMARK), "preflight": {"shadcn": "PASS"}}
         api.db.update_coding_task("lost-shadcn-evidence", requirements=requirements, required_mcp=["shadcn", "playwright"])
@@ -388,7 +403,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertIn("ORCHESTRATOR_PREFLIGHT_ALREADY_COMPLETED", planner.call_args.args[2])
 
     def test_first_executor_run_uses_ui_phase_and_reuses_shadcn_preflight_evidence(self):
-        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"])
+        normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         api.db.create_coding_task("first-ui-execution", "conversation", BENCHMARK, "QUEUED", "NONE", normalized, time.time())
         api.db.update_coding_task("first-ui-execution", required_mcp=["shadcn", "playwright"],
                                   requirements=canonical_coding_requirements(BENCHMARK),
@@ -453,7 +468,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertIn("--color-primary=#113355", guidance)
 
     def test_invalid_advisory_task_graph_does_not_reject_a_valid_phase_plan(self):
-        model_plan = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"])
+        model_plan = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         model_plan["tasks"][0]["phase_id"] = "already-completed-preflight"
         with patch.object(api, "_model_text", return_value=json.dumps(model_plan)) as model:
             parsed, _ = api._generate_plan("invalid-advisory-graph", BENCHMARK, "planning", "QWEN_PLANNING")

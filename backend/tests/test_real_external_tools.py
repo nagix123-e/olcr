@@ -51,7 +51,8 @@ class RealExternalProviderSmokeTests(unittest.TestCase):
         self._smoke("GITHUB_SMOKE", "software.github", {"repo": "octocat/Hello-World", "endpoint": "repo"})
 
     def test_real_router_and_local_tools(self):
-        for text, expected in (("日本のGDP", "statistics.world_bank"), ("最近の大きな地震", "earth.earthquake"), ("x^2 - 1を因数分解", "math.symbolic"), ("数値積分", "math.numeric")):
+        self.assertIsNone(tools.route("日本のGDP"))  # provider-unspecified requests belong to EmbeddingGemma/Laya
+        for text, expected in (("最近の大きな地震", "earth.earthquake"), ("x^2 - 1を因数分解", "math.symbolic"), ("数値積分", "math.numeric")):
             selected = tools.route(text)
             self.assertIsNotNone(selected)
             self.assertEqual(expected, selected[0])

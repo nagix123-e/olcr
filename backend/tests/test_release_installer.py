@@ -15,6 +15,15 @@ INSTALLER = REPO / "packaging" / "install.sh"
 
 
 class ReleaseInstallerTests(unittest.TestCase):
+    def test_installs_core_release_without_bundled_model_or_node_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary=Path(directory);release=self.make_release(temporary)
+            shutil.rmtree(release/'models')
+            result,_,app_home,preserved=self.run_installer(release,temporary)
+            self.assertEqual(0,result.returncode,result.stderr)
+            self.assertTrue((app_home/'runtime/current').exists())
+            self.assertEqual('preserve me',preserved.read_text())
+
     def make_release(self, temporary: Path) -> Path:
         release = temporary / "olcr-v0.5.0-macos-arm64"
         release.mkdir()

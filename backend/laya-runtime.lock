@@ -1,0 +1,17 @@
+{
+  "package": "laya",
+  "package_version": "0.3.5",
+  "package_sha256": "4c57f64cbaf893bb5c7b4affddc2bf21a819f55df51941689f11868583be2903",
+  "model_revision": "052592a15d198d9ad47da779604259b10b47b7aa",
+  "model_revisions": {
+    "multilingual": "052592a15d198d9ad47da779604259b10b47b7aa"
+  },
+  "checkpoints": {
+    "multilingual": "convaiinnovations/laya-multilingual"
+  },
+  "runtime": "python",
+  "in_process": true,
+  "cloud_dependency": false,
+  "typed_decisions_silent_default": false,
+  "max_choice_candidates_default": 8
+}

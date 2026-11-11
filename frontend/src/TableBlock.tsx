@@ -1,4 +1,5 @@
 import React from "react";
+import {useLanguage} from "./language";
 
 export type TableColumn = {
   key: string;
@@ -16,9 +17,9 @@ export type TableBlock = {
 
 /** Render trusted display data as an accessible, scrollable semantic table. */
 export function TableBlockView({ block }: { block: TableBlock }) {
-  const caption = block.caption?.trim();
+  const {language}=useLanguage();const caption = block.caption?.trim();
   return (
-    <div className="table-scroll" role="region" aria-label={caption || "Data table"} tabIndex={0}>
+    <div className="table-scroll" role="region" aria-label={caption || (language==="ja"?"データテーブル":"Data table")} tabIndex={0}>
       <table className="message-table">
         {caption && <caption>{caption}</caption>}
         <thead>

@@ -5,10 +5,38 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from olcr_api.node_mcp_runtime import launch_command, resolve_mcp_resources, runtime_root
+from olcr_api.node_mcp_runtime import (launch_command, managed_browser_command,
+                                      resolve_mcp_resources, runtime_root,
+                                      verification_browser_executable)
 
 
 class NodeMcpRuntimeTests(unittest.TestCase):
+    def test_dedicated_browser_scope_resolves_bundle_without_enabling_generic_mcp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); runtime=root/"mcp-runtime"/"node"
+            node=runtime/"node"/"bin"/"node"; node.parent.mkdir(parents=True); node.touch(); node.chmod(0o755)
+            cli=runtime/"node_modules"/"@playwright"/"mcp"/"cli.js"; cli.parent.mkdir(parents=True); cli.touch()
+            browser=runtime/"browser"/"chrome-headless-shell"; browser.parent.mkdir(parents=True); browser.touch()
+            entrypoint=["node_modules/@playwright/mcp/cli.js","--headless","--executable-path","browser/chrome-headless-shell"]
+            (runtime/"runtime-manifest.json").write_text(json.dumps({"entrypoints":{"playwright":entrypoint}}))
+            definition=resolve_mcp_resources("playwright",root)
+            self.assertFalse(definition["enabled"])
+            self.assertEqual("POLICY_DISABLED",definition["reason"])
+            self.assertIsNone(launch_command("playwright",root))
+            self.assertEqual([str(node),str(cli),"--headless","--executable-path",str(browser)],
+                             managed_browser_command(root))
+
+    def test_devdocs_connection_access_keeps_coding_permissions_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); runtime = root / 'mcp-runtime/node'
+            node = runtime / 'node/bin/node'; node.parent.mkdir(parents=True); node.touch(); node.chmod(0o755)
+            server = runtime / 'servers/devdocs/server.mjs'; server.parent.mkdir(parents=True); server.touch()
+            (runtime / 'runtime-manifest.json').write_text(json.dumps({'entrypoints':{'devdocs':['servers/devdocs/server.mjs']}}))
+            self.assertIsNone(launch_command('devdocs', root))
+            self.assertEqual([str(node),str(server)], launch_command('devdocs',root,for_connection=True))
+            server.unlink()
+            self.assertEqual('SERVER_RESOURCE_MISSING',resolve_mcp_resources('devdocs',root,for_connection=True)['reason'])
+
     def test_desktop_environment_rejects_non_executable_node_without_fallback(self):
         with tempfile.TemporaryDirectory(prefix="OLCR Desktop ") as directory:
             root = Path(directory)
@@ -38,6 +66,7 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             (runtime / "runtime-manifest.json").write_text(json.dumps({"entrypoints": {"shadcn": ["node_modules/shadcn/dist/index.js", "mcp"]}}))
             previous_support = os.environ.get("OLCR_APP_SUPPORT")
             previous_runtime = os.environ.pop("OLCR_NODE_MCP_RUNTIME_ROOT", None)
+            previous_components = os.environ.pop("OLCR_COMPONENTS_ROOT", None)
             os.environ["OLCR_APP_SUPPORT"] = str(support)
             try:
                 self.assertEqual(runtime, runtime_root())
@@ -46,6 +75,31 @@ class NodeMcpRuntimeTests(unittest.TestCase):
                 if previous_support is None: os.environ.pop("OLCR_APP_SUPPORT", None)
                 else: os.environ["OLCR_APP_SUPPORT"] = previous_support
                 if previous_runtime is not None: os.environ["OLCR_NODE_MCP_RUNTIME_ROOT"] = previous_runtime
+                if previous_components is not None: os.environ["OLCR_COMPONENTS_ROOT"] = previous_components
+
+    def test_database_path_override_does_not_hide_default_installed_node_tools(self):
+        from olcr_api.optional_runtimes import BROWSER_PATH, OptionalRuntimes
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as profile:
+            support=Path(home)/'Library'/'Application Support'/'OLCR'
+            installed=OptionalRuntimes(support/'components')
+            component=installed.path('node-tools')
+            node=component/'node'/'bin'/'node';node.parent.mkdir(parents=True);node.touch();node.chmod(0o755)
+            for relative in ('node_modules/@playwright/mcp/cli.js','node_modules/shadcn/dist/index.js',
+                             'servers/animejs-reference/server.js','servers/devdocs/server.mjs'):
+                target=component/relative;target.parent.mkdir(parents=True,exist_ok=True);target.touch()
+            (component/'.olcr-component.json').write_text(json.dumps({'identity':installed.identity('node-tools')}))
+            browser=installed.path('browser')/BROWSER_PATH
+            browser.parent.mkdir(parents=True);browser.touch();browser.chmod(0o755)
+            (installed.path('browser')/'.olcr-component.json').write_text(
+                json.dumps({'identity':installed.identity('browser')}))
+
+            with patch.dict(os.environ,{'OLCR_DB_PATH':str(Path(profile)/'olcr.db')},clear=True), \
+                 patch('pathlib.Path.home',return_value=Path(home)):
+                self.assertEqual(component,runtime_root())
+                self.assertEqual(browser,verification_browser_executable(component))
+                self.assertEqual([str(node),str(component/'node_modules/@playwright/mcp/cli.js'),
+                                  '--headless','--isolated','--executable-path',str(browser)],
+                                 managed_browser_command())
 
     def test_resolves_only_a_completed_local_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

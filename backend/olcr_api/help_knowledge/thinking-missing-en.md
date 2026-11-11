@@ -1,0 +1,3 @@
+# Missing thinking logs
+
+Only a reasoning channel actually returned by the model is displayed. An enabled setting does not manufacture logs. MAX enables thinking for planning, implementation, verification and structured JSON too. Zero disables it; Auto considers the role and request. Generation errors or output limits can still prevent completion. Received logs appear as they arrive. If a model does not expose intermediate reasoning, there is no thought text to display before reception; the same area shows OLCR connection, fallback and waiting status. Expand Thinking log on the answer. If a normal answer received reasoning but shows no log, record the model, role and affected answer to diagnose the display path.

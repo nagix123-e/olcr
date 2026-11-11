@@ -1,0 +1,89 @@
+.composer-entry{position:relative}
+.concept-diagram-editor{display:flex;flex-direction:column;min-width:0;border:1px solid var(--olcr-border-strong);border-radius:16px;margin-bottom:10px;background:#fff;color:var(--olcr-text-primary);overflow:hidden;box-shadow:var(--olcr-shadow)}
+.concept-heading{display:flex;align-items:center;gap:10px;padding:10px 12px!important;min-height:48px;border-bottom:1px solid var(--olcr-border)}
+.concept-heading>strong{font-size:14px;font-weight:600;flex:1}
+.concept-window-actions,.concept-tool-group,.concept-view-actions{display:flex;align-items:center;gap:5px}
+.concept-diagram-editor button,.composer .diagram-draft-chip{position:static!important;transform:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;font:inherit;font-size:12px;font-weight:500;background:#fff;color:var(--olcr-text-primary);border:1px solid var(--olcr-border-strong);border-radius:8px;padding:6px 9px;box-shadow:none;cursor:pointer}
+.concept-diagram-editor button:hover{background:#f5f5f5}
+.concept-diagram-editor button:disabled{opacity:.4;cursor:not-allowed}
+.concept-diagram-editor button:active:not(:disabled){transform:scale(.96)}
+.concept-window-actions button{border-color:transparent;min-width:32px}
+.concept-heading .concept-close{padding:5px}
+.concept-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex:none;min-width:0}
+.concept-toolbar .concept-add{background:#f1f8e9;border-color:#d7e6c7}
+.concept-tool-group{border-left:1px solid var(--olcr-border);padding-left:8px}
+.concept-toolbar button:not(.concept-add){border-color:transparent}
+.concept-view-actions{margin-left:auto}
+.concept-more,.concept-size-menu{position:relative}
+.concept-more>summary,.concept-size-menu>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;min-height:32px;border-radius:8px;padding:6px;font-size:12px}
+.concept-more>summary::-webkit-details-marker,.concept-size-menu>summary::-webkit-details-marker{display:none}
+.concept-more>summary:hover,.concept-size-menu>summary:hover{background:#f5f5f5}
+.concept-more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:grid;gap:4px;width:270px;max-width:calc(100vw - 32px);max-height:min(320px,60dvh);overflow:auto;padding:8px;border:1px solid var(--olcr-border);border-radius:16px;background:#fff;box-shadow:0 2px 6px #0000000a,0 12px 32px #00000014}
+.concept-more-menu button{justify-content:flex-start;white-space:normal;text-align:left;border:0}
+.concept-more-menu p{font-size:12px;line-height:1.6;color:var(--olcr-text-secondary);margin:6px;padding:8px 0;border-top:1px solid var(--olcr-border)}
+.concept-more-menu .concept-discard{color:#873a35}
+.concept-inspector{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--olcr-border);font-size:12px;background:#fff}
+.concept-color-target{display:flex;align-items:center;gap:7px}
+.concept-diagram-editor select,.concept-diagram-editor input{font:inherit;font-size:12px;border:1px solid var(--olcr-border-strong);border-radius:7px;background:#fff;color:var(--olcr-text-primary);padding:5px 7px;min-height:30px;min-width:0}
+.concept-color-swatches{display:flex;align-items:center;gap:7px;padding:2px}
+.concept-diagram-editor .concept-color-swatch{width:28px;min-width:28px;height:28px;min-height:28px;border-radius:50%;padding:0;background:var(--swatch-color);border:2px solid #fff;outline:1px solid #0000001a;color:#242424}
+.concept-diagram-editor .concept-color-swatch[data-color=black]{color:#fff}
+.concept-diagram-editor .concept-color-swatch[aria-pressed=true]{outline:2px solid #686868;outline-offset:1px}
+.concept-diagram-editor .concept-color-swatch:hover{background:var(--swatch-color);outline-color:#686868}
+.concept-size-menu{margin-left:auto}
+.concept-size-fields{position:absolute;right:0;top:calc(100% + 8px);z-index:30;display:flex;gap:10px;flex-wrap:wrap;width:260px;max-width:calc(100vw - 32px);padding:14px;border:1px solid var(--olcr-border);border-radius:14px;background:#fff;box-shadow:0 2px 6px #0000000a,0 12px 32px #00000014}
+.concept-size-fields>span{width:100%;font-weight:600}
+.concept-size-fields label{display:flex;align-items:center;gap:5px}
+.concept-diagram-editor .concept-size-fields input{width:70px;margin:0}
+.concept-size-fields small{color:var(--olcr-text-secondary);font-size:12px;line-height:1.5}
+.concept-edge-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.concept-edge-options label{display:flex;align-items:center;gap:6px}
+.concept-edge-options input{width:140px;max-width:100%}
+.concept-edge-options button[aria-pressed=true]{background:#f1f1f1;border-color:#8c8c8c}
+.concept-canvas{height:clamp(200px,30vh,320px);min-height:160px;flex:none;border-block:1px solid var(--olcr-border);background:#fff}
+.concept-canvas .react-flow,.concept-preview-canvas .react-flow{background:#fff}
+.concept-box{box-sizing:border-box;width:100%;height:100%;min-height:0;background:#fff;border:1.5px solid var(--concept-border,#242424);border-radius:10px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--concept-text,#242424);font-size:13px;position:relative;box-shadow:0 1px 3px #00000008}
+.react-flow__node.selected .concept-box{outline:2px solid #8c8c8c;outline-offset:3px;box-shadow:none}
+.concept-diagram-editor .concept-box textarea{box-sizing:border-box;display:block;width:100%;height:100%;min-height:0;margin:0;padding:0;border:0!important;border-radius:0;resize:none;box-shadow:none!important;background:transparent;color:var(--concept-text,#242424);font-size:13px;line-height:1.5;outline:none}
+.concept-box .react-flow__handle{width:10px;height:10px;background:#6e6e6e;border:2px solid #fff}
+.concept-box.container{background:#f7f7f7c9;border-style:dashed}
+.concept-diagram-editor .concept-box.container textarea{height:24px;max-height:24px}
+.concept-box.container>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.concept-box.venn{background:#ececec40;border-width:2px;box-shadow:none}
+.concept-intersection{box-sizing:border-box;width:100%;height:100%;background:#e4e4e480;border:1px dashed #969696;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:11px;color:#444;text-align:center;padding:3px}
+.concept-intersection span{overflow:hidden;text-overflow:ellipsis;max-height:100%}
+.concept-link-label{font-size:12px;fill:#242424;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}
+.concept-line-end{fill:transparent;stroke:none;cursor:context-menu;pointer-events:all}
+.concept-line-end:focus{outline:none}
+.concept-line-end:focus-visible{outline:2px solid var(--olcr-accent,#91e015);outline-offset:2px}
+.concept-empty{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;color:var(--olcr-text-secondary);pointer-events:none;font-size:13px}
+.concept-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;font-size:12px;color:var(--olcr-text-secondary);flex:none}
+.concept-footer [role=alert]{color:#873a35}.concept-footer small{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.concept-diagram-editor .react-flow__controls button{display:flex;border:0;border-radius:0;padding:4px;width:28px;height:28px;min-height:28px;align-items:center;justify-content:center}
+.concept-diagram-editor .react-flow__attribution{font-size:9px}
+.concept-confirm{padding:10px 12px;font-size:12px;background:#fff5f3;display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:none}
+.concept-context-menu{position:fixed;z-index:60;max-width:240px;max-height:200px;overflow:auto;border:1px solid var(--olcr-border-strong);border-radius:16px;padding:8px;background:#fff;box-shadow:0 2px 6px #0000000a,0 12px 32px #00000014}
+.concept-context-menu strong{display:block;font-size:12px;margin-bottom:6px}
+.concept-context-menu button{display:block;white-space:normal;text-align:left;width:100%;margin-top:4px}
+.concept-fullscreen-layer{position:fixed;inset:0;z-index:10000;background:#fff}
+.concept-diagram-editor.is-fullscreen{position:absolute;inset:0;width:100%;height:100%;max-height:none;margin:0;border:0;border-radius:0;box-shadow:none}
+.concept-diagram-editor.is-fullscreen .concept-heading{min-height:56px;padding:10px 20px!important}
+.concept-diagram-editor.is-fullscreen .concept-toolbar,.concept-diagram-editor.is-fullscreen .concept-inspector{padding-inline:20px}
+.concept-diagram-editor.is-fullscreen .concept-canvas{height:auto;min-height:100px;flex:1}
+.concept-diagram-editor.is-fullscreen .concept-footer{padding-inline:20px}
+.concept-diagram-editor :is(button,input,select,summary):focus-visible,.concept-diagram-preview button:focus-visible{outline:2px solid #242424;outline-offset:2px}
+.composer .diagram-draft-chip{display:flex;align-items:center;gap:8px;margin:8px 52px 0 58px;font-size:11px;background:#f1f8e9;max-width:calc(100% - 110px)}
+.composer-action-menu{position:fixed;z-index:40;width:240px;max-width:calc(100vw - 16px);overflow-y:auto;overscroll-behavior:contain;background:var(--olcr-surface);border:1px solid var(--olcr-border-strong);border-radius:12px;padding:5px;box-shadow:0 8px 24px #17211220}
+.composer-action-menu button{position:static;transform:none;width:100%;display:flex;align-items:center;gap:12px;text-align:left;border:0;background:transparent;border-radius:8px;padding:12px;font-size:13px;color:var(--olcr-text-primary)}
+.composer-action-menu button:hover,.composer-action-menu button:focus{background:#f1f8e9;outline:none}.composer-action-menu button span{font-size:18px;width:20px;text-align:center}
+.composer-action-menu button:focus-visible,.composer .diagram-draft-chip:focus-visible{outline:2px solid #242424;outline-offset:1px}
+.messages article:has(.concept-diagram-preview){width:min(680px,100%);max-width:100%;min-width:0}
+.concept-diagram-preview{margin-top:8px;border:1px solid var(--olcr-border-strong);border-radius:12px;overflow:hidden;background:#fff;min-width:0}
+.concept-diagram-preview>strong{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:10px 12px}
+.concept-diagram-preview>strong button{position:static;transform:none;font-size:12px;padding:5px 8px;border:1px solid var(--olcr-border-strong);border-radius:7px;background:#fff}
+.concept-preview-canvas{height:240px;background:#fff}
+.concept-diagram-preview details{font-size:12px;padding:8px 12px;border-top:1px solid var(--olcr-border)}
+.concept-diagram-preview summary{cursor:pointer}.concept-diagram-preview li{overflow-wrap:anywhere}.concept-diagram-preview .react-flow__handle{visibility:hidden}
+.coding-concept-diagram{margin:12px 0}.coding-concept-diagram>summary{cursor:pointer;font-size:12px;font-weight:600}.coding-concept-diagram>small{display:block;font-size:11px;color:var(--olcr-text-secondary);margin-top:6px}
+@media(max-width:700px){.concept-canvas{height:180px}.concept-footer{flex-wrap:wrap}.concept-preview-canvas{height:200px}.concept-inspector{gap:8px}.concept-color-swatches{gap:5px}.concept-diagram-editor.is-fullscreen .concept-heading,.concept-diagram-editor.is-fullscreen .concept-toolbar,.concept-diagram-editor.is-fullscreen .concept-inspector,.concept-diagram-editor.is-fullscreen .concept-footer{padding-inline:12px!important}}
+@media(prefers-reduced-motion:reduce){.concept-diagram-editor button:active:not(:disabled){transform:none}}

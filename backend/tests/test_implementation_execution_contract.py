@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import olcr_api.app as api
@@ -45,6 +46,16 @@ class ImplementationExecutionContractTests(unittest.TestCase):
         report = api._report_from_execution(PHASE, 0, task, "Updated.")
         self.assertEqual("EXECUTED", report["implementation_result_kind"])
         self.assertEqual("PASS", report["status"])
+
+    def test_completed_runtime_with_no_operations_is_not_a_pass_report(self):
+        task = Task("implementation")
+        task.transition(TaskState.ROUTING)
+        task.route = Route.IMPLEMENTATION
+        task.transition(TaskState.EXECUTING)
+        task.transition(TaskState.COMPLETED)
+        report = api._report_from_execution(PHASE, 0, task, "Target not found")
+        self.assertEqual("NARRATIVE_ONLY", report["implementation_result_kind"])
+        self.assertEqual("FAIL", report["status"])
 
     def test_rejected_operation_is_typed_as_zero_progress(self):
         task = Task("implementation")
@@ -153,6 +164,136 @@ class ImplementationExecutionContractTests(unittest.TestCase):
             self.assertTrue(result["passed"])
             self.assertEqual("completed", task.state.value)
             self.assertEqual(original, test_file.read_bytes())
+            self.assertEqual("NONE", task.tool_executions[0]["input"]["write_scope"])
+
+    def test_unittest_verification_with_zero_discovered_tests_is_not_a_pass(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            package = root / "OLCR_E2E_LONG_R17_20260924"
+            package.mkdir()
+            targets = ["OLCR_E2E_LONG_R17_20260924/__init__.py",
+                       "OLCR_E2E_LONG_R17_20260924/domain.py",
+                       "OLCR_E2E_LONG_R17_20260924/scheduler.py",
+                       "OLCR_E2E_LONG_R17_20260924/test_scheduler.py"]
+            for relative in targets:
+                (root / relative).touch()
+            phase = {
+                "verification_command": [sys.executable, "-B", "-m", "unittest", "discover",
+                                          "-s", "OLCR_E2E_LONG_R17_20260924", "-v"],
+                "verification_targets": targets,
+            }
+            task, result = api._run_read_only_verification(phase, str(root))
+            # Python versions may signal empty discovery with exit 0 or 5;
+            # both must remain a failed OLCR verification with zero_tests.
+            self.assertIn(result["returncode"], {0, 5})
+            self.assertIn("Ran 0 tests", result["output"])
+            self.assertTrue(result["zero_tests"])
+            self.assertFalse(result["passed"])
+            self.assertEqual("failed", task.state.value)
+            self.assertIn("discovered zero tests", task.error)
+            self.assertTrue(all((root / relative).stat().st_size == 0 for relative in targets))
+
+    def test_typed_read_only_command_requires_bounded_targets_and_runs(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            target = root / "src" / "math.py"
+            target.parent.mkdir()
+            target.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+            original = target.read_bytes()
+            phase = {
+                "verification_command": [sys.executable, "-B", "-c",
+                    "from pathlib import Path; assert Path('src/math.py').read_text().startswith('def add')"],
+                "verification_targets": ["./src/math.py"],
+            }
+            task, result = api._run_read_only_verification(phase, str(root))
+            self.assertTrue(result["passed"])
+            self.assertEqual(["src/math.py"], result["targets"])
+            self.assertEqual(original, target.read_bytes())
+
+            absolute_phase = {
+                "verification_command": [sys.executable, "-B", "-c", "assert True"],
+                "verification_targets": [str(target)],
+            }
+            absolute_spec = api._verification_spec(absolute_phase, str(root))
+            self.assertEqual(["src/math.py"], absolute_spec["targets"])
+            absolute_task, absolute_result = api._run_read_only_verification(absolute_phase, str(root))
+            self.assertTrue(absolute_result["passed"])
+            report = {"typed_execution_summary": {"operations": []}}
+            api._merge_verification_execution(report, absolute_task)
+            verifier_ops = [item for item in report["typed_execution_summary"]["operations"]
+                            if item.get("tool") == "verification_command"]
+            self.assertEqual(1, len(verifier_ops))
+            self.assertEqual(0, verifier_ops[0]["output"]["returncode"])
+            self.assertEqual([], verifier_ops[0]["output"]["changed_targets"])
+
+            self.assertIsNone(api._verification_spec({
+                "verify": ["python3 -c 'assert True'"]}, str(root)))
+            self.assertIsNone(api._verification_spec({
+                "verification_command": ["true"]}, str(root)))
+            self.assertIsNone(api._verification_spec({
+                "verification_command": ["sh", "-c", "true"],
+                "verification_targets": ["src/math.py"]}, str(root)))
+            self.assertIsNone(api._verification_spec({
+                "verification_command": ["true"],
+                "verification_targets": ["../outside.py"]}, str(root)))
+            self.assertIsNone(api._verification_spec({
+                "verification_command": ["true"],
+                "verification_targets": ["/etc/passwd"]}, str(root)))
+
+    def test_unittest_module_runs_from_nested_sibling_target_directory(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            target_dir = root / "expense-ledger"
+            target_dir.mkdir()
+            targets = ["expense-ledger/ledger_core.py", "expense-ledger/cli.py",
+                       "expense-ledger/test_ledger.py", "expense-ledger/README.md"]
+            (target_dir / "ledger_core.py").write_text("VALUE = 4\n", encoding="utf-8")
+            (target_dir / "cli.py").write_text("# bounded fixture\n", encoding="utf-8")
+            test_file = target_dir / "test_ledger.py"
+            test_file.write_text(
+                "import unittest\nfrom ledger_core import VALUE\n"
+                "class LedgerTest(unittest.TestCase):\n"
+                "    def test_value(self): self.assertEqual(VALUE, 4)\n",
+                encoding="utf-8")
+            (target_dir / "README.md").write_text("fixture\n", encoding="utf-8")
+            originals = {item: (root / item).read_bytes() for item in targets}
+            phase = {"verification_command": [sys.executable, "-B", "-m", "unittest", "-v", "test_ledger"],
+                     "verification_targets": targets}
+
+            spec = api._verification_spec(phase, str(root))
+            self.assertEqual(str(target_dir), spec["cwd"])
+            task, result = api._run_read_only_verification(phase, str(root))
+            self.assertTrue(result["passed"], result["output"])
+            self.assertIn("test_value", result["output"])
+            self.assertEqual(str(target_dir), task.tool_executions[0]["input"]["cwd"])
+            self.assertEqual(originals, {item: (root / item).read_bytes() for item in targets})
+
+    def test_missing_bare_python_verifier_falls_back_to_python3_without_shell(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            root = Path(directory)
+            target = root / "probe.py"
+            target.write_text(
+                "def calculate_discount(amount, percent):\n"
+                "    return amount * (1 - percent / 100)\n"
+                "assert calculate_discount(100, 20) == 80\n"
+                "assert calculate_discount(20, 0) == 20\n"
+                "assert calculate_discount(40, 50) == 20\n",
+                encoding="utf-8",
+            )
+            original = target.read_bytes()
+            phase = {
+                "verification_command": ["python", "-B", "probe.py"],
+                "verification_targets": ["probe.py"],
+            }
+            def which(name):
+                return None if name == "python" else (sys.executable if name == "python3" else None)
+            with patch.object(api.shutil, "which", side_effect=which):
+                spec = api._verification_spec(phase, str(root))
+                self.assertEqual([sys.executable, "-B", "probe.py"], spec["command"])
+                task, result = api._run_read_only_verification(phase, str(root))
+            self.assertTrue(result["passed"])
+            self.assertEqual("completed", task.state.value)
+            self.assertEqual(original, target.read_bytes())
             self.assertEqual("NONE", task.tool_executions[0]["input"]["write_scope"])
 
     def test_scope_contract_removes_verification_files_from_mutation_manifest(self):

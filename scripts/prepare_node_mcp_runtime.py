@@ -70,6 +70,7 @@ def write_license_inventory(destination: Path) -> int:
     reference = destination / "servers" / "animejs-reference" / "animejs-v4-reviewed.json"
     if reference.is_file():
         inventory.append({"component": "OLCR Anime.js v4 reviewed reference corpus", "version": "4", "license": "MIT (Anime.js upstream)", "path": str(reference.relative_to(destination)), "source": "https://animejs.com/documentation/"})
+    inventory.append({"component":"DevDocs MCP", "version":"bf45371ef74ff7e96339397d5f057042ff081348", "license":"MIT", "path":"servers/devdocs/LICENSE", "source":"https://github.com/elblanco2/devdocs-mcp-server"})
     browser_license = next((path for path in (destination / "browser").rglob("LICENSE.headless_shell")), None)
     if browser_license:
         inventory.append({"component": "Chrome Headless Shell", "license": "see bundled notice", "path": str(browser_license.relative_to(destination))})
@@ -108,6 +109,7 @@ def assemble(node_archive: Path, package_modules: Path, browser: Path, destinati
     shutil.copytree(browser, destination / "browser", symlinks=True)
     animejs = ROOT / "packaging" / "node-mcp" / "animejs-reference"
     shutil.copytree(animejs, destination / "servers" / "animejs-reference")
+    shutil.copytree(ROOT / "packaging/node-mcp/devdocs", destination / "servers/devdocs")
     for relative in (metadata["packages"]["playwright_mcp"]["entrypoint"], metadata["packages"]["shadcn"]["entrypoint"], "servers/animejs-reference/server.js", metadata["playwright_browser"]["path"]):
         if not (destination / relative).is_file():
             raise SystemExit("NODE_MCP_ENTRYPOINT_INVALID")
@@ -117,6 +119,7 @@ def assemble(node_archive: Path, package_modules: Path, browser: Path, destinati
         "playwright": [metadata["packages"]["playwright_mcp"]["entrypoint"], "--headless", "--isolated", "--executable-path", metadata["playwright_browser"]["path"]],
         "shadcn": [metadata["packages"]["shadcn"]["entrypoint"], "mcp"],
         "animejs": ["servers/animejs-reference/server.js"],
+        "devdocs": ["servers/devdocs/server.mjs"],
     }
     (destination / "runtime-manifest.json").write_text(json.dumps({"immutable": True, "node": identity, "entrypoints": entrypoints, "package_lock_sha256": digest(lock), "package_count": metadata["packages"]["package_count"], "browser": metadata["playwright_browser"], "license_inventory": "licenses/license-inventory.json", "licensed_component_count": count}, indent=2, sort_keys=True) + "\n")
 

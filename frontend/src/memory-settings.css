@@ -1,0 +1,7 @@
+.memory-settings fieldset{display:grid;gap:14px;min-width:0;max-width:760px;margin:0;padding:0;border:0}
+.memory-settings .setting-row{gap:20px;min-height:32px}
+.memory-settings .setting-field{display:grid;gap:8px}
+.memory-settings label{font-weight:600}
+.memory-settings input[type=range]{width:100%;padding:0;min-height:32px}
+.memory-settings output{font-variant-numeric:tabular-nums}
+.memory-settings button{justify-self:start}

@@ -22,6 +22,8 @@ class CapabilityScopeTests(unittest.TestCase):
             ('If Anime.js v3 is incompatible with v4 guidance, stop.', [], []),
             ('Use Anime.js v4.\nDo not add unnecessary dependencies.', ['dependencies'], []),
             ('Do not add any dependencies.', [], ['dependencies']),
+            ('依存追加はしないでください。', [], ['dependencies']),
+            ('依存追加を一切せず、ファイルは変更しません。', [], ['dependencies']),
             ('Implement the React page.\nDo not modify unrelated frontend files.', ['frontend'], []),
             ('Do not modify frontend code.', [], ['frontend']),
             ('Use React and Anime.js.\nDo not introduce GSAP or Three.js.', ['dependencies', 'frontend'], []),
@@ -58,6 +60,32 @@ class CapabilityScopeTests(unittest.TestCase):
         ignored = [e for e in d['capability_provenance'] if not e['active_for_control']]
         self.assertTrue(any(e['semantic_scope'] == 'FAILURE_HANDLING' for e in ignored))
         self.assertTrue(any(e['reason'] == 'CONTENT_DESCRIPTION' and e['capability'] == 'backend' for e in ignored))
+
+    def test_source_file_paths_are_not_architecture_requirements(self):
+        text = (
+            "## Source of Truth and Product Accuracy\n\n"
+            "If the OLCR source checkout is available, useful evidence may include:\n"
+            "- `backend/olcr_api/brain_providers.py`\n"
+            "- `backend/olcr_api/mcp_manifest.py`\n\n"
+            "- `/repo/backend/olcr_api/model_provider.py`\n"
+            "- `backend.py`\n\n"
+            "## Required Technology Stack\n\n"
+            "Use Vite and React.\n\n"
+            "## MVP Exclusions\n\n"
+            "Do NOT introduce:\n- backend server\n- database\n"
+        )
+        value = normalize_coding_requirements(text)
+        diagnostics = value["normalization_diagnostics"]
+        self.assertNotIn("backend", value["required_capabilities"])
+        self.assertIn("backend", value["forbidden_capabilities"])
+        self.assertTrue(diagnostics["canonical_requirements_valid"])
+        path_evidence = [
+            item for item in diagnostics["capability_provenance"]
+            if item["capability"] == "backend" and item["line_start"] in {4, 5, 7, 8}
+        ]
+        self.assertTrue(path_evidence)
+        self.assertTrue(all(item["reason"] == "REFERENCE_ONLY" for item in path_evidence))
+        self.assertTrue(all(not item["active_for_control"] for item in path_evidence))
 
     def test_hierarchy_and_parent_provenance(self):
         text = '# Scope\n## MVP Exclusions\nDo NOT implement:\n  - backend\n  - database\n# Required Technology Stack\nReact'

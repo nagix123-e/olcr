@@ -1,0 +1,21 @@
+{
+  "name": "olcr-agent-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@librechat/agents": "4.0.4",
+    "@langchain/core": "1.2.8",
+    "node": "24.18.0",
+    "@langchain/langgraph-checkpoint-sqlite": "1.0.4"
+  },
+  "allowScripts": {
+    "node": true,
+    "reova": false,
+    "protobufjs": false,
+    "better-sqlite3": true
+  }
+}

@@ -1,0 +1,2366 @@
+{
+  "run_id": "olcr-semantic47-r47c-20261011",
+  "created_at_local": "2026-10-11 Asia/Tokyo",
+  "build_id": "olcr-semantic47-r47c-20261011",
+  "bundle": "/private/tmp/olcr-semantic47-r47c-20261011-target/debug/bundle/macos/OLCR.app",
+  "profile": "/private/tmp/olcr-semantic47-r47c-20261011-profile",
+  "launch_log": "/private/tmp/olcr-semantic47-r47c-20261011-launch.log",
+  "database": "/private/tmp/olcr-semantic47-r47c-20261011-profile/olcr.db",
+  "conversation_id": "743c2f20-54a2-414e-8d8a-7cf889f3488f",
+  "gui_e2e": true,
+  "total": 47,
+  "persisted_pairs": 47,
+  "semantic_verdicts": "ASSESSED",
+  "cases": [
+    {
+      "batch_index": 1,
+      "global_index": 7,
+      "case_id": "space.launches#3",
+      "expected_tool": "space.launches",
+      "specific_changes": [
+        "launch_source_updates"
+      ],
+      "prompt": "直近の打ち上げ予定で、延期や変更が出ているものはある？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "a9bb6a6f-3d5d-4d5c-afbe-fb85a733b49e",
+      "assistant_message_id": "17a86e7f-8ff5-4b10-af1c-7424f3e5ba89",
+      "assistant_task_id": "7ce8612a-7448-460d-b417-1ab8c819115a",
+      "assistant_response": "はい、直近の打ち上げ予定で延期や変更が出ています。提供されたLaunch Library 2の記録（2026-10-11の時点で3件）はいずれも計画の繰り返し変更を示しています。\n\n**Falcon 9 Block 5 | Starlink Group 15-25**\n- 打ち上げ場所：Vandenberg SFB, CA, USA（Space Launch Complex 4E）\n- 現在 NET：2026-10-12T23:00:00Z\n- 変更の経緯：9月21日に「NET October 10」に延期、その後9月30日→10月10日→10月11日→10月12へと段階的に延期・再設定されてきました（直近更新は2026-10-08）。\n\n**Falcon 9 Block 5 | Dragon CRS-2 SpX-35**\n- 打ち上げ場所：Cape Canaveral SFS, FL, USA（Space Launch Complex 40）\n- 現在 NET：2026-10-13T10:33:44Z\n- 変更の経緯：Net Fall 2026→NET August 2026→NET October→NET October 13と月次・週次の設定を繰り返し、2026-10-02に「Tweaked T-0」として着陸時刻の微調整がなされています。\n\n**Falcon 9 Block 5 | USSF-481**\n- 打ち上げ場所：Vandenberg SFB, CA, USA（Space Launch Complex 4E）\n- 現在 NET：2026-10-15T23:44:00Z\n- 変更の経緯： marine navigation warnings（船舶航行警報）に基づく追加打ち上げが2026-10-06に決定され、2026-10-08に「GO for launch」となっています。\n\nこれらはすべて「Go for Launch」の最終状態ですが、過去に延期や時刻変更の履歴を持つことには変わりありません。\n\n補足：この3件はAPIが返した限られた記録であり、直近でスケジュール変更があった打ち上げがこれら3件のみかどうかは確認できません。\n\n出典：https://thespacedevs.com/llapi",
+      "tasks": [
+        {
+          "id": "7ce8612a-7448-460d-b417-1ab8c819115a",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 61061.036825180054,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 61025.919499996235,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "変更履歴のないUSSF-481まで「3件すべて繰り返し変更」と総括している。最初の2件の変更情報は回答しているが、冒頭と結論が証拠を超えている。",
+      "semantic_issue_categories": [
+        "overgeneralization"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "現在の予定・状態と公表更新を既存rendererで表示。新規登録・GOへの変更を延期と断定しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 2,
+      "global_index": 21,
+      "case_id": "space.iss_position#1",
+      "expected_tool": "space.iss_position",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "prompt": "ISSは今、陸地の上と海の上のどちらを飛んでいる？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "f8d53471-0944-4e09-9ca8-7444a1c21808",
+      "assistant_message_id": "d041aa03-3c0b-408a-bc7e-3958b925a2f8",
+      "assistant_task_id": "47479f3b-c240-41a9-bacb-f64099897f03",
+      "assistant_response": "Where The ISS At\nISSの現在位置：緯度 38.160508855867°、経度 -56.797048419334°、高度 427.5394243308 km、速度 27567.057131263 km/h（観測時刻：2026-10-11 10:39:00 UTC）。\n地図用座標：38.160509, -56.797048（緯度, 経度）\n地図で開く：https://www.openstreetmap.org/?mlat=38.160509&mlon=-56.797048#map=5/38.160509/-56.797048\n陸地／海上の判定の目安：海上。\nNatural Earthの1:110mの粗い海岸線による目安です。海岸から約20km以内、小島・内陸水域は正確に区別できません。\n\n出典：https://wheretheiss.at/\nhttps://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson",
+      "tasks": [
+        {
+          "id": "47479f3b-c240-41a9-bacb-f64099897f03",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.33092498779296875,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ISSの座標から海上と回答し、観測時刻・判定精度の限界も示している。",
+      "semantic_issue_categories": [
+        "answered",
+        "uncertainty_disclosed"
+      ]
+    },
+    {
+      "batch_index": 3,
+      "global_index": 22,
+      "case_id": "space.iss_position#2",
+      "expected_tool": "space.iss_position",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "prompt": "今の位置から、ISSが日本の近くへ来る方向を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "530422c5-b9e4-4664-8597-3590d89b044b",
+      "assistant_message_id": "6015cec1-4e58-4411-8008-087bb7cd8137",
+      "assistant_task_id": "ff89b9f6-d60c-4d94-a2ce-c71581caaadc",
+      "assistant_response": "Where The ISS At\nISSの現在位置：緯度 41.151355767361°、経度 -51.870102735513°、高度 428.27041015811 km、速度 27566.515395408 km/h（観測時刻：2026-10-11 10:40:18 UTC）。\n地図用座標：41.151356, -51.870103（緯度, 経度）\n地図で開く：https://www.openstreetmap.org/?mlat=41.151356&mlon=-51.870103#map=5/41.151356/-51.870103\n現在位置と60秒先の予測位置からの進行方位：53.7°（北を0°として時計回り）。\n日本の基準点（北緯36°・東経138°）までの距離は、11377 kmから60秒後に11181 kmへ減少し、近づく予測です。日本上空を通過する時刻の予報ではありません。\n\n出典：https://wheretheiss.at/",
+      "tasks": [
+        {
+          "id": "ff89b9f6-d60c-4d94-a2ce-c71581caaadc",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.10991096496582031,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "進行方位と日本の基準点への距離変化を示し、通過予報とは区別している。",
+      "semantic_issue_categories": [
+        "answered",
+        "uncertainty_disclosed"
+      ]
+    },
+    {
+      "batch_index": 4,
+      "global_index": 24,
+      "case_id": "space.iss_position#4",
+      "expected_tool": "space.iss_position",
+      "specific_changes": [
+        "iss_geometry_and_direction"
+      ],
+      "prompt": "今ISSがいる場所を、近い都市や地域の目安と一緒に説明して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "d255cb71-a6cd-4a93-9cdb-381544ed7823",
+      "assistant_message_id": "0beff265-0e73-45d6-92da-2a4f39f64853",
+      "assistant_task_id": "c553dd77-8858-4324-95d4-1b0ab38c055c",
+      "assistant_response": "Where The ISS At\nISSの現在位置：緯度 41.261454490394°、経度 -51.671393923877°、高度 428.2973796294 km、速度 27566.496043286 km/h（観測時刻：2026-10-11 10:40:21 UTC）。\n地図用座標：41.261454, -51.671394（緯度, 経度）\n地図で開く：https://www.openstreetmap.org/?mlat=41.261454&mlon=-51.671394#map=5/41.261454/-51.671394\n逆ジオコーディングの結果を取得できず、近い都市・地域名は未確認です。地図リンクで座標を確認できます。",
+      "tasks": [
+        {
+          "id": "c553dd77-8858-4324-95d4-1b0ab38c055c",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.16307830810546875,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "座標は出したが、依頼された近隣都市・地域を提示できていない。取得失敗を明示しており、捏造はない。",
+      "semantic_issue_categories": [
+        "missing_requested_detail"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "海上で逆ジオコーディングが失敗した場合、検証済み海岸線と限定された座標範囲から概略地域を表示し、その推定方法を明記。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 5,
+      "global_index": 27,
+      "case_id": "space.exoplanets#3",
+      "expected_tool": "space.exoplanets",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "prompt": "ケプラーで見つかった惑星のうち、半径が地球に近いものを探して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "4c089f3b-dad8-4631-93de-3a60ce71603f",
+      "assistant_message_id": "4a24ff0c-4f49-40b3-afec-66a9e3cee5bd",
+      "assistant_task_id": "f3fbc456-7592-4c27-aa25-18e9df205b65",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nNASA Exoplanet Archiveの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "f3fbc456-7592-4c27-aa25-18e9df205b65",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 713.5903835296631,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "space.exoplanets",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_UNAVAILABLE"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_UNAVAILABLE"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "NASA Exoplanet Archive取得と代替検索が失敗し、該当惑星を一件も提示できていない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "NASA TAPの待ち時間を20秒へ。元のAPI失敗理由を代替Web設定エラーで隠さない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 6,
+      "global_index": 34,
+      "case_id": "japan.law#2",
+      "expected_tool": "japan.law",
+      "specific_changes": [
+        "law_article_body"
+      ],
+      "prompt": "個人情報保護法の目的条文と、事業者の義務に関係する条文を見比べて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "eebb4c18-8339-41d1-89b5-548e2e7ca274",
+      "assistant_message_id": "393758cb-9295-4463-8d70-479e8af79c47",
+      "assistant_task_id": "e3cb29c2-9596-40d4-bfc7-6ca0f0bf52af",
+      "assistant_response": "# 個人情報保護法 第1条（目的）と事業者義務条文の比較\n\n## 条文の役割の違い\n\n**第1条（目的）**は、この法律がなぜ存在するかを規定する「大原則」です。条文には二つの価値が対置されています。\n\n- **個人の権利利益の保護**（第1項末尾）\n- **個人情報の有用性に配慮**（第1項冒頭）\n\nつまり、第1条は「保護」と「活用（有用性）」の両立を目的としており、事業者義務は後者の「有用性」を損なわないよう前者「保護」を実現するための手段として機能しています。\n\n**第17条〜第27条**は、事業者が実際に遵守すべき「具体的な義務」を定めています。\n\n## 目的条文と義務条文の接続関係\n\n第1条は「基本理念及び政府による基本方針の作成その他の…基本となる事項を定め」「事業者…遵守すべき義務等を定める」と述べており、第17条以降がその「義務」としての具体化です。以下、義務条文から目的にどう帰結するかを挙げます。\n\n| 義務条文 | 義務の内容 | 目的条文との関わり |\n|---|---|---|\n| 第17条（利用目的の特定） | 利用目的を特定し、変更時は関連性の範囲内と制限 | 「適正な取扱い」の基本理念を具体化 |\n| 第18条（利用目的による制限） | 特定された利用目的の達成に必要な範囲を超えて取り扱わない | 同上 |\n| 第19条（不適正な利用の禁止） | 違法・不当な行為を助長・誘発する利用を禁止 | 「適正な取扱い」の実体 |\n| 第20条（適正な取得） | 不正手段での取得を禁止、要配慮個人情報の取得に同意を要件 | 「適正な取扱い」の入口 |\n| 第21条（取得時の通知等） | 取得時に利用目的を通知・公表 | 本人の権利利益保護（説明・透明性） |\n| 第23条（安全管理措置） | 漏えい・滅失・毀損の防止措置を講じる | 個人の権利利益の保護（実効性） |\n| 第27条（第三者提供の制限） | 同意なく第三者提供を制限、例外を列挙 | 保護を第三者領域まで拡大適用 |\n\n## 観察する要点\n\n**1. 保護と有用性のバランス**\n第1条は「その他の個人情報の有用性に配慮しつつ、個人の権利利益を保護する」と述べ、義務条文も同様に「本人の同意を得ないで…してはならない」という禁止規定の**例外**（法令に基づく、生命・身体・財産の保護、公衆衛生、行政協力、学術研究など）を網羅的に列挙しています。この例外規定が、まさに第1条の「有用性配慮」と「保護」の緊張関係を法的に調整する仕組みです。\n\n**2. 事業者の責務と「本人の同意」の中心性**\n第17条から第27条まで、多くの義務が「あらかじめ本人の同意を得ないで…してはならない」という形式を共有しています。これは第1条が掲げる「個人の権利利益を保護する」ための中心的担保です。\n\n**3. 国・地方公共団体の責務と委員会設置**\n第1条は「国及び地方公共団体の責務等を明らかにし」「個人情報保護委員会を設置する」ことも目的に含んでいます。事業者の義務（第17〜27条）は、この委員会による監督・行政指導（第29条〜第57条の趣旨）によって初めて実効性を持ちます。\n\n## 留意点\n\n- 提示された証拠は**第1条と第17〜27条**の条文に限定されています。第1条の提示が `text_complete: true` で完結していますが、事業者義務の範囲を「第17〜27条まで」と断定する根拠（例えば第29条以降の安全管理、第30条〜第57条の監督規定）は証拠に含まれていないため、**第27条以降の義務については言及できません**。\n- 第1条にある「基本理念」は、本証拠では個別条文ではなく、別項目（基本理念）に規定されているはずの内容を指しているため、その条文本文は証拠に含まれていません。\n\nしたがって、**「目的条文と事業者義務の接続構造」という分析は可能**ですが、**「事業者の全義務の網羅的比較」は証拠範囲内では不可能**です。\n\n出典：https://laws.e-gov.go.jp/",
+      "tasks": [
+        {
+          "id": "e3cb29c2-9596-40d4-bfc7-6ca0f0bf52af",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 106049.82995986938,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 106029.52050000022,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "目的条文と代表的義務を比べているが、義務の範囲を17〜27条と断定しながら、条文の説明・範囲に誤りと省略があり、監督規定との接続も不正確。",
+      "semantic_issue_categories": [
+        "incomplete_scope",
+        "legal_claim_overreach"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "取得した条番号・見出し・本文に基づく目的／義務比較へ。対象条文の収集範囲を拡張し、未取得条文の役割を断定しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 7,
+      "global_index": 42,
+      "case_id": "earth.streamflow#2",
+      "expected_tool": "earth.streamflow",
+      "specific_changes": [
+        "streamflow_regional_ranking"
+      ],
+      "prompt": "ワシントン周辺で、今流量が大きい河川観測所を確認して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "06289868-f461-4e36-a033-bddf7607c573",
+      "assistant_message_id": "7478080f-c922-4ec5-9339-bbffb3773cfa",
+      "assistant_task_id": "1880250a-5884-4d7c-aa5a-70418d5fe0f3",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nUSGS Water Dataの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "1880250a-5884-4d7c-aa5a-70418d5fe0f3",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 786.7472171783447,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "earth.streamflow",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_TIMEOUT"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_TIMEOUT"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "USGSの観測所・流量を提示できず、Web検索設定案内だけで依頼を満たしていない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "USGSの待ち時間20秒・有限の応答上限4 MiBへ。元のタイムアウトとWeb未設定を区別。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 8,
+      "global_index": 47,
+      "case_id": "biology.occurrence#3",
+      "expected_tool": "biology.occurrence",
+      "specific_changes": [
+        "gbif_geographic_filter"
+      ],
+      "prompt": "近所で最近見られた野鳥を調べたい。上野公園周辺の記録を見せて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "8bf827b6-6ac0-4ad1-aef5-e94c43dfa045",
+      "assistant_message_id": "51356865-f66b-434f-8a07-93fb00f3ecd2",
+      "assistant_task_id": "79ad74ab-bce0-4ce5-93d8-fac813ef78a2",
+      "assistant_response": "GBIF\n2026-07-14T08:34:27 · Anas zonorhyncha Swinhoe, 1866 · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451543409\n2026-07-14T09:03:20 · Spodiopsar cineraceus (Temminck, 1835) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451586918\n2026-07-14T10:16:56 · Zosterops japonicus japonicus Temminck & Schlegel, 1845 · 座標（緯度, 経度）：35.718835, 139.776521 · Tokyo\nhttps://www.gbif.org/occurrence/6451630859\n2026-07-14T08:40:46 · Tachybaptus ruficollis poggei (Reichenow, 1902) · 座標（緯度, 経度）：35.710732, 139.771278 · Tokyo\nhttps://www.gbif.org/occurrence/6451649564\n記録日不明 · 学名不明 · 座標（緯度, 経度）：不明, 不明 · 地域名なし\nhttps://www.gbif.org/occurrence/6451820679\n学名は登録された表記です。和名を推測して置き換えていません。",
+      "tasks": [
+        {
+          "id": "79ad74ab-bce0-4ce5-93d8-fac813ef78a2",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.04291534423828125,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "上野周辺の鳥類記録と出典は示すが、最新記録が実行日より約3か月前で、「最近」の要件に合うか明示評価していない。",
+      "semantic_issue_categories": [
+        "recency_mismatch"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "対象期間と返却された最新日を表示。日付・種名・座標がない匿名レコードを除外し、観察日降順へ。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 9,
+      "global_index": 53,
+      "case_id": "biology.structure#1",
+      "expected_tool": "biology.structure",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "prompt": "ヘモグロビンの立体構造を、酸素結合状態が異なるもの同士で比べたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "6604581e-0d45-47f9-89ba-56cced15f007",
+      "assistant_message_id": "4e295ad0-77a2-456c-8ac4-46d5afa5a57f",
+      "assistant_task_id": "bac178b5-d733-470e-8a86-c26bd2f3f92f",
+      "assistant_response": "ご依頼を正確にお答えするために、まず前提を確認させてください。\n\n## まず確認すべきこと：比較対象の絞り込み\n\nRCSB PDBから取得したデータを見ても、**「酸素結合状態が異なる」構造群を同一の比較軸で選別する仕組みは提供されていません**。検索結果は、`oxyhemoglobin`（6件）と`deoxyhemoglobin`（6件）という2つの別クエリを返していますが、それらのうち生物種・ヘモグロビンタイプ・精細度（分解能）を揃えたペアを選ぶことは、このデータからだけではできません。\n\n例えば、比較にふさわしいペア（同じヒト、酸素あり vs 酸素なし）を抽出すると、以下の候補が浮かびます。\n\n| 酸素結合状態 | PDB ID | 生物 | 分解能（Å） | 年 |\n|---|---|---|---|---|\n| 酸素結合（脱酸素） | 2HBS | ヒト | 2.05 | 1997 |\n| 酸素結合なし（脱酸素） | 1HBS | ヒト | 3.0 | 1985 |\n| 酸素結合なし（脱酸素） | 1C7B | ヒト | 1.803 | 2000 |\n| 酸素結合なし（脱酸素） | 1C7C | ヒト | 1.8 | 2000 |\n| 酸素結合（脱酸素） | 1GLI | ヒト | 2.5 | 1996 |\n\nただし注意が必要です。`1C7B`と`1C7C`は「遺伝子組換え・化学架橋したヘモグロビン（DEOXY RHB1.0/1.1）」であり、天然の脱酸素ヘモグロビンとは構造が異なります。また`1GLI`はT38W変異体です。これらを天然型同士と直接比較するのは、四量体界面の解釈を誤らせるリスクがあります。\n\n`1FHJ`（マネッドウルフ、aquomet＝酸素も水も結合しない状態）や、`2HBC`（イソシアニド錯体）は酸素結合状態が論理的に対照にならないため、比較対象としては不適切です。`6OTW`/`6OTY`（`O2`をタイトルに含むにもかかわらずリガンドリストに`OXY`がない）も、酸素結合の有無が不確定なので除外します。\n\n## なぜこれで完結しないか\n\n**このデータからは「どのペアを比較すべきか」を決定し、「構造の差分」まで算出できません。** 理由は3点です。\n\n1. **生物種・ヘモグロビン亜型が揃っていない。** `3A0G`はニワトリではなくキツネゼリヒ（*Cavia porcellus*）、`6OTX`は二枚貝（*Phacoides pectinatus*）です。種を異にする構造を並べて比較するのは意味を成しません。\n\n2. **構造の差分の定量値が持たれていません。** 四量体のT状態（脱酸素）とR状態（酸素結合）の界面シフト、ヘム鉄のひねり角、フェリスチン（T状態を安定化）の結合の有無といった比較の核心となる数値は、このリストにはありません。\n\n3. **「酸素結合状態が異なるもの同士」のペア指定が明示されていません。** 比較したい軸が「同じヒトの脱酸素 vs 酸素飽和」「不同性重合（T↔R）」「脱酸素 vs 酸化メトヘモグロビン」など、目的によって適切なペアが異なります。\n\n## 推奨される次の一手\n\n比較を実行するには、**「同じヒト（Homo sapiens）、天然型HbA、分解能が近い」脱酸素と酸素結合の2構造を指定**してください。その上で、RCSB PDBの構造表示ページやPDBe（Protein Data Bank in Europe）の構造比較ツール（MolStar/Structure Comparison）で、超分子（quaternary）と分子内（tertiary）の差分を可視化します。\n\nもしご希望があれば、上記のヒト由来候補（例：`1C7B`/`1C7C`と、天然脱酸素/酸素結合構造のペア）を軸に、比較の軸（界面シフトの有無・リガンド結合状態）を整理したリストをさらに絞り込みます。\n\n**補足（データ上の注意）：** 提供された検索結果は`truncated: false`であり、2クエリ分の全件が返されています。ただし「酸素結合状態が異なるヘモグロビン」の網羅的リストではなく、検索クエリに依存したサンプル群に過ぎません。網羅的ランキングや「これが最適ペア」という主張はできません。\n\n出典：https://www.rcsb.org/",
+      "tasks": [
+        {
+          "id": "bac178b5-d733-470e-8a86-c26bd2f3f92f",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 175283.13398361206,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 175251.40670799738,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "酸素結合状態の表で2HBSと1GLIを酸素結合と脱酸素の両方に分類する矛盾があり、依頼された比較も完了していない。",
+      "semantic_issue_categories": [
+        "contradiction",
+        "no_comparison"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "酸素分子OXYを正式な検索属性で照会。取得したリガンド・原題により区別し、deoxyと酸素結合を同時に分類しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 10,
+      "global_index": 54,
+      "case_id": "biology.structure#2",
+      "expected_tool": "biology.structure",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "prompt": "ヒト以外の生物のヘモグロビン構造も登録されている？代表例を探して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "8dd553d1-a838-4b25-bf26-9570cb40460b",
+      "assistant_message_id": "cba7fe4a-dfe2-4f57-900b-8bce9b20a0c8",
+      "assistant_task_id": "00fbb6a4-95f3-4af9-80f0-fe62a255c002",
+      "assistant_response": "はい、ヒト以外の生物のヘモグロビン構造もRCSB PDBに登録されています。代表例を3つ紹介します。\n\n## 代表例\n\n| PDB ID | 生物（学名） | 解像度 | 実験手法 | 収録年 |\n|--------|-------------|--------|---------|--------|\n| 2PGH | 家猪（*Sus scrofa*） | 2.8 Å | X線回折 | 1994 |\n| 3PEL | イヌ（*Canis lupus familiaris*） | 1.9 Å | X線回折 | 2011 |\n| 6IHX | 牛（*Bos taurus*） | 1.46 Å | X線回折 | 2018 |\n\n## 代表的な特徴\n\n- **2PGH**：家猪のヘモグロビンで、酸素を保持しない状態（アクオメット）の構造です。\n- **3PEL**：イヌ（グレートデーン）のヘモグロビンで、高い酸素親和性の起源が調べられています。\n- **6IHX**：牛のヘモグロビンで、SNP修飾された構造です。\n\n## 補足\n\n- **6IHX**と**1G08**は牛のヘモグロビンで、それぞれ一酸化炭素（CMO）を結合させた構造が収録されています。\n- 2025年に収録された**20YJ**は牛のヘモグロビンのアミロイド繊維構造で、電子顕微鏡法で解像されています。\n\n## 注意\n\n- 上記はRCSB PDBの検索結果から抽出した**6件のサンプル**です。ヒト以外のヘモグロビンはこれらより多くのものが登録されています。\n- 提供されたデータは信頼できる情報源の記録ですが、未検証の内容を含む可能性があるため、引用時は各エントリのURLを参照することをおすすめします。\n\n出典：https://www.rcsb.org/",
+      "tasks": [
+        {
+          "id": "00fbb6a4-95f3-4af9-80f0-fe62a255c002",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 86323.75574111938,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 86287.53641599906,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ヒト以外の代表例を複数提示し、構造ID・生物種・解像度を含めて質問に答えている。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 11,
+      "global_index": 55,
+      "case_id": "biology.structure#3",
+      "expected_tool": "biology.structure",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "prompt": "タンパク質構造を論文で引用したいので、解像度や登録情報が分かるPDB記録を見せて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "9a05d84e-fc59-40d6-bd33-e14b7b9c11aa",
+      "assistant_message_id": "ee073aa7-94b6-4ef5-b7ae-ef0c427fb26c",
+      "assistant_task_id": "3bf9c77a-db1d-4e96-94af-d4dd3b60da3c",
+      "assistant_response": "# 論文引用用 PDB 記録 6 例\n\nユーザーは解像度と登録情報（デポジットサイト・ステータス・論文情報）が分かる PDB 記録を求めています。以下、提供された RCSB PDB データから抽出した6件のタンパク質構造記録です。\n\n## 1. 8TV0 — XptA2 wild type\n- **解像度**: 3.1 Å\n- **実験手法**: X線回折（X-RAY DIFFRACTION）\n- **登録情報**: RCSB へのデポジット・プロセス、ステータス REL、初回デポジット 2023-08-17\n- **論文**: Martin, C.L. ほか, *Int J Mol Sci* 24, 2023, DOI 10.3390/ijms241713211、PubMed 37686027\n- **生物**: *Xenorhabdus nematophila*\n- リンク: https://www.rcsb.org/structure/8TV0\n\n## 2. 4V4K — Bacteriophage P22 Portal Protein bound to middle Tail Factor GP4\n- **解像度**: 3.251 Å\n- **実験手法**: X線回折\n- **登録情報**: RCSB へのデポジット・プロセス、ステータス REL、初回デポジット 2010-04-19\n- **論文**: Olia, A.S. ほか, *Nat Struct Mol Biol* 18, 597–603, 2011, DOI 10.1038/nsmb.2023、PubMed 21499245\n- **生物**: *Lederbergvirus P22*（Salmonella virus P22）\n- リンク: https://www.rcsb.org/structure/4V4K\n\n## 3. 4BP7 — Asymmetric structure of a virus-receptor complex\n- **解像度**: 39.0 Å\n- **実験手法**: 電子顕微鏡（ELECTRON MICROSCOPY）\n- **登録情報**: **PDBE** へのデポジット・プロセス（他件と異なり、PDB-Emmy が担当）、ステータス REL、初回デポジット 2013-05-23\n- **論文**: Dent, K.C. ほか, *Structure* 21, 1225–1234, 2013, DOI 10.1016/J.STR.2013.05.012、PubMed 23810697\n- **生物**: *Emesvirus zinderi*\n- リンク: https://www.rcsb.org/structure/4BP7\n\n## 4. 3J3Y — Atomic-level structure of the entire HIV-1 capsid\n- **解像度**: **未提供（null）** — 電子顕微鏡記録のため、RCSB 上では解像度数値が記録されていない。これはゼロではなく、値が存在しないことを意味します。\n- **実験手法**: 電子顕微鏡（クライオ-EM）\n- **登録情報**: RCSB へのデポジット・プロセス、ステータス REL、初回デポジット 2013-05-06\n- **論文**: Zhao, G. ほか, *Nature* 497, 643–646, 2013, DOI 10.1038/nature12162、PubMed 23719463\n- **生物**: Human immunodeficiency virus 1（HIV-1）\n- リンク: https://www.rcsb.org/structure/3J3Y\n\n## 5. 1FOU — CONNECTOR PROTEIN FROM BACTERIOPHAGE PHI29\n- **解像度**: 3.2 Å\n- **実験手法**: X線回折\n- **登録情報**: RCSB へのデポジット・プロセス、ステータス REL、初回デポジット 2000-08-28\n- **論文**: Simpson, A.A. ほか, *Nature* 408, 745–750, 2000, DOI 10.1038/35047129、PubMed 11130079\n- **生物**: *Salasvirus phi29*（Bacillus virus phi29）\n- リンク: https://www.rcsb.org/structure/1FOU\n\n## 6. 1IJG — Structure of the Bacteriophage phi29 Head-Tail Connector Protein\n- **解像度**: 2.9 Å\n- **実験手法**: X線回折\n- **登録情報**: RCSB へのデポジット・プロセス、ステータス REL、初回デポジット 2001-04-26\n- **論文**: Simpson, A.A. ほか, *Acta Crystallogr. Sect. D* 57, 1260–1269, 2001, DOI 10.1107/S0907444901010435、PubMed 11526317\n- **生物**: *Salasvirus phi29*\n- リンク: https://www.rcsb.org/structure/1IJG\n\n---\n\n**補足と注意**\n- この結果はクエリ「protein」での返却であり、**6件のサンプル**に過ぎません。完全なデータセットではなく、特定構造を検索したい場合は PDB ID・生物名・解像度などでの絞り込みが必要です。\n- 6件すべてステータス REL（公開済み）ですが、登録担当は 4BP7 を除く5件が RCSB、4BP7 が PDBE です。\n- 論文の引用先として、ジャーナル略称・巻・ページ・DOI・PubMed ID・初回デポジット日・実験手法・解像度（Å単位）が確認できます。",
+      "tasks": [
+        {
+          "id": "3bf9c77a-db1d-4e96-94af-d4dd3b60da3c",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 257947.14426994324,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 257964.45083300205,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "解像度・登録日・実験法・論文情報を含む引用候補を複数提示している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 12,
+      "global_index": 56,
+      "case_id": "biology.structure#4",
+      "expected_tool": "biology.structure",
+      "specific_changes": [
+        "pdb_details"
+      ],
+      "prompt": "ヘモグロビンの複合体構造と単独構造を見つけて違いを確認したい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "6f851fed-4886-4be0-8ce4-ba88289c0f7a",
+      "assistant_message_id": "1f6a1cfa-c2d6-4220-b6db-2caf373e4a4a",
+      "assistant_task_id": "53aba32f-e90d-4cea-b5ab-14923604f3d6",
+      "assistant_response": "# ヘモグロビンの複合体構造と単独構造について\n\n結論から申し上げますと、提供された RCSB PDB の検索結果には、**複合体構造と単独構造の対を比較できる対象が含まれていません。** 理由を説明します。\n\n## 証拠から何が得られたか\n\n検索は「oxyhemoglobin」（酸素化ヘモグロビン）と「deoxyhemoglobin」（脱酸素化ヘモグロビン）の2つのクエリで実行され、合計12件のエントリが返されました。ただし、これらはすべて**ヘモグロビン分子自体の結晶構造（単体、あるいは2分子からなる最小単位）**を表しており、ヘモグロビンが他のタンパク質やリガンドと形成する「複合体」として記録されているエントリはありません。\n\n各エントリを確認すると、リガンドは酸素（OXY）やヘム（HEM）などヘモグロビンの正常構成要素に限定されています：\n\n- **3A0G**：キツネネズミの酸素化ヘモグロビン（2.5 Å）。OXYを含むが、単独のヘモグロビン分子。\n- **6OTW / 6OTX**：二枚貝 *Phacoides pectinatus* の HbII-HbIII 不安定二量体。6OTW はヘムのみで、6OTX はヘム＋OXY。これはヘモグロビンの**部分構造（二量体）**であり、4量体複合体や別タンパク質との複合体ではありません。\n- **1FHJ / 1C7B / 1C7C / 2HBS / 1HBS / 1GLI / 2HBC / 1XZ4**：いずれもヒトなどのヘモグロビン単独（一部は PO4 などの補助リガンドを含む）の結晶構造です。\n\n## なぜ比較できないか\n\n「単独構造」と「複合体構造」の違いを確認するには、同じヘモグロビンサンプルから得られた2つのエントリ（例：脱酸素化単独4量体 vs. 脱酸素化4量体＋別タンパク質、あるいは2分子間相互作用を直接観察した構造など）が対象として必要です。今回の結果は、ヘモグロビンの**酸素化状態（Oxy vs. Deoxy）や結晶状態**が異なっただけの別々の単独構造であり、ヘモグロビンが「複合体」を形成する構造エントリが含まれていないため、要求された比較は証拠からはできません。\n\n## 補足\n\n- 結果は `truncated: false` で完全取得されていますが、これは「ヘモグロビン複合体構造」を対象としたエントリがそもそも提供されていないことを意味します。\n- 実際のヘモグロビン複合体（例：2,3-ビスフェニトリン（BPG）との結合、異型化病 HbS の重合、別タンパク質との複合体など）を確認するには、「hemoglobin complex」「hemoglobin BPG」「hemoglobin dimer interface」などのクエリで再検索することをおすすめします。\n\nご要望があれば、特定の複合体（例：BPG 結合ヘモグロビン、HbS 重合体など）を再検索して、単独構造との違いを比較することも可能です。\n\n出典：https://www.rcsb.org/",
+      "tasks": [
+        {
+          "id": "53aba32f-e90d-4cea-b5ab-14923604f3d6",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 147094.98286247253,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 147055.78908399912,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "比較可能な複合体がないという制約は説明しているが、複合体と単独構造の例や構造差は提示できていない。",
+      "semantic_issue_categories": [
+        "missing_comparison_data"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "酸素化／脱酸素化検索の流用をやめ、hemoglobin-haptoglobin複合体とhemoglobinを検索。構成タンパク質と同種比較候補を表示。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 13,
+      "global_index": 57,
+      "case_id": "biology.protein#1",
+      "expected_tool": "biology.protein",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "prompt": "BRCA1は細胞の中でどんな役割を担っている？信頼できるタンパク質記録を見たい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "1b698a3e-2e96-42bf-95de-574babed374a",
+      "assistant_message_id": "9afebae0-95fc-4efa-a461-c0453a091f64",
+      "assistant_task_id": "0c2ca862-7b83-47be-825a-29fb716a60ac",
+      "assistant_response": "# BRCA1の細胞内役割\n\nUniProtの信頼できるタンパク質記録（Swiss-Prot、査読済み）から、BRCA1（P38398、*Homo sapiens*）の役割をまとめます。\n\n## 中心となる機能\n\n**E3ユビキチンリガーゼとしての触媒機能**\nBRCA1はE3ユビキチンプロテインリガーゼで、特定の『Lys-6』連結のポリユビキチン鎖の形成を担います（EC 2.3.2.27）。これがDNA損傷に対する細胞応答を促進し、**DNA修復の中心的役割**を果たします。\n\n**BARD1とのヘテロ二量体**\nBRCA1はBARD1とヘテロ二量体を形成し、このBRCA1-BARD1複合体が以下のような多様な細胞経路を協調的に調整します。\n\n## 担う主要な経路\n\n- **DNA損傷修復**：イオン化放射線後のS期とG2期での適切な細胞周期停止に必要。ホモログスリコンビネーション修復（HRR）に寄与し、PALB2との直接的な相互作用を通じてBRCA2-RAD51修復機構のDNA切断部位への荷込みを調節します。\n- **ユビキチン化**：BASC（BRCA1関連ゲノム監視複合体）やBRCA1-A複合体など複数の複合体の構成要素。\n- **転写調節**：転写活性化因子としても働き、同時に転写を抑制する役割も持っています。\n- **脂質合成の抑制**：不活性なリン酸化されたACACAに結合してその脱リン酸化を防ぎ、脂質合成を抑制します。\n- **細胞周期チェックポイント**：RBBP8のBRCA1によるユビキチン化を通じて、DNA損傷時のG2/Mチェックポイント制御に関与します。\n\n## 細胞内局在\n\n- **核**：二重鎖切断（DSB）部位に局在し、ABRAXAS1とBRCA1-A複合体により損傷部位への集積を担います。\n- **染色体**上、**細胞質**にも局在します（イオン化放射線後）。\n\n---\n\n**信頼できる記録について**：上記はUniProt KBの査読済みエントリ（Swiss-Prot、P38398）に基づくものです。\n\n**注意点**：提供された記録は`evidence_truncated: true`であり、相互作用情報、アイソフォームの詳細など一部のデータが切り詰められています。そのため、網羅的な相互作用リストや完全なエントリ内容として扱うことはできません。\n\n出典：https://www.uniprot.org/",
+      "tasks": [
+        {
+          "id": "0c2ca862-7b83-47be-825a-29fb716a60ac",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 142166.9042110443,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 142135.17016699916,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "BRCA1の機能と関連経路をUniProtの識別子付きで具体的に説明している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 14,
+      "global_index": 58,
+      "case_id": "biology.protein#2",
+      "expected_tool": "biology.protein",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "prompt": "ヒトTP53とマウスの対応タンパク質を比べて、基本機能を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "66b310b5-c1c6-4b9c-8a36-dade3c54c97c",
+      "assistant_message_id": "8a694328-59b9-427f-aeaa-5b8f2e6da8fe",
+      "assistant_task_id": "fd486b32-55f4-40d0-8502-b649cb5ba826",
+      "assistant_response": "# ヒトTP53とマウスTp53の基本機能比較\n\nご依頼いただいた「基本機能」の比較について、提供されたUniProtの記録を基に回答します。ただし、**重要な制限**があります。\n\n## 証拠に基づく確認できた事項\n\n両種とも、以下が一致しています。\n\n| 項目 | ヒト (P04637) | マウス (P02340) |\n|------|---------------|-----------------|\n| 正式名 | Cellular tumor antigen p53 | Cellular tumor antigen p53 |\n| エントリ種別 | Swiss-Prot（審査済み） | Swiss-Prot（審査済み） |\n| 遺伝子名 | TP53 | Tp53 |\n| 配列長さ | 393 アミノ酸 | 390 アミノ酸 |\n\n「FUNCTION（機能）」および「COFACTOR（補因子）」というコメントタイプが両方に存在しますが、**実際の機能記述テキストは空（`texts: []`、`cofactors: []`）であり、中身が取得されていません。** UniProtの記録は `evidence_truncated: true` で、機能の詳細記述が含まれていないため、具体機能を述べることはできません。\n\n## 明確に回答できない部分と理由\n\n**基本機能の詳細（例：転写因子としてのDNA結合、細胞周期抑制、アポトーシス誘導など）は答えることができません。**\n\n理由：\n- 提供された記録には機能記述の実体テキストが含まれておらず、`FUNCTION` コメントは中身のない空枠です。\n- これは「機能がない」のではなく、**取得されたデータが欠落している**（missing field）ためです。\n\n## 補足\n\n- UniProtの公式サイト（`https://www.uniprot.org/`）を直接参照すれば、詳細な機能記述が得られる可能性がありますが、**Wikipediaでのみ参照可能な状況や、この記録だけでは現在の正確な機能概要を確認することはできません。**\n- 両種ともp53ファミリーの主要メンバーであり、配列長が極めて近く（393 vs 390）、正式名も同一である点から、**高い機能的保存性（ortholog）**が示唆されますが、これは証拠から推測に過ぎません。\n\n要するに、**「対応タンパク質が一致すること」は確認できますが、「基本機能の内容」は、証拠に含まれていないため回答できません。** 詳細機能を得るには、機能コメントを補完した記録の再取得が必要となります。",
+      "tasks": [
+        {
+          "id": "fd486b32-55f4-40d0-8502-b649cb5ba826",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 99582.1008682251,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 99549.21679200197,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ヒト・マウスの識別子と配列長は比較したが、依頼の中心である基本機能を説明できていない。",
+      "semantic_issue_categories": [
+        "missing_requested_detail"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "Reviewedタンパク質を優先。FUNCTION本文を前方へ正規化し、入れ子の文字数・深さ制限でコメント本文が空にならないよう改善。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 15,
+      "global_index": 59,
+      "case_id": "biology.protein#3",
+      "expected_tool": "biology.protein",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "prompt": "インスリンの前駆体から成熟タンパク質までの情報を確認して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "cb58116f-67f3-4590-9f74-a93de06e14e4",
+      "assistant_message_id": "1185b8a1-1fd2-471d-ac22-0417a0611280",
+      "assistant_task_id": "9217e69f-0aeb-41c5-8c2f-5c688c8581f0",
+      "assistant_response": "# インスリン：前駆体から成熟タンパク質への情報\n\n## 確認できる主要なポイント\n\n**前駆体（Precursor）の存在**\n- UniProt entry P01308（Swiss-Prot）の flag は「Precursor」です。これは遺伝子 INS から作られる前駆体タンパク質を指します。\n\n**成熟タンパク質の構成（A鎖とB鎖）**\n- P01308 の「contains」に「Insulin B chain」と「Insulin A chain」の2つの推奨名がリストされています。\n- 成熟インスリンは、B鎖とA鎖からなる**ヘテロ二量体**であり、**2本のジスルフィド結合**によって連結されています（PubMed:25423173）。\n\n## 重要な区別：前駆体と成熟体の長さ\n\n**成熟インスリン（P01308）**\n- シーケンス長は **110アミノ酸**です。これは前駆体（preproinsulin）の全長に対応します。\n- 前駆体は、シグナルペプチド、Cペプチドを挟んだA鎖とB鎖を含みます。\n\n**断片（Fragment）として記録されているもの**\n- 検索結果には、A鎖とB鎖を含む成熟領域を断片として記録したTrEMBLエントリ（C9JNR5、F6MZK5など）も含まれています。\n  - C9JNR5: 92アミノ酸（シグナルペプチド1〜24、A鎖・B鎖を含む）\n  - F6MZK5: 94アミノ酸\n\n**注意点**\n- 提供されたエビデンスからは、前駆体（preproinsulin）のシグナルペプチドやCペプチドの正確なアミノ酸配列や、成熟体（A鎖+B鎖）の正確な残基数の明示は得られていません。110アミノ酸は前駆体全体の長さとして解釈されます。前駆体の切断（Cペプチドの除去）の詳細な位置や配列は、この記録では確認できませんでした。\n\n## 補足情報\n\n- **機能**: 血糖濃度を低下させ、単糖・アミノ酸・脂肪酸に対する細胞透過性を高める。肝臓でのグリコーゲン合成を促進します。\n- **組織特異性**: 膵臓β細胞で発現（タンパク質レベル、PubMed:36309486）。\n- **疾患関連**: Hyperproinsulinemia（前駆体由来物質の血清内上昇）、1型糖尿病、新生児恒久糖尿病4型などとの関連が記録されています。\n\n---\n\n**不確実性の説明**: 証拠は断片的であり、前駆体から成熟体への変換プロセス（Cペプチド切断の正確な残基位置や配列）の完全な観察は含まれていません。より詳細な配列と切断点は、エントリ P01308 の完全版（https://www.uniprot.org/）を直接確認する必要があります。",
+      "tasks": [
+        {
+          "id": "9217e69f-0aeb-41c5-8c2f-5c688c8581f0",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 133629.0590763092,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 133599.48320900003,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "前駆体と成熟A/B鎖の関係は説明するが、成熟鎖の長さ・切断位置を回答できず、110残基の前駆体を主に扱っている。",
+      "semantic_issue_categories": [
+        "incomplete_processing_details"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "Signal／Propeptide／Chain／Peptideの切断位置を優先保持。前駆体配列長と成熟鎖の残基位置を混同しないための指示を追加。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 16,
+      "global_index": 60,
+      "case_id": "biology.protein#4",
+      "expected_tool": "biology.protein",
+      "specific_changes": [
+        "uniprot_evidence_length"
+      ],
+      "prompt": "あるタンパク質の別名や配列長も知りたい。ヒトのEGFRを調べて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "f6d14e9c-8240-4b1a-a909-a02deb35b387",
+      "assistant_message_id": "f2fbeb01-87f7-4047-af97-b6a014f696ed",
+      "assistant_task_id": "c7f80ab8-b224-44f3-b859-5b9a4c887f26",
+      "assistant_response": "ヒトEGFR（UniProtKB accession: P00533、UniProt KB ID: EGFR_HUMAN、UniProtKB reviewed（Swiss-Prot））の別名と配列長を以下のとおりまとめます。\n\n**別名（protein）**\n- Proto-oncogene c-ErbB-1\n- Receptor tyrosine-protein kinase erbB-1\n\n**別名（gene）**\n- ERBB\n- ERBB1\n- HER1\n\n**配列長**\n- 1210 アミノ酸（アミノ酸残基数）\n\n補足\n- 記録には「Precursor」というフラグが付いています。これは成熟EGFRからシグナルペプチドが除去される前駆体形式の配列長に対応します。\n- 提供されたデータは `evidence_truncated: true` であり、相互作用など一部のセクションが切り詰められています。別名・配列長自体は完全な情報として取得されています。\n- 配列長はアミノ酸残基数であり、塩基対数（cDNA）とは異なります。\n\nなお、別名を日本語に翻訳した名称は UniProt の記録に含まれていないため、ローカライズ名は提供されていません。\n\n出典：https://www.uniprot.org/",
+      "tasks": [
+        {
+          "id": "c7f80ab8-b224-44f3-b859-5b9a4c887f26",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 91950.679063797,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 91916.44041700056,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ヒトEGFRの別名と1210残基の配列長をUniProt識別子付きで示している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 17,
+      "global_index": 75,
+      "case_id": "internet.domain_registration#3",
+      "expected_tool": "internet.domain_registration",
+      "specific_changes": [
+        "rdap_redirect_and_empty_evidence"
+      ],
+      "prompt": "example.orgの登録者情報が公開されている範囲と、登録状況を調べて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "66327b4c-b4d1-4e15-8818-9e3e95a7c171",
+      "assistant_message_id": "080e6a44-6afa-4b55-9f82-a6b8b12aea39",
+      "assistant_task_id": "cccc8051-dd2d-4063-b0a9-32b27a2041d1",
+      "assistant_response": "example.org の RDAP レコードに基づく回答です。\n\n## 登録者情報の公開範囲\n\n**原則として登録者名が非公開（保護されている）**\n\nRDAP レコードの公開エンティティを見ると、`registrar`（レジストラ）として「ICANN」が公開されていますが、`registrar` ロールを持つ登録者情報（氏名 `fn`）は空文字として記録されています。実際の登録者名はレジストラのサーバー（本件は Public Interest Registry、レジストラID 376）のレコードで確認する必要があります。\n\n公開されている情報：\n- **レジストラ**: ICANN（Public Interest Registry、IANAレジストラID 376）\n- **レジストラの連絡先**: 不正行為（abuse）担当用のメール `cbath@pir.org`、電話番号 `+1.1234567890`\n\n公開されない情報：\n- 登録者名（`fn` が空）\n- 登録者の住所、連絡先詳細\n\nなお、RDAP の通知（Terms of Service）では、[Non-Public Data] タグが付く項目がプライバシー法により非公開になる旨、また登録者連絡先はレジストラのURL経由で確認するよう案内されています。\n\n## 登録状況\n\n- **登録日**: 1995-08-31\n- **満了日**: 2027-08-30\n- **最終変更日**: 2026-08-30\n- **登録状態**: registered（登録済）\n\n**サーバー制限スタТУス**（このドメインで許可されている操作）：\n- サーバー削除禁止（server delete prohibited）\n- サーバー移管禁止（server transfer prohibited）\n- サーバー更新禁止（server update prohibited）\n- 自動更新期間中（auto renew period）\n\nつまり、このドメインは削除・移管・編集がサーバー側でブロックされており、自動更新期間に入っている状態です。\n\n**ネームサーバー**：\n- katelyn.ns.cloudflare.com\n- mitch.ns.cloudflare.com\n（両方とも Cloudflare を経由しています）\n\n## 補足\n\n- データの取得日時: 2026-10-11（UTC）\n- 公開エンティティの `has_payload` は true ですが、`item_count` は 0 で、公開されている登録者詳細は実質的に限られています。\n- 実際の登録者名を確認するには、レジストラ（Public Interest Registry）のレコードを照会する必要があります。\n\n出典：https://rdap.org/",
+      "tasks": [
+        {
+          "id": "cccc8051-dd2d-4063-b0a9-32b27a2041d1",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 93332.18002319336,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 93317.70400000096,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "登録者情報の中心的回答にレジストラをICANNとする混同があり、レジストラ連絡先にも疑わしい値をそのまま断定している。登録状況の説明として信頼できない。",
+      "semantic_issue_categories": [
+        "materially_misleading",
+        "rdap_field_confusion"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "RDAP registrarとregistrantを役割別に表示。空の登録者欄を非公開の証明とせず、別主体の連絡先で補わない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 18,
+      "global_index": 76,
+      "case_id": "internet.domain_registration#4",
+      "expected_tool": "internet.domain_registration",
+      "specific_changes": [
+        "rdap_redirect_and_empty_evidence"
+      ],
+      "prompt": "2つのドメインのネームサーバー設定を比較したい：openai.comとwikipedia.org。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "4b024e56-edc9-485a-9870-a892ebdaa6d2",
+      "assistant_message_id": "a15536b0-2beb-45ee-bbfa-530d1c67c0c8",
+      "assistant_task_id": "9d78d7bd-7c25-41d6-bc86-c9d1624fb093",
+      "assistant_response": "# ネームサーバー設定の比較\n\n## openai.com\nネームサーバー（4基、Azure DNS による管理）：\n\n| ネームサーバー | 役割 |\n|---|---|\n| ns1-02.azure-dns.com | |\n| ns2-02.azure-dns.net | |\n| ns3-02.azure-dns.org | |\n| ns4-02.azure-dns.info | |\n\n## wikipedia.org\n現在の提供情報からはネームサーバーのリストは取得されていません。\n\n## 比較の結論\n- **openai.com**：4基のネームサーバーを Azure DNS（Microsoft Azure の DNS 提供サービス）で管理し、`com`（Verisign）のトップレベルドメインで登録されています。\n- **wikipedia.org**：ネームサーバー設定を比較するためには、同様に取得したデータが必要です。\n\nPROPOSED：`wikipedia.org` のネームサーバー情報を取得するためには、`internet.domain_registration`（RDAP）ツールを再度 wikipedia.org について実行する必要があります。現在の提供情報にはそのデータが含まれていません。\n\n出典：https://rdap.org/",
+      "tasks": [
+        {
+          "id": "9d78d7bd-7c25-41d6-bc86-c9d1624fb093",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 48745.712757110596,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 48719.284000006155,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "openai.comのネームサーバーは列挙したが、wikipedia.orgを取得できず比較を完了していない。",
+      "semantic_issue_categories": [
+        "incomplete_comparison"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "RDAP fanoutを既存型付き表示で展開し、両方のネームサーバーと共通設定を比較。欠落は引き続き明示。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 19,
+      "global_index": 85,
+      "case_id": "games.pokemon#1",
+      "expected_tool": "games.pokemon",
+      "specific_changes": [
+        "pokemon_outgoing_evolution"
+      ],
+      "prompt": "ピカチュウから進化するポケモンと、その進化条件を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "7d3fa63d-1766-41ac-8ea8-9b8e77b07213",
+      "assistant_message_id": "d33fdcf7-77e8-45ba-9732-8381395ff81e",
+      "assistant_task_id": "90958539-df1a-47de-a450-f6e833bcb37a",
+      "assistant_response": "PokéAPI\nピカチュウ\nタイプ：electric\n種族値：hp 35、attack 55、defense 40、special-attack 50、special-defense 50、speed 90\n特性：static、lightning-rod\nピカチュウ → ライチュウ：version_group: red-blue、is_default: True、item: かみなりのいし、trigger: use-item、required_pokemon_form: pikachu / version_group: sun-moon、is_default: True、item: かみなりのいし、trigger: use-item、region: alola、required_pokemon_form: pikachu、evolved_pokemon_form: raichu-alola\n\n出典：https://pokeapi.co/",
+      "tasks": [
+        {
+          "id": "90958539-df1a-47de-a450-f6e833bcb37a",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.080108642578125,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ピカチュウからの通常・アローラの進化先と、かみなりのいしという条件を回答している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 20,
+      "global_index": 89,
+      "case_id": "games.trivia#1",
+      "expected_tool": "games.trivia",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "prompt": "小学生と遊べる宇宙のクイズを、やさしい四択で1問出して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "d89eb786-754c-4b56-930c-b55f731d5302",
+      "assistant_message_id": "e9b00712-1ca5-4198-8efd-9b14fd3cae17",
+      "assistant_task_id": "8f890f86-beda-400e-8d23-14dcbd0cdca4",
+      "assistant_response": "# 🌌 宇宙クイズ\n\n**小惑星帯は、どの2つの惑星の間に位置しているでしょう？**\n\n- 木星と土星\n- 水星と金星\n- 地球と火星\n- 火星と木星 ✅\n\n---\n\n**答え：火星と木星**\n\n小惑星帯は、火星と木星の間に広がっています。小さな石の惑星がずらりと並んでいる場所です。小学生でも楽しめるやさしいクイズでした！🪐\n\n出典：https://opentdb.com/",
+      "tasks": [
+        {
+          "id": "8f890f86-beda-400e-8d23-14dcbd0cdca4",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 25901.253938674927,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 25869.928499996604,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "小学生向けの簡単な宇宙四択クイズを1問提示している。答えも表示する形式だが、非表示指定はない。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 21,
+      "global_index": 90,
+      "case_id": "games.trivia#2",
+      "expected_tool": "games.trivia",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "prompt": "映画好き向けに、少し難しめのクイズを一つお願い。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "e7047bdb-d597-44c2-b120-3358ea28ab92",
+      "assistant_message_id": "4a971947-00e6-449b-82ca-5ecde410252f",
+      "assistant_task_id": "52c89955-3c77-4c1f-95b0-c9cb08b46843",
+      "assistant_response": "# 🎬 映画クイズ（やや難しい）\n\n**問題：**\nYouTuber Jerma985が2014年に制作した映画『Rat Movie: Mystery of the Mayan Treasure』の中で、マヤの財宝を盗もうとする男は誰か？\n\n**選択肢：**\n- A. Bootleg Duck Dynasty Byeah Batman\n- B. Gabe \"The Glue Man\" Degrossi\n- C. Demon Lord Zeraxos\n- D. Dick Dastardly Richards\n\n---\n\n（答えを隠して考えてみてください！）\n\n.\n.\n.\n\n## ✅ 正解：D. Dick Dastardly Richards\n\nこの作品はJerma985が本人役で主演した、ファンが自作した映画です。盗もうとする悪役は「Dick Dastardly Richards」という名前の架空の人物（実在の人物Dick Dastardlyにオマージュ）です。\n\n---\n\n**補足：**\n- このクイズは[Open Trivia DB](https://opentdb.com/)から取得したデータです。\n- 難易度は「hard（難しい）」と設定されています。\n- もし正解が違った場合や、追加の映画クイズをご希望であればお知らせください！🎥",
+      "tasks": [
+        {
+          "id": "52c89955-3c77-4c1f-95b0-c9cb08b46843",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 50393.856048583984,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 50352.70175000187,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "映画クイズを提示したが、考えるための間を装いながら同じ回答内で正解を公開している。クイズとしての使い勝手を損ねる。",
+      "semantic_issue_categories": [
+        "answer_revealed"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "クイズの正解は明示要求時だけ渡す。少し難しめはmediumへ。表示のfallbackも四択と正解非表示を維持。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 22,
+      "global_index": 92,
+      "case_id": "games.trivia#4",
+      "expected_tool": "games.trivia",
+      "specific_changes": [
+        "quiz_and_exoplanet_branch"
+      ],
+      "prompt": "答えをすぐ表示せず、科学の四択問題だけ先に出して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "f27efeab-eef9-4130-9df7-b9fdeaefff16",
+      "assistant_message_id": "246e518a-7a46-4707-93ac-1f7b7fb2a00a",
+      "assistant_task_id": "aeb6b3d7-883a-4c67-8a63-3293a1fba5a5",
+      "assistant_response": "科学の四択問題です。\n\n**質問：** 人間の右肺はどのくらいの肺葉（葉）を持っていますか？\n\n- 1\n- 2\n- 4\n- 3\n\n回答を教えてください。正解が確認できます。\n\n出典：https://opentdb.com/",
+      "tasks": [
+        {
+          "id": "aeb6b3d7-883a-4c67-8a63-3293a1fba5a5",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 22756.460905075073,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 22722.243958000035,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "科学の四択問題だけを提示し、正解を表示していない。",
+      "semantic_issue_categories": [
+        "answered",
+        "answer_withheld_as_requested"
+      ]
+    },
+    {
+      "batch_index": 23,
+      "global_index": 97,
+      "case_id": "art.met_collection#1",
+      "expected_tool": "art.met_collection",
+      "specific_changes": [
+        "met_theme_filters"
+      ],
+      "prompt": "ゴッホの作品のうち、風景画と自画像をそれぞれ探して所蔵情報を見たい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "c119813d-ed2c-4e34-92eb-d1286a8139d5",
+      "assistant_message_id": "f97c83a4-eb58-4312-92eb-596962202653",
+      "assistant_task_id": "73859800-cc16-4749-ab24-0fe4e9958c2f",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nMetropolitan Museum Collection APIの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "73859800-cc16-4749-ab24-0fe4e9958c2f",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 836.9488716125488,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "art.met_collection",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_UNAVAILABLE"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_UNAVAILABLE"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "Met Collection APIの取得と代替検索が失敗し、風景画・自画像の所蔵情報を一件も提示していない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "Met APIの待ち時間20秒へ。接続エラーを保持したまま代替取得の成否を説明。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 24,
+      "global_index": 102,
+      "case_id": "games.pc_deals#2",
+      "expected_tool": "games.pc_deals",
+      "specific_changes": [
+        "cooperative_deal_verification"
+      ],
+      "prompt": "セール中の協力プレイ用PCゲームを、価格と割引率で比べて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "1f8f3cec-ed99-496b-9fcc-3cca1741579b",
+      "assistant_message_id": "dc837a18-1488-4a2e-8f6a-edd76e43ec9e",
+      "assistant_task_id": "ae76d97e-39fd-4d8e-8fdf-7d2730b16921",
+      "assistant_response": "# 協力プレイ用PCゲームのセール比較\n\n提供されたデータでは比較ができません。\n\n**理由:** 取得されたセール商品は1作品のみで、「TerraScape」1点だけでした。価格や割引率で2つ以上の商品を比較するためには、少なくとも2点以上のデータが必要です。\n\n## 取得できた商品\n\n| 項目 | TerraScape |\n|---|---|\n| 通常価格 | $16.99 |\n| セール価格 | $0.00（無償） |\n| 割引率 | 100% |\n| スチーム評価 | Very Positive（86%、943評価） |\n| 協力カテゴリ | Co-op、Online Co-op |\n| ストア | Epic Games Store |\n\n## 補足\n\n- このデータは外部ソース（CheapShark）由来であり、内容に不審な点がある可能性を踏まえ、事実として扱いつつも正確性を担保しています。\n- TerraScapeは通常価格の100%引きで無料配布中です。\n- 比較対象となる他作品のセール情報を取得したい場合は、再度別の照会（例：Steamのco-opカテゴリや特定ストアの協力量販品）を依頼してください。\n\nより多くの作品を比較したい場合は、ご希望のストア（Steam / Epic Games Store など）や予算範囲を教えていただければ、その条件に沿って検索し直します。\n\n出典：https://www.cheapshark.com/\nhttps://store.steampowered.com/app/2290000",
+      "tasks": [
+        {
+          "id": "ae76d97e-39fd-4d8e-8fdf-7d2730b16921",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 59531.5158367157,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 59492.913084002794,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "1作品の価格・割引率は示すが、比較を求める質問に対して1件しかなく比較不能。加えて正確性を担保したとの記述がデータ不審の注意書きと矛盾する。",
+      "semantic_issue_categories": [
+        "insufficient_results",
+        "contradictory_qualification"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "協力カテゴリ確認候補を有限の32件へ拡張。価格・割引を既存rendererで並べ、1件を比較完了とせず、正確性の根拠なき保証を除去。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 25,
+      "global_index": 107,
+      "case_id": "games.chess#3",
+      "expected_tool": "games.chess",
+      "specific_changes": [
+        "chess_pgn_sample_comparison"
+      ],
+      "prompt": "Nakamuraが黒番で指した最近の対局を棋譜付きで探して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "713b43da-f905-47fe-be02-554de17f50df",
+      "assistant_message_id": "7cb0741b-d05e-4adb-b7d1-b147056b4a0d",
+      "assistant_task_id": "1633a593-faa2-4969-8c2e-89dad9b3d553",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nChess.com PubAPIの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "1633a593-faa2-4969-8c2e-89dad9b3d553",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 623.8141059875488,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "games.chess",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_BAD_RESPONSE"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_BAD_RESPONSE"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "Chess.com取得失敗後のWeb設定案内のみで、棋譜や対局情報を提示できていない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "Chess.com月別棋譜応答の有限上限8 MiB・待ち時間20秒へ。過大パケットをスキーマ異常と誤判定する条件を緩和。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 26,
+      "global_index": 108,
+      "case_id": "games.chess#4",
+      "expected_tool": "games.chess",
+      "specific_changes": [
+        "chess_pgn_sample_comparison"
+      ],
+      "prompt": "彼の最近の対局から、短手数で決着したものと長いものを比べたい。",
+      "execution_status": "COMPLETED",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "19a016b0-0f05-4509-b11e-1c488dc61ee0",
+      "assistant_message_id": "2dee9fcf-c364-41ab-a79c-f3a4242fef04",
+      "assistant_task_id": "bae814b6-acd3-4b37-9286-b22af926b753",
+      "assistant_response": "Web検索プロバイダが設定されていないため、黒番（Nakamura）の最近の対局を棋譜付きで取得できませんでした。\n\nそのため、短手数で決着した対局と長手数で決着した対局を比較するデータも用意できません。\n\n**状況を整理します。**\n\n- 前回の依頼「棋譜付きで探して」の段階で、Web検索プロバイダ（Brave Search API）やChess.com PubAPIの取得が失敗しています。\n- 対局データ（手数、結果、棋譜など）にアクセスできないため、事実として比較するのは困難です。\n\n**比較を行うための条件：**\n対局を比較するためには、最低でも2つの対局データが必要です。具体的には：\n\n| 比較要素 | 例 |\n|---|---|\n| 手数 | 短手数（例：20手以内）／長手数（例：60手以上） |\n| 結果 | 勝／敗／詰み／投了 |\n| 対戦相手 | 相手が誰か |\n| 対局日 | 最近のどの時点の対局か |\n\n**ご希望の進め方：**\n1. Web検索プロバイダの設定を有効化していただければ、対局データを再取得します。\n2. または、ご自身で対局データ（Chess.com / Lichess のAPI結果など）を提示いただければ、そのデータを使って短手数／長手数で比較します。\n\nどちらの方針で進めてよろしいでしょうか？",
+      "tasks": [
+        {
+          "id": "bae814b6-acd3-4b37-9286-b22af926b753",
+          "state": "completed",
+          "route": "NEURAL",
+          "authorization_state": "not_required",
+          "reason_category": "open_ended_generation",
+          "duration_ms": 76656.5260887146,
+          "error": null
+        }
+      ],
+      "tool_executions": [],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 76656.15779200016,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "前問の失敗を引き継いで比較不能と説明している点は誠実だが、独立した依頼への再取得・比較は行われていない。",
+      "semantic_issue_categories": [
+        "incomplete_followup"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "同じ会話の直前のユーザー指定からプレイヤーを解決し、前問の取得失敗とは別に新規取得。アシスタントの推測からは対象を決めない。stream経路も共有routerへ。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 27,
+      "global_index": 119,
+      "case_id": "environment.air_quality#3",
+      "expected_tool": "environment.air_quality",
+      "specific_changes": [
+        "dominant_aqi"
+      ],
+      "prompt": "AQIが悪化しているとき、今の東京で主に問題になっている汚染指標を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "705113d3-634f-49b0-9add-b5d29eaabbc3",
+      "assistant_message_id": "31a95de6-1a7b-45f1-b029-dd2543a6ae6a",
+      "assistant_task_id": "086bf305-8f14-4b47-b0bb-fb86de16b2df",
+      "assistant_response": "Open-Meteo Air Quality · 2026-10-11T20:00\n現在の米国式AQIの構成指数が最も高いのは pm2_5（AQI 74）です。異なる汚染物質の濃度を直接比べず、同じAQI尺度で比較しています。\n\n出典：https://air-quality.open-meteo.com/",
+      "tasks": [
+        {
+          "id": "086bf305-8f14-4b47-b0bb-fb86de16b2df",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.04291534423828125,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "東京で最も高い構成AQI指標をPM2.5と特定し、異なる汚染物質を同じ尺度で比べると説明している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 28,
+      "global_index": 121,
+      "case_id": "geo.routing#1",
+      "expected_tool": "geo.routing",
+      "specific_changes": [
+        "routing_actual_profiles_steps"
+      ],
+      "prompt": "東京駅から皇居まで、徒歩と自転車なら距離と所要時間はどれくらい違う？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "f25b98a5-fbf3-434b-8be5-9e20d6e9d51c",
+      "assistant_message_id": "e528accb-ed02-42d1-a1dc-7d14f978aa5e",
+      "assistant_task_id": "92e6092c-f7ac-4b09-ab83-79a750a7c95f",
+      "assistant_response": "## 取得したAPI出力（証拠）\n\n### OSRM\nOSRM\n [1] · request · profile: walking\n [1] · data · origin: 東京駅\n [1] · data · destination: 皇居\n [1] · data · profile: walking\n [1] · data · items [1] · legs [1] · weight: 134.23\n [1] · data · items [1] · legs [1] · duration: 1288.6\n [1] · data · items [1] · legs [1] · distance: 1611.3\n [1] · data · items [1] · weight name: routability\n [1] · data · items [1] · weight: 134.23\n [1] · data · items [1] · duration: 1288.6\n [1] · data · items [1] · distance: 1611.3\n [1] · data · items [1] · distance m: 1611.3\n [1] · data · items [1] · duration s: 1288.6\n [1] · data · items [1] · profile: walking\n [1] · data · routes [1] · legs [1] · weight: 134.23\n [1] · data · routes [1] · legs [1] · duration: 1288.6\n [1] · data · routes [1] · legs [1] · distance: 1611.3\n [1] · data · routes [1] · weight name: routability\n [1] · data · routes [1] · weight: 134.23\n [1] · data · routes [1] · duration: 1288.6\n [1] · data · routes [1] · distance: 1611.3\n [1] · data · routes [1] · distance m: 1611.3\n [1] · data · routes [1] · duration s: 1288.6\n [1] · data · routes [1] · profile: walking\n [1] · data · answer request: 東京駅から皇居まで、徒歩と自転車なら距離と所要時間はどれくらい違う？ Source-specific retrieval instruction: 東京駅を起点に皇居を目的地とした徒歩と自転車の2経路を計算し、各経路の総距離と所要時間を取得する\n [1] · data · requires synthesis: True\n [2] · request · profile: cycling\n [2] · data · origin: 東京駅\n [2] · data · destination: 皇居\n [2] · data · profile: cycling\n [2] · data · items [1] · legs [1] · weight: 816.6\n [2] · data · items [1] · legs [1] · duration: 816.6\n [2] · data · items [1] · legs [1] · distance: 1638.6\n [2] · data · items [1] · weight name: duration\n [2] · data · items [1] · weight: 816.6\n [2] · data · items [1] · duration: 816.6\n [2] · data · items [1] · distance: 1638.6\n [2] · data · items [1] · distance m: 1638.6\n [2] · data · items [1] · duration s: 816.6\n [2] · data · items [1] · profile: cycling\n [2] · data · routes [1] · legs [1] · weight: 816.6\n [2] · data · routes [1] · legs [1] · duration: 816.6\n [2] · data · routes [1] · legs [1] · distance: 1638.6\n [2] · data · routes [1] · weight name: duration\n [2] · data · routes [1] · weight: 816.6\n [2] · data · routes [1] · duration: 816.6\n [2] · data · routes [1] · distance: 1638.6\n [2] · data · routes [1] · distance m: 1638.6\n [2] · data · routes [1] · duration s: 816.6\n [2] · data · routes [1] · profile: cycling\n [2] · data · answer request: 東京駅から皇居まで、徒歩と自転車なら距離と所要時間はどれくらい違う？ Source-specific retrieval instruction: 東京駅を起点に皇居を目的地とした徒歩と自転車の2経路を計算し、各経路の総距離と所要時間を取得する\n [2] · data · requires synthesis: True\n\n出典: [OSRM](https://project-osrm.org/)\n\n出典: [OSRM](https://project-osrm.org/)\n\n## 分析\n\n取得したAPI出力を根拠として示します。統合できる数値系列がないため、分析は限定されます。",
+      "tasks": [
+        {
+          "id": "92e6092c-f7ac-4b09-ab83-79a750a7c95f",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "autonomous_multi_api_analysis",
+          "duration_ms": 0.024080276489257812,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "ornith-1.5:9b",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 0.0,
+          "error": null
+        },
+        {
+          "model": "ornith-1.5:9b",
+          "status": "grounding_guard_fallback",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "徒歩・自転車の両ルート数値自体は取得済みなのに、合成せずAPIの生データを列挙し、「統合できない」として距離・時間差を回答していない。",
+      "semantic_issue_categories": [
+        "synthesis_failure",
+        "raw_output_instead_of_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "徒歩・自転車の取得済み数値から距離と時間の差を直接計算。直接回答・自律分析の双方で時系列専用fallbackを回避。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 29,
+      "global_index": 124,
+      "case_id": "geo.routing#4",
+      "expected_tool": "geo.routing",
+      "specific_changes": [
+        "routing_actual_profiles_steps"
+      ],
+      "prompt": "東京駅から皇居まで、移動距離が短い道順を出して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "cd7b029e-eb91-4c85-9dd1-705beba8ca07",
+      "assistant_message_id": "a17eae04-a296-480c-b443-b9703d72f4f0",
+      "assistant_task_id": "ccc45999-f9fe-459d-bf6b-f63f4f07e937",
+      "assistant_response": "# 東京駅 → 皇居（移動距離が短い道順）\n\nOSRM（車用ルート）のデータでは、この区間について1つの候補ルートしか返ってきていません。距離が短い順に並べられる複数の選択肢がないため、以下の1本を最短ルートとして提示します。\n\n## 最短ルート\n\n**総距離：約2.4 km　所要時間：約3.4分（走行のみ）**\n\n| 順 | 道路名 | 距離 | 主な動作 |\n|----|--------|------|----------|\n| 1 | 丸の内室町線 | 約106 m | 出発（左折） |\n| 2 | 丸の内1st | 約225 m | 左寄りで右折 |\n| 3 | 日比谷通り | 約208 m | 右折 |\n| 4 | 永代通り | 約165 m | 左折 |\n| 5 | **内堀通り** | **約863 m** | 右折（主幹線） |\n| 6 | 代官町通り | 約244 m | 直進 |\n| 7 | 代官町通り | 約551 m | 左寄りで曲がる |\n\n**経由となる主な道路：内堀通り、代官町通り**\n\n## 補足\n\n- 内堀通りは約863 mと最も長く、皇居の北外堀沿いを南へ下る形です。\n- 皇居は「正門（桜門側）」「北口」「神田口」など複数の出入口があるため、目的地を皇居全体とみなすと、**代官町通り方面ではなく、内堀通りを北へ上って北側の門へ**行くほうが門までの距離は短くなることがあります。OSRMが返した皇居の座標は南西の代官町通り側です。\n- これは車用プロファイルのデータです。実際の移動は徒歩・公共交通が主ですので、距離自体はほぼ同じでも経路が異なります。\n\n**出典**: OSRM（https://project-osrm.org/）\n\n---\n※ このデータ取得時は複数の候補ルートが返却されていないため、最短順の比較はできません。",
+      "tasks": [
+        {
+          "id": "ccc45999-f9fe-459d-bf6b-f63f4f07e937",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 99028.24687957764,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 99006.2653749992,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "車ルート1件の距離・経路は出すが、候補1件だけで「最短」とは証明できず、質問に指定のない車プロファイルを採用している。",
+      "semantic_issue_categories": [
+        "unsupported_superlative",
+        "unstated_assumption"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "OSRMの返却候補を取得し、短い道順では候補中の距離最小を選ぶ。移動手段と範囲を明記し、全道路の最短と断定しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 30,
+      "global_index": 142,
+      "case_id": "earth.disasters#2",
+      "expected_tool": "earth.disasters",
+      "specific_changes": [
+        "disaster_registered_dates"
+      ],
+      "prompt": "東南アジアで進行中の災害について、発生地域と開始日を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "b3ac327f-bcf0-4abb-bd8e-ce9c22906bbd",
+      "assistant_message_id": "ec32f44a-2672-445f-981b-f52f146f9463",
+      "assistant_task_id": "8fa4267a-621d-4856-a8a2-20cd4e73f215",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nEarthの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "8fa4267a-621d-4856-a8a2-20cd4e73f215",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 845.6032276153564,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "earth.disasters",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_EMPTY"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_EMPTY"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "災害データ取得が失敗し、発生地域・開始日を一件も回答できていない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "EONETへ地域bboxを正式な順序で送信し、世界の結果上限を適用してから地域を絞る欠落を防止。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 31,
+      "global_index": 146,
+      "case_id": "ocean.tides#2",
+      "expected_tool": "ocean.tides",
+      "specific_changes": [
+        "tides_date_timezone"
+      ],
+      "prompt": "今日の満潮と干潮の高さの差を知りたい。場所はサンフランシスコ。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "e076d48b-0cc3-4305-b22f-2e87016e797f",
+      "assistant_message_id": "c6422cfa-1c0d-4abc-8174-a754ab0ae4e8",
+      "assistant_task_id": "f1657c64-d12c-46e9-a862-7fc280cedcd0",
+      "assistant_response": "Ocean\n観測所 9414290 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 00:40 · 満潮：1.549 m（MLLW基準）\n2026-10-11 05:54 · 干潮：0.531 m（MLLW基準）\n2026-10-11 12:18 · 満潮：1.854 m（MLLW基準）\n2026-10-11 18:43 · 干潮：-0.019 m（MLLW基準）\n最低潮：2026-10-11 18:43、-0.019 m。\n同日の最高満潮と最低干潮の高さの差：1.873 m。\n\n出典：https://tidesandcurrents.noaa.gov/",
+      "tasks": [
+        {
+          "id": "f1657c64-d12c-46e9-a862-7fc280cedcd0",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.04506111145019531,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "サンフランシスコの当日満潮・干潮と最高満潮から最低干潮までの差を示している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 32,
+      "global_index": 148,
+      "case_id": "ocean.tides#4",
+      "expected_tool": "ocean.tides",
+      "specific_changes": [
+        "tides_date_timezone"
+      ],
+      "prompt": "同じ日にサンフランシスコとオークランドで潮汐時刻がどれくらい違う？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "92111123-d53d-441a-b6b6-93f0160302ad",
+      "assistant_message_id": "c9f3645c-b810-489a-8e0e-7df5c2da1f72",
+      "assistant_task_id": "0b1f113a-05e4-4f8d-8c57-a4e0fcf48108",
+      "assistant_response": "## 取得したAPI出力（証拠）\n\n### Ocean\nOcean\n観測所 9414290 · 2026-10-11 · 観測所の現地時刻（夏時間を反映）\n2026-10-11 00:40 · 満潮：1.549 m（MLLW基準）\n2026-10-11 05:54 · 干潮：0.531 m（MLLW基準）\n2026-10-11 12:18 · 満潮：1.854 m（MLLW基準）\n2026-10-11 18:43 · 干潮：-0.019 m（MLLW基準）\n最低潮：2026-10-11 18:43、-0.019 m。\n同日の最高満潮と最低干潮の高さの差：1.873 m。\n\n出典: [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)\n\n## 分析\n\n# サンフランシスコとオークランドの潮汐時刻差\n\n## 結論：十分な証拠がありません\n\n提供されたデータでは、両港の潮汐時刻差を**比較できません**。\n\n## 取得できたデータ\n\n**サンフランシスコ（測点 9414290）**は2026年10月11日の4回分取得できました [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)：\n\n| イベント | 時刻 | 潮位（メートル） |\n|---|---|---|\n| 満潮 | 00:40 | 1.549 |\n| 干潮 | 05:54 | 0.531 |\n| 満潮 | 12:18 | 1.854 |\n| 干潮 | 18:43 | −0.019 |\n\n**オークランド**のデータは**取得されていません**。\n\n## 欠落の原因\n\n証拠には `missing_requests` として、**リクエスト番号1が「PROVIDER_BAD_RESPONSE」（提供業者からの不正応答）**で失敗したと記録されています [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)。これは、サンフランシスコではなく、2番目のリクエスト（オークランド）に対する応答問題です。\n\n## 品質チェックへの対応\n\n- **両港の時刻が同じ日付か**：サンフランシスコは確認できましたが、オークランドの時刻が不明なので計算不可\n- **時刻の単位が一致しているか**：サンフランシスコはメートルで取得済み [NOAA Tides & Currents](https://tidesandcurrents.noaa.gov/)。オークランドの単位を確認できない\n- **両港ともデータが欠落していないか**：**欠落しています**（オークランドが不足）\n- **時刻差の計算が正しく行われているか**：比較対象が不足しているため計算不可\n\n## 補足\n\nサンフランシスコの潮汐時刻差自体は計算可能です（例：満潮間隔は約11時間38分）。ただし、オークランドとの**差**を求めるには、オークランドの同じ日の潮汐データが必要です。\n\nデータが取得できない状態が、提供業者の応答エラーによるものとして記録されているため、その旨を説明します。\n\n## 推奨\n\nオークランドのデータ（測点番号を含む）を再取得し、両港の同日の潮汐時刻を揃えた上で差を計算してください。",
+      "tasks": [
+        {
+          "id": "0b1f113a-05e4-4f8d-8c57-a4e0fcf48108",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "autonomous_multi_api_analysis",
+          "duration_ms": 0.04506111145019531,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "ornith-1.5:9b",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "サンフランシスコ分はあるが、オークランドを取得できず、尋ねられた両港の時刻差を計算できていない。制約は明示している。",
+      "semantic_issue_categories": [
+        "incomplete_comparison",
+        "provider_failure"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "オークランドの自動選択を気象用9414776から、潮汐予報対応9414777へ。比較時刻と現地日付の処理を維持。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 33,
+      "global_index": 155,
+      "case_id": "books.openlibrary#3",
+      "expected_tool": "books.openlibrary",
+      "specific_changes": [
+        "isbn_redirect"
+      ],
+      "prompt": "この本の別版や翻訳版があるか調べて：ISBN 9780140328721。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "193b56cc-d4c3-48ef-9b50-8aec8e6952a9",
+      "assistant_message_id": "b914597e-86de-4b37-a80c-b31375f591ce",
+      "assistant_task_id": "1e86477f-b9b3-4330-9a27-09356b2a8671",
+      "assistant_response": "# 「Fantastic Mr. Fox」について\n\n**ISBN 9780140328721** はロアルド・ダールの児童小説『Fantastic Mr. Fox』の版です（著者：ロアルド・ダール、出版社：Puffin、2000年頃、英語版、表紙にトニー・ロスによるイラスト）。Open Libraryではこの作品（work）を基に、多くの別版・翻訳版が登録されています。\n\n## 翻訳版（外国語への翻訳）\n\n提供された証拠から確認できる翻訳版は以下の通りです。\n\n- **スペイン語** — 『El xenial Don Raposu』（エディシオン・ラダガスト、2021年、イラスト：クentin・ブレイク、翻訳：ニコラス・バルディオ）\n- **スペイン語（ラテンアメリカ版）** — 『El Superzorro : Album de la película / Fantastic Mr. Fox : Storybook』（アルテア、2009年）\n- **スペイン語（アストゥリアス語）** — 『El xenial Don Raposu』（エディシオン・ラダガスト、2021年、言語：ast）\n- **バスク語** — 『SUPER-AZERI - ZUBIA』（ズビア・エディトリアル、2007年）\n- **ポーランド語** — 『Fantastyczny pan Lis』（ジシュク・イ・スカ、2009年、翻訳：ジェルジー・ロジンスキー）\n- **ウェールズ語** — 『Mr Cadno Campus』（リリー・パブリケーションズ、2009年・2019年・2020年）\n- **中国語（簡体字）** — 『Liao bu qi de hu li ba ba』（明田出版社、2000年）\n- **ヘブライ語** — 『Mar Shuʻal ha-mehulal / Mar shuʻal ha-mehulal』（ゼモラ・ビタン、1977年・2005年）\n- **トルコ語** — 『Yaman Tilki』（カン・チコク・ヤヤンラリ、2007年）\n\n## 英語の別版\n\n- 『Fantastic Mr. Fox』（ペンギンブックス、2024年、ISBN 9780241677377、イラスト：クentin・ブレイク）\n- 『Penguin Readers Level 2: Roald Dahl Fantastic Mr. Fox』（ペンギンブックス、2024年、ISBN 9780241610923）\n- 『Fantastic Mr. Fox: Movie Picture Book』（パフィン、2009年）\n- 『Fantastic Mr. Fox』（パフィン、2009年、ISBN 9780141327761）\n\n## 注記\n\n- 調査はOpen Libraryのデータに基づくもので、**「sample_only: true」** であり、**20件（item_count）のサンプル**に過ぎません。`evidence_truncated: true` でもあり、これがOpen Libraryで記録されている全ての別版・翻訳版を網羅したものではなく、実際にはさらに多くの版が存在する可能性が高いです。\n- 各版の言語・出版社・発行年は、Open Libraryの記録から読み取った情報です。\n\n出典：https://openlibrary.org/isbn/9780140328721",
+      "tasks": [
+        {
+          "id": "1e86477f-b9b3-4330-9a27-09356b2a8671",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 152582.0050239563,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 152373.25391599734,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "指定ISBNの作品を特定し、複数の翻訳版・英語別版を列挙し、サンプルであることも明示している。",
+      "semantic_issue_categories": [
+        "answered",
+        "sample_scope_disclosed"
+      ]
+    },
+    {
+      "batch_index": 34,
+      "global_index": 165,
+      "case_id": "health.clinical_trials#1",
+      "expected_tool": "health.clinical_trials",
+      "specific_changes": [
+        "clinical_country_recruitment"
+      ],
+      "prompt": "日本で募集中の2型糖尿病の試験は、どんな介入を比較している？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "e8de78fd-318d-4df6-9d76-de78992f2120",
+      "assistant_message_id": "a91a21c2-f427-4dbd-8000-5d92f5750de2",
+      "assistant_task_id": "fa2026c6-44c2-4abf-9936-e97cedb07109",
+      "assistant_response": "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\nWeb検索を使用すると、検索クエリが選択した外部検索プロバイダへ送信されます。\nAPIキー発行、無料枠・無料クレジット、料金、プラン、利用条件は各プロバイダで確認してください。条件は将来変更される場合があります。OLCR自体はWeb検索料金を請求しません。アカウント作成、APIキー発行、プラン選択、支払いは各プロバイダ上でユーザーが行います。\nBrave Search API\nAPIキー発行: https://api-dashboard.search.brave.com/\n料金・プラン: https://brave.com/search/api/\n設定: /web provider brave\n\n\nClinicalTrials.govの取得と代替ソースによる確認を完了できませんでした。",
+      "tasks": [
+        {
+          "id": "fa2026c6-44c2-4abf-9936-e97cedb07109",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": "direct_provider_failure_fallback",
+          "duration_ms": 805.396556854248,
+          "error": "WEB_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "health.clinical_trials",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_BAD_RESPONSE"
+        },
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "PROVIDER_BAD_RESPONSE"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "ClinicalTrials.govの取得と代替検索が失敗し、国内募集中試験や介入比較を示せていない。",
+      "semantic_issue_categories": [
+        "provider_failure",
+        "no_substantive_answer"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "ClinicalTrials.govの使用フィールドに照会を限定し、有限上限8 MiB・待ち時間20秒へ。元の応答エラーと代替検索の状態を区別。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 35,
+      "global_index": 169,
+      "case_id": "health.openfda#1",
+      "expected_tool": "health.openfda",
+      "specific_changes": [
+        "drug_report_matching"
+      ],
+      "prompt": "ibuprofenで報告されている副作用の種類を、最近の報告から確認したい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "2a522ebd-fdb4-4ae1-b8f1-14b648445686",
+      "assistant_message_id": "4f35eebd-bc48-4a83-9fb2-83945d1db4fd",
+      "assistant_task_id": "7d49dcfc-f1c1-429d-9cd5-b987618f7d1c",
+      "assistant_response": "# イブuprofenの副作用（直近の報告）\n\nopenFDAの副作用報告（FAERS）から、2026年6月30日に受信された最近の5件の報告（report_id 26940314〜26940780）を抽出しました。これらはすべて**重篤事例（serious: 2）**です。\n\n## 報告された副作用の種類\n\n| 反応名 | 頻出度（出現回数） |\n|---|---|\n| 頭痛（Headache） | 3回 |\n| 発赤・ほてり（Flushing / Hot flush） | 3回 |\n| 痛み（Pain / Pain in extremity / Bone pain） | 4回 |\n| 倦怠感・だるさ（Head discomfort） | 1回 |\n| 脊髄狭窄（Spinal stenosis） | 1回 |\n| 注射部位の瘀血（Injection site bruising） | 1回 |\n| 不安・興奮（Agitation） | 1回 |\n| 血圧上昇（Blood pressure increased） | 1回 |\n| 筋肉痙攣（Muscle spasms） | 1回 |\n| 投与経路の誤り・過剰投与・投与量の省略 | 計3回（報告管理上の問題） |\n\n## 分析方法と留意点\n\n- **集計方法**：5件の報告（total 218,701件）の`reactions`を数値化し、頻出順に並べました。\n- **最近の報告**：すべて`received_date`が2026-06-30で、直近のデータです。\n- **最重要の注意点**：各報告には「**Report-level events, not proof of drug causation or incidence.**（報告上の事象であり、薬剤起因または発生頻度を証明するものではない）」という注記が付いています。これは、副作用がイブuprofenに起因したとは断定できないことを意味します。\n\n## 補足\n\n- このデータは**サンプル（5件）であり、完全な母集団ではありません**。218,701件の報告中有っては、種類や頻度は限定的な推測に過ぎません。\n- 直近の報告でも、頭痛・発赤・痛みが相対的に多く報告されています。ただし、これは1日分のサンプルなので、長期傾向の確認には向きません。\n\nより正確な統計を得るには、期間や seriousness（重篤度）を指定したより大きなクエリが必要です。\n\n出典：https://open.fda.gov/",
+      "tasks": [
+        {
+          "id": "7d49dcfc-f1c1-429d-9cd5-b987618f7d1c",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 95553.82132530212,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 95530.80154100462,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "報告された事象と因果・発生率を区別している点は適切。一方、2026-06-30の5件を「最近／直近」と扱う根拠や抽出条件が弱く、母集団傾向として読むのは不適切。",
+      "semantic_issue_categories": [
+        "recency_scope",
+        "small_sample"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "取得した報告日・反応別報告数を型付き表示。serious=1を重篤、2を非重篤と区別し、古い最新返却日を現在直近と表現しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 36,
+      "global_index": 174,
+      "case_id": "food.product#2",
+      "expected_tool": "food.product",
+      "specific_changes": [
+        "product_clarification"
+      ],
+      "prompt": "砂糖が多い商品か判断したいので、栄養成分と100g当たりの値を確認して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_FAILURE",
+      "semantic_verdict": "FAIL",
+      "gui_user_message_id": "a226efca-8c10-49a7-a729-9c00661c7f84",
+      "assistant_message_id": "f624b598-e833-4a5d-9413-3da4ae995046",
+      "assistant_task_id": "d2845535-68c9-4384-9acd-00c4c8c7fd37",
+      "assistant_response": "外部データの検索条件を解釈できませんでした。場所・対象・期間などを具体的に指定して再試行してください。",
+      "tasks": [
+        {
+          "id": "d2845535-68c9-4384-9acd-00c4c8c7fd37",
+          "state": "failed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.0040531158447265625,
+          "error": "ARGUMENT_COMPILATION_FAILED"
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "failed",
+          "latency_ms": 0.0,
+          "error": "ARGUMENT_COMPILATION_FAILED"
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "商品名・商品識別子が必要なのに、引数コンパイル失敗後も何の商品かを尋ねず、場所・期間など不適切な追加条件を求めている。",
+      "semantic_issue_categories": [
+        "argument_compilation_failure",
+        "bad_clarification"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "引数エラーにも食品専用の確認質問を適用し、場所・期間を求める汎用エラーを回避。stream経路にもtool IDを渡す。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 37,
+      "global_index": 192,
+      "case_id": "aviation.opensky#4",
+      "expected_tool": "aviation.opensky",
+      "specific_changes": [
+        "aviation_tokyo_bounds"
+      ],
+      "prompt": "東京上空にいる航空機の位置を、地図に使える座標付きで一覧にして。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "27666cf8-3bec-46b4-8980-32d3665b8e26",
+      "assistant_message_id": "96495e11-44c2-4219-b846-a4c128746a32",
+      "assistant_task_id": "1162b616-13a9-4f15-8f50-8a76d55e6cbe",
+      "assistant_response": "OpenSky Network の公開データから、時刻 **2026-10-11 11:24:38 UTC** に取得できる航空機を、地図に使える座標付きで以下にまとめます。\n\n## 東京上空の航空機一覧\n\n| 呼び出し符号 | ICAO24 | 緯度 | 経度 | 標高（baro, ft） | 地上 |\n|---|---|---|---|---|---|\n| ANA389 | 846954 | 35.7255 | 139.7658 | 4305.3 | 飛行中 |\n| JA330C | 851820 | 35.7034 | 139.8247 | 594.36 | 飛行中 |\n| JAL529 | 846f00 | 35.6113 | 139.8467 | 1188.72 | 飛行中 |\n| ANA685 | 86d200 | 35.5680 | 139.7852 | 106.68 | 飛行中 |\n| ANA684 | 845dcc | 35.5611 | 139.7837 | — | 地上（離着陸） |\n\n## 補足と注意点\n\n- **データは一部です。** OpenSky は公開のグローバルなADS-Bネットワークであり、取得された航空機5機（すべて日本籍）は東京上空の観測対象ではなく、全データセットのサンプルに過ぎません。実際の東京上空にはこれより多くの航空機が飛行しています。\n- **時刻は同一です。** すべての記録が `time_position` = 1791717875（= 2026-10-11 11:24:38 UTC）に属し、同時刻の位置を示します。航空機の位置は数分で大きく変わり得るので、これは「その瞬間の快照」です。\n- **AN684 は地上です。** `on_ground: true` であり、速度1.54 knと高い標高も無いことから離着陸中の航空機と判断されます。標高（baro_altitude）の値が存在しないため、数値ゼロではなく「記録なし」として扱います。\n- **座標はOpenSkyの観測値です。** 提供されたソースはAPIドキュメントではなく、実際に取得された5件の記録です。この5件が「東京上空の全航空機」を網羅しているとは限りません。\n\n地図（OpenSkyのライブマップなど）では、上記の緯度・経度に対して各航空機の呼び出し符号をラベル付けすると識別できます。より多くの航空機や特定の空域（例：成田/羽田周辺）の絞り込みが必要であれば、追加のクエリで取得可能です。\n\n出典：https://opensky-network.org/",
+      "tasks": [
+        {
+          "id": "1162b616-13a9-4f15-8f50-8a76d55e6cbe",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 111061.3067150116,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 111024.54224999383,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "座標付き一覧は提示したが、地上にいる機体を「東京上空」の一覧へ含め、地上状態から離着陸中と推測している。取得件数の網羅性に関する説明も一部不整合。",
+      "semantic_issue_categories": [
+        "scope_mismatch",
+        "unsupported_inference"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "上空／飛行中の依頼はon_ground=falseの観測だけを表示。高度m・速度m/sを型付き表示し、地上状態から離着陸を推測しない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 38,
+      "global_index": 270,
+      "case_id": "finance.ecb#2",
+      "expected_tool": "finance.ecb",
+      "specific_changes": [
+        "ecb_base_quote_direction"
+      ],
+      "prompt": "ユーロ対ドルのレートが先週からどう動いたか、日ごとに見せて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "1d608ef2-645c-4790-9d0e-07a9419caad3",
+      "assistant_message_id": "152fd7c2-8502-4b00-b005-5e1c2c71a61c",
+      "assistant_task_id": "e66c13b4-6276-4889-9cb6-f1a2eaca0b4f",
+      "assistant_response": "ECB参考レート（1 EURあたりの外貨額）\n2026-09-28：1 EUR = 1.1378 USD\n2026-09-29：1 EUR = 1.1355 USD\n2026-09-30：1 EUR = 1.1355 USD\n2026-10-01：1 EUR = 1.1298 USD\n2026-10-02：1 EUR = 1.1225 USD\n2026-10-05：1 EUR = 1.1204 USD\n2026-10-06：1 EUR = 1.1269 USD\n2026-10-07：1 EUR = 1.1177 USD\n2026-10-08：1 EUR = 1.1186 USD\n2026-10-09：1 EUR = 1.1206 USD\n取得期間の変化：-0.0172 USD/EUR（-1.51%）。ユーロ安・相手通貨高。\n最新取得値の逆換算：1 USD = 0.892379 EUR。\n日付はECBの公表営業日です。休日は直近営業日の参考値を示し、実際の両替手数料は含みません。\n\n出典：https://data.ecb.europa.eu/",
+      "tasks": [
+        {
+          "id": "e66c13b4-6276-4889-9cb6-f1a2eaca0b4f",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.07486343383789062,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "営業日ごとのEUR/USDを列挙し、期間変化と方向を数値に整合する形で示している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 39,
+      "global_index": 272,
+      "case_id": "finance.ecb#4",
+      "expected_tool": "finance.ecb",
+      "specific_changes": [
+        "ecb_base_quote_direction"
+      ],
+      "prompt": "旅行の両替計画のため、直近のユーロ対円レートを確認して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "21e7b48b-e582-476d-aaaa-c9356fea8bc8",
+      "assistant_message_id": "69f09040-9120-4eda-9997-9aa1f67d34d1",
+      "assistant_task_id": "a0713f75-c13e-4782-b045-b5426b24b242",
+      "assistant_response": "ECB参考レート（1 EURあたりの外貨額）\n2026-10-05：1 EUR = 177.28 JPY\n2026-10-06：1 EUR = 178.15 JPY\n2026-10-07：1 EUR = 176.85 JPY\n2026-10-08：1 EUR = 177.05 JPY\n2026-10-09：1 EUR = 177.34 JPY\n取得期間の変化：+0.06 JPY/EUR（+0.03%）。ユーロ高・相手通貨安。\n最新取得値の逆換算：1 JPY = 0.00563889 EUR。\n日付はECBの公表営業日です。休日は直近営業日の参考値を示し、実際の両替手数料は含みません。\n\n出典：https://data.ecb.europa.eu/",
+      "tasks": [
+        {
+          "id": "a0713f75-c13e-4782-b045-b5426b24b242",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.029087066650390625,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "直近営業日のEUR/JPYと直近5営業日の推移、参考レートである注意を示している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 40,
+      "global_index": 286,
+      "case_id": "politics.br_chamber#2",
+      "expected_tool": "politics.br_chamber",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "prompt": "教育予算に関する下院の法案と、委員会審査の状況を探して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "6fcb5b79-af05-4db1-b16d-5a00495af7ca",
+      "assistant_message_id": "2a7eacd7-457c-450c-82cc-805e4b2300d6",
+      "assistant_task_id": "8e716fc1-1d3c-41ab-bac7-e27707b43de1",
+      "assistant_response": "# 教育予算に関する下院（Câmara dos Deputados）の法案と委員会審査状況\n\n2026年10月11日現在で検索された、教育予算に直接関わる下院の法案は以下の2件です。\n\n## 1. projel5220-2026 / PL 5.220/2026（撤回済み）\n\n**提案者：** リカルド・アイレス（Ricardo Ayres, REPUBLIC/TO）\n**提出日：** 2026年8月28日\n**内容：** 1996年の教育基本法（Lei nº 9.394）を改正し、基礎教育課程の教育内容の指針に、公共財政・公共予算の計画・管理に関する知識、透明性、社会参加、公共资源の執行管理を含む「公共財政教育・公民教育」を盛り込む。\n\n**委員会審査状況：** 成立前段階ではありません。**2026年9月3日に提案者が自身で法案を撤回した**ため、委員会審査は行われませんでした。撤回の理由は「物事の改良が必要」との理由です。\n\n## 2. 2572502 / PL 5.209/2025（委員会審査中）\n\n**提案者：** ロジェリオ・コレイア（Rogério Correia）\n**提出日：** 2025年10月15日\n**内容：** 1992年の行政不信行為法（Lei nº 8.429）を改正し、基礎教育の公立教員の**全国最低給与（piso salarial）**の支払いを故意に怠った公務員の責任を規定する。\n\n**委員会審査状況（最終更新日 2026年9月1日）：** 委員会審議中、**意見書（parecer）を待機**しています。\n\n- 2026年6月16日：行政・公務委員会（CCJC）に受託\n- 2026年6月26日：行政・財務委員会（CASP）で意見書が承認（キム・カタギリ議員の反対票あり）\n- 2026年7月15日：CCJCに報告委員（relatora）として、サム・ボア・フィン（PSOL-SP）選出\n- **2026年9月1日：CCJCで修正案提出期限が満了**。5会期（2026年7月16日から9月1日まで）の間に修正案は提出されず、意見書待ちの段階\n\n## 注記\n\n- 検索クエリは「orçamento（予算）」と限定され、両案とも予算・公共资源執行を扱っています。第1案は教育予算の透明性・管理教育、第2案は公立教育の最低給与支払に関する公共支出の責任規定です。\n- この応答は提供された証拠に基づくものであり、証拠が切り詰められたため完全な網羅は保証されません。より広範な予算関連法案を検索する場合は、追加のクエリや委員会別での絞り込みをおすすめします。\n\n出典：https://dadosabertos.camara.leg.br/",
+      "tasks": [
+        {
+          "id": "8e716fc1-1d3c-41ab-bac7-e27707b43de1",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 132368.60394477844,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 132341.71950000018,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "教育予算関連の法案と委員会状況を2件示し、撤回済みと審議中を区別し、検索範囲の限界も明記している。",
+      "semantic_issue_categories": [
+        "answered",
+        "scope_disclosed"
+      ]
+    },
+    {
+      "batch_index": 41,
+      "global_index": 287,
+      "case_id": "politics.br_chamber#3",
+      "expected_tool": "politics.br_chamber",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "prompt": "最近提出された環境関連の議員提案を、提出者と日付付きで見たい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "1b60b09d-d298-4e88-96ca-10f03dc1e0a9",
+      "assistant_message_id": "292c0946-5314-48b5-bc94-7107735733da",
+      "assistant_task_id": "e5dc4bc4-c2d6-4cbe-a5f5-a10547303403",
+      "assistant_response": "# 最近提出された環境関連の議員提案\n\n以下は、ブラジル連邦衆議院（Câmara dos Deputados）で環境関連として提出された議員提案の、提出者付き一覧です。データは同院のオープンデータAPIから取得され、5件のサンプルとして返されています（提出順、日付降順で並んでいます）。\n\n| 提出日（UTC） | 提出者 | 提案番号・年 | 提案種別 | 概要 |\n|---|---|---|---|---|\n| 2026-09-14 | Julia Zanatta（PL/SC） | PDL 1001/2026 | 立法案（PDL） | ICMBioの技術指針（指令第9号）第30条の適用を停止する。 |\n| 2026-09-09 | Henderson Pinto（UNIÃO/PA） | PDL 999/2026 | 立法案（PDL） | 紫スズキ（Lutjanus purpureus）の持続可能な利用に関する通達第66号の効果を停止する。 |\n| 2026-08-28 | Dandara（PT/MG） | PL 5209/2026 | 法案（PL） | データセンターの環境許認可に関する一般規定を設ける。 |\n| 2026-08-24 | Senado Federal（Jayme Campos）※ | PL 1648/2024 | 法案（PL） | 農村財産税（ITR）の課徴基準を改善し、環境政策法第6.938号の条文を廃止する。 |\n| 2026-08-07 | Célia Xakriabá（PSOL/MG） | PL 4943/2026 | 法案（PL） | 先住民指導者・環境擁護者の殺人により孤児となった子・養子に特別年金を設ける。 |\n\n**注記**\n- **提出者について**：4件は個人の連邦下院議員が提出者ですが、PL 1648/2024は「連邦上院（Senado Federal）」が提出者で、Jayme Campos氏は署名第1号の代表者として記載されています。よってこの一件は上院から出されたものであり、連邦下院の議員提案とは異なります。\n- **日付について**：提出日はUTC表記です。ブラジリアンタイム（UTC−03）に換算すると、例として2026-09-14T10:07は現地2026-09-14 07:07です。\n- **完全性について**：`evidence_truncated: true`のため、これは総数ではなく提出順の5件のサンプルです。環境関連を含む全件、またはより古い提出の完全なリスト・ランキングとしては主張できません。\n- **出典**：Câmara dos DeputadosオープンデータAPI（https://dadosabertos.camara.leg.br/）。",
+      "tasks": [
+        {
+          "id": "e5dc4bc4-c2d6-4cbe-a5f5-a10547303403",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 133871.91796302795,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 133838.53562500008,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "環境関連提案を提出者・日付付きで列挙し、上院提出の1件を下院議員案と区別している。",
+      "semantic_issue_categories": [
+        "answered",
+        "scope_disclosed"
+      ]
+    },
+    {
+      "batch_index": 42,
+      "global_index": 288,
+      "case_id": "politics.br_chamber#4",
+      "expected_tool": "politics.br_chamber",
+      "specific_changes": [
+        "brazil_details_budget_amendments"
+      ],
+      "prompt": "ブラジル下院で労働法改正が審議された記録を調べて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "722b1f40-8970-41f5-a2c3-0129608504c0",
+      "assistant_message_id": "1ae40bab-8a15-4b07-8ad9-683fd1973f82",
+      "assistant_task_id": "948ff7ba-a365-4972-8e62-cb0948203ddb",
+      "assistant_response": "# ブラジル下院（Câmara dos Deputados）の労働法改正審議記録\n\n以下は、Câmara dos Deputadosのオープンデータ（`legislação trabalhista`検索）から得られた、労働法＝CLT（Decreto-Lei nº 5.452/1943）改正を目的とする**法案（PL）の提出・審議記録**です。\n\n> ⚠️ データは2026年10月11日に取得されました。`evidence_truncated: true`のため、これは**完全な一覧ではなくサンプル**です。全労働関連法案を網羅するランキングや「審議されていない」という否定はできません。\n\n## 取得された記録\n\n| 番号 | 提出日 | 提出者 | 内容 | 現在の状況 |\n|------|--------|--------|------|-----------|\n| **PL 5327/2026** | 2026-09-09 | Marcelo Queiroz（PSDB/RJ） | 医師・獣医の専門向上契約を創設し、実践的な養成を規律する。CLTを改正する。 | 提出のみ（MESA） |\n| **PL 4008/2026** | 2026-07-17 | Amom Mandel（REPUBLIC/AM） | CLT改正で、重度の更年期症状の適応措置と就業中の休暇を保障する。 | 議長の許可を待機中 |\n| **PL 3791/2026** | 2026-07-17 | Amom Mandel（REPUBLIC/AM） | CLT改正で、休暇開始直前の健康上の離脱を規律する。 | 議長署名を待機中 |\n| **PL 1252/2024** | 2024-04-15 | Kim Kataguiri | CLTと法律7.064/1982を改正し、国際航海クルーズ船のブラジル人雇用工を規律する。 | 普通手続でCCJC委員会審議中 |\n\n## 審議の進捗に関する要点\n\n- **PL 1252/2024**が最も審議が進行しています。2024年4月に提出され、2025年11月に**社会労働・市民主義・家族委員会（CCJC）**へ移送、2026年8月に**報告人（relator）にEduardo Bismarck（PV-CE）が指名**されました。2026年9月1日現在、意見書（parecer）を待機中です（序番号41、42件のアクションあり）。ただし、このデータは**序番号41までしか記録されていません**（2025年11月27日以降のアクションは切り捨てられています）。\n\n- **PL 4008/2026・3791/2026**は両方ともAmom Mandel氏が同日に提出したもので、まだ表題（chancela）の承認待ちの初期段階です。\n\n- **PL 5327/2026**は提出直後の状態です。\n\n## 留意点\n\n- 4件の記録はすべて「**表題（apreciação regimental）**」段階か委員会審議段階であり、**可決や成立の記録はこれには含まれていません**。\n- 各URLはCâmara dos Deputados公式ページです（例：PL 1252/2024 → https://www.camara.leg.br/proposicoesWeb/prop_mostrarintegra?codteor=2407551）。\n\n出典：https://dadosabertos.camara.leg.br/",
+      "tasks": [
+        {
+          "id": "948ff7ba-a365-4972-8e62-cb0948203ddb",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 153376.81412696838,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 153344.94079099386,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "CLT改正案と提出日・審議状況を示し、検索結果がサンプルであることや履歴切り詰めを明記している。",
+      "semantic_issue_categories": [
+        "answered",
+        "scope_disclosed"
+      ]
+    },
+    {
+      "batch_index": 43,
+      "global_index": 309,
+      "case_id": "gov.us_spending#1",
+      "expected_tool": "gov.us_spending",
+      "specific_changes": [
+        "award_amount_and_purpose"
+      ],
+      "prompt": "NASAがSpaceXに発注した契約のうち、金額が大きいものと目的を知りたい。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "cc09ebbd-50d1-40a5-a23f-4a12e7e930fc",
+      "assistant_message_id": "635084c7-d333-4dec-b9ed-7e47c63d890f",
+      "assistant_task_id": "93929ad4-06e8-4eca-b3eb-ec6485299633",
+      "assistant_response": "USAspending.gov · 契約単位の累積額\n検索名を正式名称に補正：SpaceX → SPACE EXPLORATION TECHNOLOGIES CORP.\n1. NNK17MA01T · SPACE EXPLORATION TECHNOLOGIES CORP.\n   契約額：USD 3,549,243,793\n   発注機関：National Aeronautics and Space Administration\n   目的：IGF::OT::IGF THE COMMERCIAL CREW PROGRAM (CCP) COMMERCIAL CREW TRANSPORTATION CAPABILITY (CCTCAP) CONTRACT WILL PROVIDE COMPLETION OF THE DESIGN, DEVELOPMENT, TEST, EVALUATION, AND CERTIFICATION OF AN INTEGRATED CREW TRANSPORTATION SYSTEM (CTS) CAPABLE OF TRANSPORTING NASA CREW TO AND FROM THE ISS, IN ACCORDANCE WITH THE DESIGN REFERENCE MISSIONS AND NASA'S CERTIFICATION STANDARDS AND REQUIREMENTS.  CERTIFICATION OF THE CTS WILL BE DETERMINED BY NASA.  NASA PLANS TO ISSUE TASK ORDERS FOR POST CERTIFICATION MISSIONS (PCM) TO AND FROM ISS THAT INCLUDE GROUND, LAUNCH, LIFEBOAT, ON-ORBIT, RETURN AND RECOVERY OPERATIONS. THE MINIMUM QUANTITY OF MISSIONS TO BE ORDERED IS TWO (2) AND THE MAXIMUM POTENTIAL QUANTITY OF MISSIONS WHICH MAY BE ORDERED IS SIX (6).  IN ADDITION, NASA MAY ISSUE TASK ORDERS FOR SPECIAL STUDIES USED FOR RISK REDUCTION AND OTHER PURPOSES RELATED TO THE CTS.      NASA CERTIFICATION UNDER CLIN 001 IS COMPLETE WHEN THE CONTRACTOR'S CREW TRANSPORTATION SYSTEM (CTS) HAS MET NASA'S REQUIREMENTS FOR SAFELY TRANSPORTING CREW TO AND FROM THE INTERNATIONAL SPACE STATION (ISS) IN ACCORDANCE WITH DOCUMENTS IDENTIFIED IN SECTION C.1, SPECIFICATIONS/STATEMENT OF WORK. SUBCLINS 001A AND 001B, IDENTIFIED IN TABLE B.3,DDTE/CERTIFICATION SUBCLINS, ARE DELIVERY MILESTONES THAT REPRESENT COMPLETION OF REQUIRED WORK NECESSARY TO ACHIEVE NASA CERTIFICATION. DELIVERY PAYMENT FOR THE ISS DESIGN CERTIFICATION REVIEW (DCR) FOR THE CREWED FLIGHT TO THE ISS INCLUDES ALL WORK UNDER THIS CLIN THAT OCCURS FROM THE CONTRACT EFFECTIVE DATE THROUGH THE ISS DCR COMPLETION. THE DELIVERY PAYMENT FOR THE CERTIFICATION REVIEW (CR) WILL INCLUDE ALL WORK THAT OCCURS FROM THE ISS DCR DELIVERY DATE THROUGH THE END OF THE DDTE/CERTIFICATION CLIN 001.  IN ACCORDANCE WITH CLAUSE C.1, SPECIFICATION/STATEMENT OF WORK, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTING OFFICER MAY ISSUE POST CERTIFICATION MISSION (PCM) TASK ORDERS. THE CONTRACTOR SHALL USE THE MISSION PRICING RATES SHOWN IN TABLE B.4.1, POST CERTIFICATION MISSION PRICES. THE PER MISSION PRICES ARE FOR A SINGLE ORDER AT THE PRICE STATED PER THE CALENDAR YEAR (CY) BASED ON THE NUMBER OF MISSIONS ORDERED. CTS FULL MISSION CAPABILITY PRICES SHALL BE BASED ON (1) FULFILLMENT OF THE DESIGN REFERENCE MISSION TO THE ISS FOUND IN CCT-DRM-1110, CREW TRANSPORTATION SYSTEM DESIGN REFERENCE MISSIONS, ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, AND OTHER TERMS AND CONDITIONS IN THE CONTRACT AND (2) ALL INHERENT CTS CAPABILITIES THAT ARE WITHIN THE PROPOSED MISSION PRICES.  IN ACCORDANCE WITH ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTOR SHALL PERFORM SPECIAL STUDIES, TEST AND ANALYSES, AS INITIATED BY WRITTEN DIRECTION FROM THE CONTRACTING OFFICER.  SPACEX CCTCAP POST CERTIFICATION MISSIONS 3-6(PCM-3-6) TASK ORDER AGAINST NNK14MA74C CLIN 002, AS DESCRIBED IN CLAUSE B.4 POST CERTIFICATION MISSIONS (IDIQ)(CLIN 002) AND ALL OTHER APPLICABLE TERMS AND CONDITIONS.\n   https://www.usaspending.gov/award/CONT_AWD_NNK17MA01T_8000_NNK14MA74C_8000\n2. 80MSFC20C0034 · SPACE EXPLORATION TECHNOLOGIES CORP.\n   契約額：USD 3,229,285,063\n   発注機関：National Aeronautics and Space Administration\n   目的：WORK REQUIRED FOR THE DESIGN, DEVELOPMENT, MANUFACTURE, TEST, LAUNCH, DEMONSTRATION, AND ENGINEERING SUPPORT OF THE HUMAN LANDING SYSTEM (HLS) INTEGRATED LANDER.\n   https://www.usaspending.gov/award/CONT_AWD_80MSFC20C0034_8000_-NONE-_-NONE-\n3. 80JSC024CA002 · SPACE EXPLORATION TECHNOLOGIES CORP.\n   契約額：USD 425,568,844\n   発注機関：National Aeronautics and Space Administration\n   目的：DESIGN, DEVELOP, MANUFACTURE, TEST, INTEGRATE, ACHIEVE NASA ACCEPTANCE, DELIVER, AND SUSTAIN ITS UNITED STATES DEORBIT VEHICLE (USDV) SUCH THAT THE USDV CAN PERFORM THE FINAL DEORBIT OF THE INTERNATIONAL SPACE STATION (ISS)\n   https://www.usaspending.gov/award/CONT_AWD_80JSC024CA002_8000_-NONE-_-NONE-\n4. NNK16MA58T · SPACE EXPLORATION TECHNOLOGIES CORP.\n   契約額：USD 213,984,138\n   発注機関：National Aeronautics and Space Administration\n   目的：IGF::OT::IGF THE COMMERCIAL CREW PROGRAM (CCP) COMMERCIAL CREW TRANSPORTATION CAPABILITY (CCTCAP) CONTRACT WILL PROVIDE COMPLETION OF THE DESIGN, DEVELOPMENT, TEST, EVALUATION, AND CERTIFICATION OF AN INTEGRATED CREW TRANSPORTATION SYSTEM (CTS) CAPABLE OF TRANSPORTING NASA CREW TO AND FROM THE ISS, IN ACCORDANCE WITH THE DESIGN REFERENCE MISSIONS AND NASA'S CERTIFICATION STANDARDS AND REQUIREMENTS.  CERTIFICATION OF THE CTS WILL BE DETERMINED BY NASA.  NASA PLANS TO ISSUE TASK ORDERS FOR POST CERTIFICATION MISSIONS (PCM) TO AND FROM ISS THAT INCLUDE GROUND, LAUNCH, LIFEBOAT, ON-ORBIT, RETURN AND RECOVERY OPERATIONS. THE MINIMUM QUANTITY OF MISSIONS TO BE ORDERED IS TWO (2) AND THE MAXIMUM POTENTIAL QUANTITY OF MISSIONS WHICH MAY BE ORDERED IS SIX (6).  IN ADDITION, NASA MAY ISSUE TASK ORDERS FOR SPECIAL STUDIES USED FOR RISK REDUCTION AND OTHER PURPOSES RELATED TO THE CTS.      NASA CERTIFICATION UNDER CLIN 001 IS COMPLETE WHEN THE CONTRACTOR'S CREW TRANSPORTATION SYSTEM (CTS) HAS MET NASA'S REQUIREMENTS FOR SAFELY TRANSPORTING CREW TO AND FROM THE INTERNATIONAL SPACE STATION (ISS) IN ACCORDANCE WITH DOCUMENTS IDENTIFIED IN SECTION C.1, SPECIFICATIONS/STATEMENT OF WORK. SUBCLINS 001A AND 001B, IDENTIFIED IN TABLE B.3,DDTE/CERTIFICATION SUBCLINS, ARE DELIVERY MILESTONES THAT REPRESENT COMPLETION OF REQUIRED WORK NECESSARY TO ACHIEVE NASA CERTIFICATION. DELIVERY PAYMENT FOR THE ISS DESIGN CERTIFICATION REVIEW (DCR) FOR THE CREWED FLIGHT TO THE ISS INCLUDES ALL WORK UNDER THIS CLIN THAT OCCURS FROM THE CONTRACT EFFECTIVE DATE THROUGH THE ISS DCR COMPLETION. THE DELIVERY PAYMENT FOR THE CERTIFICATION REVIEW (CR) WILL INCLUDE ALL WORK THAT OCCURS FROM THE ISS DCR DELIVERY DATE THROUGH THE END OF THE DDTE/CERTIFICATION CLIN 001.  IN ACCORDANCE WITH CLAUSE C.1, SPECIFICATION/STATEMENT OF WORK, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTING OFFICER MAY ISSUE POST CERTIFICATION MISSION (PCM) TASK ORDERS. THE CONTRACTOR SHALL USE THE MISSION PRICING RATES SHOWN IN TABLE B.4.1, POST CERTIFICATION MISSION PRICES. THE PER MISSION PRICES ARE FOR A SINGLE ORDER AT THE PRICE STATED PER THE CALENDAR YEAR (CY) BASED ON THE NUMBER OF MISSIONS ORDERED. CTS FULL MISSION CAPABILITY PRICES SHALL BE BASED ON (1) FULFILLMENT OF THE DESIGN REFERENCE MISSION TO THE ISS FOUND IN CCT-DRM-1110, CREW TRANSPORTATION SYSTEM DESIGN REFERENCE MISSIONS, ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, AND OTHER TERMS AND CONDITIONS IN THE CONTRACT AND (2) ALL INHERENT CTS CAPABILITIES THAT ARE WITHIN THE PROPOSED MISSION PRICES.  IN ACCORDANCE WITH ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTOR SHALL PERFORM SPECIAL STUDIES, TEST AND ANALYSES, AS INITIATED BY WRITTEN DIRECTION FROM THE CONTRACTING OFFICER.  SPACEX CCTCAP POST CERTIFICATION MISSION 2 (PCM-2) TASK ORDER AGAINST NNK14MA74C CLIN 002, AS DESCRIBED IN CLAUSE B.4 POST CERTIFICATION MISSIONS (IDIQ)(CLIN 002) AND ALL OTHER APPLICABLE TERMS AND CONDITIONS.\n   https://www.usaspending.gov/award/CONT_AWD_NNK16MA58T_8000_NNK14MA74C_8000\n5. NNK16MA03T · SPACE EXPLORATION TECHNOLOGIES CORP.\n   契約額：USD 208,378,082\n   発注機関：National Aeronautics and Space Administration\n   目的：IGF::OT::IGF THE COMMERCIAL CREW PROGRAM (CCP) COMMERCIAL CREW TRANSPORTATION CAPABILITY (CCTCAP) CONTRACT WILL PROVIDE COMPLETION OF THE DESIGN, DEVELOPMENT, TEST, EVALUATION, AND CERTIFICATION OF AN INTEGRATED CREW TRANSPORTATION SYSTEM (CTS) CAPABLE OF TRANSPORTING NASA CREW TO AND FROM THE ISS, IN ACCORDANCE WITH THE DESIGN REFERENCE MISSIONS AND NASA'S CERTIFICATION STANDARDS AND REQUIREMENTS.  CERTIFICATION OF THE CTS WILL BE DETERMINED BY NASA.  NASA PLANS TO ISSUE TASK ORDERS FOR POST CERTIFICATION MISSIONS (PCM) TO AND FROM ISS THAT INCLUDE GROUND, LAUNCH, LIFEBOAT, ON-ORBIT, RETURN AND RECOVERY OPERATIONS. THE MINIMUM QUANTITY OF MISSIONS TO BE ORDERED IS TWO (2) AND THE MAXIMUM POTENTIAL QUANTITY OF MISSIONS WHICH MAY BE ORDERED IS SIX (6).  IN ADDITION, NASA MAY ISSUE TASK ORDERS FOR SPECIAL STUDIES USED FOR RISK REDUCTION AND OTHER PURPOSES RELATED TO THE CTS.      NASA CERTIFICATION UNDER CLIN 001 IS COMPLETE WHEN THE CONTRACTOR'S CREW TRANSPORTATION SYSTEM (CTS) HAS MET NASA'S REQUIREMENTS FOR SAFELY TRANSPORTING CREW TO AND FROM THE INTERNATIONAL SPACE STATION (ISS) IN ACCORDANCE WITH DOCUMENTS IDENTIFIED IN SECTION C.1, SPECIFICATIONS/STATEMENT OF WORK. SUBCLINS 001A AND 001B, IDENTIFIED IN TABLE B.3,DDTE/CERTIFICATION SUBCLINS, ARE DELIVERY MILESTONES THAT REPRESENT COMPLETION OF REQUIRED WORK NECESSARY TO ACHIEVE NASA CERTIFICATION. DELIVERY PAYMENT FOR THE ISS DESIGN CERTIFICATION REVIEW (DCR) FOR THE CREWED FLIGHT TO THE ISS INCLUDES ALL WORK UNDER THIS CLIN THAT OCCURS FROM THE CONTRACT EFFECTIVE DATE THROUGH THE ISS DCR COMPLETION. THE DELIVERY PAYMENT FOR THE CERTIFICATION REVIEW (CR) WILL INCLUDE ALL WORK THAT OCCURS FROM THE ISS DCR DELIVERY DATE THROUGH THE END OF THE DDTE/CERTIFICATION CLIN 001.  IN ACCORDANCE WITH CLAUSE C.1, SPECIFICATION/STATEMENT OF WORK, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTING OFFICER MAY ISSUE POST CERTIFICATION MISSION (PCM) TASK ORDERS. THE CONTRACTOR SHALL USE THE MISSION PRICING RATES SHOWN IN TABLE B.4.1, POST CERTIFICATION MISSION PRICES. THE PER MISSION PRICES ARE FOR A SINGLE ORDER AT THE PRICE STATED PER THE CALENDAR YEAR (CY) BASED ON THE NUMBER OF MISSIONS ORDERED. CTS FULL MISSION CAPABILITY PRICES SHALL BE BASED ON (1) FULFILLMENT OF THE DESIGN REFERENCE MISSION TO THE ISS FOUND IN CCT-DRM-1110, CREW TRANSPORTATION SYSTEM DESIGN REFERENCE MISSIONS, ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, AND OTHER TERMS AND CONDITIONS IN THE CONTRACT AND (2) ALL INHERENT CTS CAPABILITIES THAT ARE WITHIN THE PROPOSED MISSION PRICES.  IN ACCORDANCE WITH ATTACHMENT J-03, CONTRACT PERFORMANCE WORK STATEMENT, THE TASK ORDERING PROCEDURES AND OTHER TERMS AND CONDITIONS IN THE CONTRACT, THE CONTRACTOR SHALL PERFORM SPECIAL STUDIES, TEST AND ANALYSES, AS INITIATED BY WRITTEN DIRECTION FROM THE CONTRACTING OFFICER.  SPACEX CCTCAP POST CERTIFICATION MISSION 1 (PCM-1) TASK ORDER AGAINST NNK14MA74C CLIN 002, AS DESCRIBED IN CLAUSE B.4 POST CERTIFICATION MISSIONS (IDIQ)(CLIN 002) AND ALL OTHER APPLICABLE TERMS AND CONDITIONS.\n   https://www.usaspending.gov/award/CONT_AWD_NNK16MA03T_8000_NNK14MA74C_8000\n注：契約単位の累積額であり、実際の支払済み出金（outlay）額ではありません。\n出典：https://api.usaspending.gov/docs/endpoints",
+      "tasks": [
+        {
+          "id": "93929ad4-06e8-4eca-b3eb-ec6485299633",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.13589859008789062,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "NASA発注のSpaceX契約を額の大きい順に目的付きで示し、累積契約額であることを明示している。",
+      "semantic_issue_categories": [
+        "answered",
+        "metric_disclosed"
+      ]
+    },
+    {
+      "batch_index": 44,
+      "global_index": 316,
+      "case_id": "law.us_courts#4",
+      "expected_tool": "law.us_courts",
+      "specific_changes": [
+        "court_opinion_body_and_federal_filter"
+      ],
+      "prompt": "著作権とオンラインサービスに関する最近の連邦判決を探して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "b1e03d06-8f68-4228-8433-6f0bbf2276c4",
+      "assistant_message_id": "4c23c2a1-e1e8-48ea-a001-edbadea75c25",
+      "assistant_task_id": "9bb55cf8-ebcb-4c02-aaaf-6880831fe872",
+      "assistant_response": "# 著作権・オンラインサービスに関する最近の連邦判決\n\nCourtListener（2026年10月11日現在）の検索結果には、指定された条件（著作権＋インターネット／プラットフォーム／オンラインサービス）に合致する件数が約1,336件と多数存在します。以下は、返却された5件のうち最近の判決です。\n\n## 2026年9月30日付\n\n- **Américans for Prosperity v. Meyer**\n  第九巡回控訴裁判所（ca9）。\n  https://www.courtlistener.com/opinion/10988846/americans-for-prosperity-v-meyer/\n\n- **Thomson Reuters Enterprise Centre GmbH v. Ross Intelligence Inc**\n  第三巡回控訴裁判所（ca3）。\n  https://www.courtlistener.com/opinion/10988837/thomson-reuters-enterprise-centre-gmbh-v-ross-intelligence-inc/\n\n## 2026年9月16日付\n\n- **Doe v. GitHub, Inc.**\n  第九巡回控訴裁判所（ca9）。\n  https://www.courtlistener.com/opinion/10974713/doe-v-github-inc/\n\n## 2026年9月15日付\n\n- **Doe v. Smith**\n  第一巡回控訴裁判所（ca1）。\n  https://www.courtlistener.com/opinion/10974403/doe-v-smith/\n\n## 2026年8月27日付\n\n- **Emmerich Nwspr v. Particle Media**\n  第五巡回控訴裁判所（ca5）。\n  https://www.courtlistener.com/opinion/10960641/emmerich-nwspr-v-particle-media/\n\n## 確認すべき点\n\n- 上記はいずれも**2026年**（現在）の判決であり、過去の事件ではありません。\n- `opinion_texts` が空で `request_complete: false` となっており、**意見本文（判決文の要約）は取得されていません**。タイトル・裁判所・日付・URLは記録されていますが、各判決が著作権・オンラインサービスで争った具体的な主張や判断内容は、個別の裁判所ページを開いて確認する必要があります。\n- 条件に合致する記録は約1,336件あるため、これは**完全な一覧ではなく、返却されたサンプルの一部**です。\n\nご確認いただきたい場合は、特定の案件（例：`Doe v. GitHub, Inc.`）について、争点や判断内容を詳しく説明していただければ、個別のページを参照して要約します。",
+      "tasks": [
+        {
+          "id": "9bb55cf8-ebcb-4c02-aaaf-6880831fe872",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 95281.04186058044,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [
+        {
+          "model": "Ornith-1.5-9B-MLX-8bit",
+          "status": "success",
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "latency_ms": 95252.94595799642,
+          "error": null
+        }
+      ],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "最近の判決候補を裁判所・日付・URL付きで示すが、判決理由や著作権論点との関係は取得できず、関連性を読者が確認する必要がある。",
+      "semantic_issue_categories": [
+        "missing_holdings"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "判決本文の追加HTML形式html_lawbox／html_columbiaにも対応。API本文取得が未完了なら引き続き判決内容を補わない。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 45,
+      "global_index": 321,
+      "case_id": "sanctions.us_ofac#1",
+      "expected_tool": "sanctions.us_ofac",
+      "specific_changes": [
+        "ofac_alias_and_program"
+      ],
+      "prompt": "Iran AirがOFACリストに載っているか、別名や制裁プログラムも含めて確認して。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PASS",
+      "gui_user_message_id": "4a55e640-ab6a-4cbe-8d90-c03737c5e787",
+      "assistant_message_id": "713c5ebe-715c-46e6-95a3-cadc162c8dcb",
+      "assistant_task_id": "18219603-c57c-46de-bddc-814a6b245a82",
+      "assistant_response": "U.S. Treasury OFAC SDN List\nIRAN ELECTRONICS INDUSTRIES\n別名：IEI、SANAYE ELECTRONIC IRAN、SASAD IRAN ELECTRONICS INDUSTRIES、SHERKAT SANAYEH ELECTRONICS IRAN、SAIRAN\n制裁プログラム：NPWMD、IFSR、IRAN-TRA\nIRAN AIRCRAFT MANUFACTURING INDUSTRIAL COMPANY\n別名：HESA、HESA TRADE CENTER、HTC、IRAN AIRCRAFT MANUFACTURING INDUSTRIES、IAMI、IRAN AIRCRAFT MANUFACTURING COMPANY、IAMCO、KARKHANEJATE SANAYE HAVAPAYMAIE IRAN、HAVA PEYMA SAZI-E IRAN、HAVAPEYMA SAZI IRAN、HAVAPEYMA SAZHRAN、HEVAPEIMASAZI、SHAHIN CO.、FTP CO.\n制裁プログラム：NPWMD、IFSR、IRAN-CON-ARMS-EO\n備考：(Linked To: MINISTRY OF DEFENSE AND ARMED FORCES LOGISTICS; Linked To: ISLAMIC REVOLUTIONARY GUARD CORPS)\nIRAN HELICOPTER SUPPORT AND RENEWAL COMPANY\n別名：IHSRC、PANHA、IRAN'S HELICOPTER RENOVATION AND LOGISTICS COMPANY、IRANIAN HELICOPTERS' MAINTENANCE AND REPAIRS COMPANY\n制裁プログラム：IFSR、NPWMD\nIRAN AIRCRAFT INDUSTRIES\n別名：SAHA、IACI、IRAN AIRCRAFT INDUSTRIES CO.\n制裁プログラム：IFSR、NPWMD\nIRAN AIR\n別名：IRANAIR、IRAN AIR PJSC、HOMA、THE AIRLINE OF THE ISLAMIC REPUBLIC OF IRAN、IRANAIR CARGO、HAVAPEYMAYI MELLI IRAN\n制裁プログラム：IRAN、IRAN-CON-ARMS-EO、RUSSIA-EO14024\n\n出典：https://ofac.treasury.gov/sanctions-list-service",
+      "tasks": [
+        {
+          "id": "18219603-c57c-46de-bddc-814a6b245a82",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.04291534423828125,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "OFAC SDNの検索結果中でIran Airを明示し、別名と制裁プログラムを列挙している。",
+      "semantic_issue_categories": [
+        "answered"
+      ]
+    },
+    {
+      "batch_index": 46,
+      "global_index": 345,
+      "case_id": "aviation.operational_weather#1",
+      "expected_tool": "aviation.operational_weather",
+      "specific_changes": [
+        "metar_taf_units_and_direction"
+      ],
+      "prompt": "羽田では今、着陸に影響しそうな風や視程の条件がある？",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "4fee7263-d3e7-4dbd-bf95-2df6cd150de5",
+      "assistant_message_id": "75460715-5ecb-4758-ba6b-825f1f2429e8",
+      "assistant_task_id": "75e625f8-d205-4b4c-95be-c154bd7d5eb6",
+      "assistant_response": "航空気象（観測・予報時刻はUTC）\nRJTT · 2026-10-11T11:00:00.000Z\nMETAR RJTT 111100Z 04010KT CAVOK 21/17 Q1018 NOSIG\n風向（吹いてくる方角）：40°\n風速：10 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T10:30:00.000Z\nMETAR RJTT 111030Z 05013KT CAVOK 22/17 Q1018 NOSIG\n風向（吹いてくる方角）：50°\n風速：13 kt\n視程：6+ statute miles\n気温：22 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T10:00:00.000Z\nMETAR RJTT 111000Z 05012KT CAVOK 22/17 Q1018 NOSIG\n風向（吹いてくる方角）：50°\n風速：12 kt\n視程：6+ statute miles\n気温：22 ℃\n気圧：1018 hPa\n風向は北を0°、東を90°とする方位です。着陸への影響は使用滑走路・機体の制限と併せて判断する必要があります。\n\n出典：https://aviationweather.gov/data/api/",
+      "tasks": [
+        {
+          "id": "75e625f8-d205-4b4c-95be-c154bd7d5eb6",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.09703636169433594,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "METARと風・視程を提示するが、着陸への影響がありそうかという判断を示さず、滑走路・機体任せで結論を保留している。",
+      "semantic_issue_categories": [
+        "missing_assessment"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "CAVOKと観測風から視程・風の意味を説明。横風や着陸可否は滑走路・機体条件が必要と明記。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    },
+    {
+      "batch_index": 47,
+      "global_index": 346,
+      "case_id": "aviation.operational_weather#2",
+      "expected_tool": "aviation.operational_weather",
+      "specific_changes": [
+        "metar_taf_units_and_direction"
+      ],
+      "prompt": "現在のMETARと数時間先のTAFを比べて、天候が変わりそうか教えて。",
+      "execution_status": "COMPLETED_WITH_PROVIDER_SUCCESS",
+      "semantic_verdict": "PARTIAL",
+      "gui_user_message_id": "54ecad7a-084a-4a3c-8307-f4ee7b32bcfe",
+      "assistant_message_id": "4e5c8063-4f8b-4905-b32c-e20a1b01b9d8",
+      "assistant_task_id": "9bc965d2-d7ca-4e2e-a206-039534fce480",
+      "assistant_response": "航空気象（観測・予報時刻はUTC）\nRJTT · 2026-10-11T11:00:00.000Z\nMETAR RJTT 111100Z 04010KT CAVOK 21/17 Q1018 NOSIG\n風向（吹いてくる方角）：40°\n風速：10 kt\n視程：6+ statute miles\n気温：21 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T10:30:00.000Z\nMETAR RJTT 111030Z 05013KT CAVOK 22/17 Q1018 NOSIG\n風向（吹いてくる方角）：50°\n風速：13 kt\n視程：6+ statute miles\n気温：22 ℃\n気圧：1018 hPa\nRJTT · 2026-10-11T10:00:00.000Z\nMETAR RJTT 111000Z 05012KT CAVOK 22/17 Q1018 NOSIG\n風向（吹いてくる方角）：50°\n風速：12 kt\n視程：6+ statute miles\n気温：22 ℃\n気圧：1018 hPa\nTAF：TAF RJTT 111105Z 1112/1218 01014KT 9999 FEW030\n予報区間 1791720000〜1791828000 UTC ·  · 風向 10°、風速 14 kt、視程 6+ statute miles\n風向は北を0°、東を90°とする方位です。着陸への影響は使用滑走路・機体の制限と併せて判断する必要があります。\n\n出典：https://aviationweather.gov/data/api/",
+      "tasks": [
+        {
+          "id": "9bc965d2-d7ca-4e2e-a206-039534fce480",
+          "state": "completed",
+          "route": "EXTERNAL_API",
+          "authorization_state": "not_required",
+          "reason_category": null,
+          "duration_ms": 0.04601478576660156,
+          "error": null
+        }
+      ],
+      "tool_executions": [
+        {
+          "tool_name": "external_api",
+          "status": "success",
+          "latency_ms": 0.0,
+          "error": null
+        }
+      ],
+      "model_calls": [],
+      "persisted_user_and_assistant_messages": true,
+      "semantic_rationale": "METARとTAFの値は示すが、数時間後に何がどう変わるかを平易に要約していない。風向変化などの比較を利用者に委ねている。",
+      "semantic_issue_categories": [
+        "missing_forecast_synthesis"
+      ],
+      "followup_fix_status": "CODE_CHANGED_NOT_GUI_RETESTED",
+      "followup_fix_summary": "TAF区間のepochをUTC日時へ変換し、観測からの風速差・風向差を算出。視程の比較は予報区間ごとの値で行う。",
+      "followup_fix_record": "SEMANTIC_FOLLOWUP_FIXES_28_20261011.json"
+    }
+  ],
+  "operational_notes": {
+    "gui_method": "Each prompt was entered and submitted through the isolated OLCR desktop UI in one existing projectless conversation; every pair is persisted in the isolated SQLite database.",
+    "conversation_message_pairs": 47,
+    "conversation_task_rows": 71,
+    "provider_failure_cases": [
+      27,
+      42,
+      97,
+      107,
+      142,
+      165,
+      174
+    ],
+    "unauthenticated_cli_probe": "A first harness attempt sent 46 requests without the GUI session credential and received HTTP 401. Those requests created no conversation messages or tasks and are excluded from the 47 GUI E2E cases. The credential was not extracted or reused.",
+    "keychain_restore": "The isolated launcher recorded credential_bundle_bridge_timeout. No API keys or credentials were entered. Web-provider-unconfigured results must be interpreted in that isolated profile context.",
+    "semantic_assessment": "Not performed in this run. Execution and persistence are recorded; each answer still needs a separate semantic verdict."
+  },
+  "semantic_summary": {
+    "status": "ASSESSED",
+    "method": "Response-to-request semantic coverage and evidence-use assessment; not a comprehensive independent fact-check of every dynamic external datum.",
+    "criteria": {
+      "PASS": "Substantially answers the request with relevant supporting detail and no material semantic gap found in the recorded response.",
+      "PARTIAL": "Relevant answer exists, but a material part is missing, under-synthesized, weakly scoped, or internally questionable.",
+      "FAIL": "No usable answer to the core request, or a material contradiction/misleading result defeats the core request."
+    },
+    "counts": {
+      "PARTIAL": 18,
+      "PASS": 19,
+      "FAIL": 10
+    },
+    "assessed_at_local": "2026-10-11 Asia/Tokyo",
+    "external_dependency_failures": 6,
+    "functional_or_semantic_failures": 4,
+    "note": "The external-dependency count covers cases where requested providers/search fallback were unavailable (global indices 27, 42, 97, 107, 142, 165). Other FAIL cases are substantive response/argument/contradiction issues despite the recorded tool behavior."
+  }
+}

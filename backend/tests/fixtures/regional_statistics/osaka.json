@@ -1,0 +1,42 @@
+{
+  "GET_META_REGION_INF": {
+    "RESULT": {
+      "status": "0",
+      "errorMsg": "正常に終了しました。",
+      "date": "Mon Oct 26 13:56:09 JST 2026"
+    },
+    "PARAMETER": {
+      "Lang": "JP",
+      "SearchRegionWord": "大阪市"
+    },
+    "METADATA_INF": {
+      "CLASS_INF": {
+        "CLASS_OBJ": [
+          {
+            "@parentRegionCode": "27000",
+            "@name": "大阪府",
+            "@hiragana": "おおさかふ",
+            "CLASS": [
+              {
+                "@regionCode": "27100",
+                "@name": "大阪市",
+                "@level": "8",
+                "@hiragana": "おおさかし",
+                "@fromDate": "197004",
+                "@toDate": "999912"
+              },
+              {
+                "@regionCode": "27227",
+                "@name": "東大阪市",
+                "@level": "9",
+                "@hiragana": "ひがしおおさかし",
+                "@fromDate": "197004",
+                "@toDate": "999912"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,2257 @@
+{
+  "scope": "Offline compilation only; no outbound calls, no live success claim",
+  "case_count": 50,
+  "summary": {
+    "compiled": 109,
+    "clarification": 26,
+    "unsupported": 35
+  },
+  "results": [
+    {
+      "case_id": "multi-api-analysis-01",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "JP",
+          "KR"
+        ],
+        "country": "JP",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG",
+          "SL.UEM.TOTL.ZS",
+          "FP.CPI.TOTL.ZG"
+        ],
+        "request_text": "日本と韓国の成長、物価、雇用の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-01",
+      "tool_id": "econ.jp_estat",
+      "status": "compiled",
+      "arguments": {
+        "limit": 12,
+        "request_text": "日本と韓国の成長、物価、雇用の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-01",
+      "tool_id": "econ.oecd",
+      "status": "compiled",
+      "arguments": {
+        "query": "日本と韓国の成長、物価、雇用の変化",
+        "countries": [
+          "JP",
+          "KR"
+        ],
+        "senior_employment_rate": false,
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "日本と韓国の成長、物価、雇用の変化を比較して",
+        "requests": [
+          {
+            "countries": [
+              "JP"
+            ]
+          },
+          {
+            "countries": [
+              "KR"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-02",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "US"
+        ],
+        "country": "US",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG",
+          "SL.UEM.TOTL.ZS",
+          "FP.CPI.TOTL.ZG"
+        ],
+        "request_text": "米国の物価と雇用の推移を比較し、世界銀行の各国GDP成長率を背景情報として確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-02",
+      "tool_id": "econ.fred",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "CPIAUCSL",
+        "limit": 12,
+        "request_text": "米国の物価と雇用の推移を比較し、世界銀行の各国GDP成長率を背景情報として確認して",
+        "annual_average": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-02",
+      "tool_id": "econ.us_labor",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "LNS14000000",
+        "start_year": 2021,
+        "end_year": 2026,
+        "limit": 60,
+        "request_text": "米国の物価と雇用の推移を比較し、世界銀行の各国GDP成長率を背景情報として確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-02",
+      "tool_id": "finance.ecb",
+      "status": "compiled",
+      "arguments": {
+        "base": "EUR",
+        "quote": "JPY",
+        "start": "2026-10-14",
+        "limit": 5,
+        "request_text": "米国の物価と雇用の推移を比較し、世界銀行の各国GDP成長率を背景情報として確認して",
+        "end": "2026-10-21"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-03",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "BN",
+          "ID",
+          "KH",
+          "LA",
+          "MM",
+          "MY",
+          "PH",
+          "SG",
+          "TH",
+          "TL",
+          "VN"
+        ],
+        "country": "BN",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG"
+        ],
+        "request_text": "東南アジア各国の所得成長と貿易構成を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-03",
+      "tool_id": "trade.un_comtrade",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-03",
+      "tool_id": "econ.adb",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "東南アジア各国の所得成長と貿易構成を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-04",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "AO",
+          "BF",
+          "BI",
+          "BJ",
+          "BW",
+          "CD",
+          "CF",
+          "CG",
+          "CI",
+          "CM",
+          "CV",
+          "DJ",
+          "DZ",
+          "EG",
+          "ER",
+          "ET",
+          "GA",
+          "GH",
+          "GM",
+          "GN",
+          "GQ",
+          "GW",
+          "KE",
+          "KM",
+          "LR",
+          "LS",
+          "LY",
+          "MA",
+          "MG",
+          "ML",
+          "MR",
+          "MU",
+          "MW",
+          "MZ",
+          "NA",
+          "NE",
+          "NG",
+          "RW",
+          "SC",
+          "SD",
+          "SL",
+          "SN",
+          "SO",
+          "SS",
+          "ST",
+          "SZ",
+          "TD",
+          "TG",
+          "TN",
+          "TZ",
+          "UG",
+          "ZA",
+          "ZM",
+          "ZW"
+        ],
+        "country": "AO",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG"
+        ],
+        "request_text": "アフリカ諸国の債務や成長をSDGsの進捗とあわせて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-04",
+      "tool_id": "econ.imf",
+      "status": "compiled",
+      "arguments": {
+        "indicator": "GGXWDG_NGDP",
+        "countries": [
+          "AGO",
+          "BFA",
+          "BDI",
+          "BEN",
+          "BWA",
+          "COD",
+          "CAF",
+          "COG",
+          "CIV",
+          "CMR",
+          "CPV",
+          "DJI",
+          "DZA",
+          "EGY",
+          "ERI",
+          "ETH",
+          "GAB",
+          "GHA",
+          "GMB",
+          "GIN",
+          "GNQ",
+          "GNB",
+          "KEN",
+          "COM",
+          "LBR",
+          "LSO",
+          "LBY",
+          "MAR",
+          "MDG",
+          "MLI",
+          "MRT",
+          "MUS",
+          "MWI",
+          "MOZ",
+          "NAM",
+          "NER",
+          "NGA",
+          "RWA",
+          "SYC",
+          "SDN",
+          "SLE",
+          "SEN",
+          "SOM",
+          "SSD",
+          "STP",
+          "SWZ",
+          "TCD",
+          "TGO",
+          "TUN",
+          "TZA",
+          "UGA",
+          "ZAF",
+          "ZMB",
+          "ZWE"
+        ],
+        "start_year": 2016,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "アフリカ諸国の債務や成長をSDGsの進捗とあわせて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-04",
+      "tool_id": "development.un_sdg",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "アフリカ諸国の債務や成長をSDGsの進捗とあわせて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-04",
+      "tool_id": "econ.afdb",
+      "status": "unsupported",
+      "arguments": {
+        "country": "KEN",
+        "indicator": "GDP growth rate",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "アフリカ諸国の債務や成長をSDGsの進捗とあわせて",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-05",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "AR",
+          "BO",
+          "BR",
+          "BZ",
+          "CL",
+          "CO",
+          "CR",
+          "CU",
+          "DO",
+          "EC",
+          "GT",
+          "GY",
+          "HN",
+          "HT",
+          "MX",
+          "NI",
+          "PA",
+          "PE",
+          "PY",
+          "SR",
+          "SV",
+          "UY",
+          "VE"
+        ],
+        "country": "AR",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG",
+          "FP.CPI.TOTL.ZG"
+        ],
+        "request_text": "ラテンアメリカのインフレと成長を地域別に比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-05",
+      "tool_id": "econ.cepalstat",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "ラテンアメリカのインフレと成長を地域別に比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-05",
+      "tool_id": "econ.imf",
+      "status": "compiled",
+      "arguments": {
+        "indicator": "PCPIPCH",
+        "countries": [
+          "ARG",
+          "BOL",
+          "BRA",
+          "BLZ",
+          "CHL",
+          "COL",
+          "CRI",
+          "CUB",
+          "DOM",
+          "ECU",
+          "GTM",
+          "GUY",
+          "HND",
+          "HTI",
+          "MEX",
+          "NIC",
+          "PAN",
+          "PER",
+          "PRY",
+          "SUR",
+          "SLV",
+          "URY",
+          "VEN"
+        ],
+        "start_year": 2016,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "ラテンアメリカのインフレと成長を地域別に比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-05",
+      "tool_id": "development.idb",
+      "status": "unsupported",
+      "arguments": {
+        "country": "Brazil",
+        "status": "implementation",
+        "query": "Brazil",
+        "limit": 5,
+        "request_text": "ラテンアメリカのインフレと成長を地域別に比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-06",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "AT",
+          "BE",
+          "BG",
+          "CY",
+          "CZ",
+          "DE",
+          "DK",
+          "EE",
+          "ES",
+          "FI",
+          "FR",
+          "GR",
+          "HR",
+          "HU",
+          "IE",
+          "IT",
+          "LT",
+          "LU",
+          "LV",
+          "MT",
+          "NL",
+          "PL",
+          "PT",
+          "RO",
+          "SE",
+          "SI",
+          "SK"
+        ],
+        "country": "AT",
+        "indicator": "NY.GDP.MKTP.KD.ZG",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "NY.GDP.MKTP.KD.ZG",
+          "FP.CPI.TOTL.ZG"
+        ],
+        "request_text": "EU各国の電力価格と消費者物価、経済成長を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-06",
+      "tool_id": "econ.eurostat",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "EU各国の電力価格と消費者物価、経済成長を比較して",
+        "dataset": "prc_hicp_manr",
+        "countries": []
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-06",
+      "tool_id": "finance.ecb",
+      "status": "compiled",
+      "arguments": {
+        "base": "EUR",
+        "quote": "JPY",
+        "start": "2026-10-14",
+        "limit": 5,
+        "request_text": "EU各国の電力価格と消費者物価、経済成長を比較して",
+        "end": "2026-10-21"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-07",
+      "tool_id": "trade.un_comtrade",
+      "status": "compiled",
+      "arguments": {
+        "query": "2026 日本 世界 TOTAL 輸出",
+        "year": 2026,
+        "reporter_code": "392",
+        "reporter_name": "日本",
+        "partner_code": "0",
+        "partner_name": "世界",
+        "flow_code": "X",
+        "commodity_code": "TOTAL",
+        "periods": null,
+        "include_both_flows": false,
+        "limit": 5,
+        "request_text": "日本の輸出入の変化と為替・国際収支の動向を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-07",
+      "tool_id": "currency.frankfurter",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "日本の輸出入の変化と為替・国際収支の動向を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-07",
+      "tool_id": "finance.bis",
+      "status": "compiled",
+      "arguments": {
+        "country": "JP",
+        "dataflow": "WS_CREDIT",
+        "version": "1.0",
+        "frequency": "Q",
+        "sector": "P",
+        "unit": "770",
+        "limit": 5,
+        "request_text": "日本の輸出入の変化と為替・国際収支の動向を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-07",
+      "tool_id": "econ.jp_estat",
+      "status": "compiled",
+      "arguments": {
+        "limit": 12,
+        "request_text": "日本の輸出入の変化と為替・国際収支の動向を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-08",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "all"
+        ],
+        "country": "all",
+        "indicator": "ST.INT.ARVL",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "ST.INT.ARVL"
+        ],
+        "request_text": "世界の観光回復と航空便の運航規模を地域別に比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-08",
+      "tool_id": "aviation.opensky",
+      "status": "unsupported",
+      "arguments": {
+        "request_text": "世界の観光回復と航空便の運航規模を地域別に比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-08",
+      "tool_id": "econ.oecd",
+      "status": "unsupported",
+      "arguments": {
+        "query": "世界の観光回復と航空便の運航規模を地域別に",
+        "countries": [],
+        "senior_employment_rate": false,
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "世界の観光回復と航空便の運航規模を地域別に比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-09",
+      "tool_id": "econ.fred",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "CPIAUCSL",
+        "limit": 12,
+        "request_text": "米国の雇用・物価と連邦政府支出の変化を比較して",
+        "annual_average": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-09",
+      "tool_id": "econ.us_labor",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "LNS14000000",
+        "start_year": 2021,
+        "end_year": 2026,
+        "limit": 60,
+        "request_text": "米国の雇用・物価と連邦政府支出の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-09",
+      "tool_id": "gov.us_spending",
+      "status": "unsupported",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "米国の雇用・物価と連邦政府支出の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-10",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-10",
+      "tool_id": "econ.eurostat",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "住宅費と物価上昇、家計への影響を複数指標から整理して",
+        "dataset": "prc_hicp_manr",
+        "countries": []
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-10",
+      "tool_id": "econ.oecd",
+      "status": "unsupported",
+      "arguments": {
+        "query": "住宅費と物価上昇、家計への影響を複数指標から整理して",
+        "countries": [],
+        "senior_employment_rate": false,
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "住宅費と物価上昇、家計への影響を複数指標から整理して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-11",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-11",
+      "tool_id": "econ.fred",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "CPIAUCSL",
+        "limit": 12,
+        "request_text": "中央銀行の金利・金融環境と物価の関係を日米欧で比較して",
+        "annual_average": false,
+        "requests": [
+          {
+            "series_id": "FEDFUNDS"
+          },
+          {
+            "series_id": "CPIAUCSL"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-11",
+      "tool_id": "finance.ecb",
+      "status": "compiled",
+      "arguments": {
+        "base": "EUR",
+        "quote": "JPY",
+        "start": "2026-10-14",
+        "limit": 5,
+        "request_text": "中央銀行の金利・金融環境と物価の関係を日米欧で比較して",
+        "end": "2026-10-21"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-11",
+      "tool_id": "finance.bis",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-12",
+      "tool_id": "econ.oecd",
+      "status": "unsupported",
+      "arguments": {
+        "query": "日本の地域別人口変化と雇用状況",
+        "countries": [
+          "JP"
+        ],
+        "senior_employment_rate": false,
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "日本の地域別人口変化と雇用状況を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-12",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "JP"
+        ],
+        "country": "JP",
+        "indicator": "SL.UEM.TOTL.ZS",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "SL.UEM.TOTL.ZS",
+          "SP.POP.TOTL"
+        ],
+        "request_text": "日本の地域別人口変化と雇用状況を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-12",
+      "tool_id": "econ.jp_estat",
+      "status": "unsupported",
+      "arguments": {
+        "limit": 12,
+        "request_text": "日本の地域別人口変化と雇用状況を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-12",
+      "tool_id": "econ.us_labor",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "LNS14000000",
+        "start_year": 2021,
+        "end_year": 2026,
+        "limit": 60,
+        "request_text": "日本の地域別人口変化と雇用状況を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-13",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "all"
+        ],
+        "country": "all",
+        "indicator": "EG.FEC.RNEW.ZS",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "EG.FEC.RNEW.ZS",
+          "EN.ATM.CO2E.KT"
+        ],
+        "request_text": "各国の再生可能エネルギー比率と温室効果ガス排出の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-13",
+      "tool_id": "energy.us_eia",
+      "status": "unsupported",
+      "arguments": {
+        "dataset": "crude_inventory",
+        "state_level": false,
+        "series_id": "PET.WCESTUS1.W",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "各国の再生可能エネルギー比率と温室効果ガス排出の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-13",
+      "tool_id": "development.un_sdg",
+      "status": "compiled",
+      "arguments": {
+        "indicator": "7.2.1",
+        "limit": 5,
+        "request_text": "各国の再生可能エネルギー比率と温室効果ガス排出の変化を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-14",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "US"
+        ],
+        "country": "US",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "米国の電力構成と大気質の季節的な傾向を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-14",
+      "tool_id": "environment.air_quality",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-14",
+      "tool_id": "energy.us_eia",
+      "status": "unsupported",
+      "arguments": {
+        "dataset": "crude_inventory",
+        "state_level": false,
+        "series_id": "PET.WCESTUS1.W",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "米国の電力構成と大気質の季節的な傾向を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-14",
+      "tool_id": "econ.us_labor",
+      "status": "compiled",
+      "arguments": {
+        "series_id": "LNS14000000",
+        "start_year": 2021,
+        "end_year": 2026,
+        "limit": 60,
+        "request_text": "米国の電力構成と大気質の季節的な傾向を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-15",
+      "tool_id": "earth.earthquakes",
+      "status": "compiled",
+      "arguments": {
+        "query": "worldwide",
+        "minmagnitude": 5.0,
+        "starttime": "2026-09-21",
+        "endtime": "2026-10-21",
+        "limit": 5,
+        "request_text": "大規模地震の発生状況と災害被害・支援ニーズを照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-15",
+      "tool_id": "earth.disasters",
+      "status": "unsupported",
+      "arguments": {
+        "request_text": "大規模地震の発生状況と災害被害・支援ニーズを照合して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-15",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "大規模地震の発生状況と災害被害・支援ニーズを照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-16",
+      "tool_id": "earth.disasters",
+      "status": "unsupported",
+      "arguments": {
+        "request_text": "洪水リスクと河川水位、周辺地域の標高をあわせて確認して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-16",
+      "tool_id": "earth.streamflow",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-16",
+      "tool_id": "geo.elevation",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-17",
+      "tool_id": "earth.disasters",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "沿岸地域の潮汐と災害発生状況の時期を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-17",
+      "tool_id": "ocean.tides",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-17",
+      "tool_id": "astronomy.sunrise",
+      "status": "compiled",
+      "arguments": {
+        "latitude": 35.68,
+        "longitude": 139.76,
+        "date": "2026-10-21",
+        "output_timezone": "Asia/Tokyo",
+        "request_text": "沿岸地域の潮汐と災害発生状況の時期を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-18",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "AF",
+          "BD",
+          "BT",
+          "IN",
+          "MV",
+          "NP",
+          "PK",
+          "LK"
+        ],
+        "country": "AF",
+        "indicator": "EG.ELC.RNEW.ZS",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "EG.ELC.RNEW.ZS",
+          "EG.ELC.ACCS.ZS"
+        ],
+        "request_text": "南アジアの電力アクセスと再生可能電力の普及を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-18",
+      "tool_id": "development.un_sdg",
+      "status": "compiled",
+      "arguments": {
+        "indicator": "7.2.1",
+        "limit": 5,
+        "request_text": "南アジアの電力アクセスと再生可能電力の普及を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-18",
+      "tool_id": "econ.adb",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "南アジアの電力アクセスと再生可能電力の普及を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-19",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "AD",
+          "AL",
+          "AT",
+          "BA",
+          "BE",
+          "BG",
+          "BY",
+          "CH",
+          "CY",
+          "CZ",
+          "DE",
+          "DK",
+          "EE",
+          "ES",
+          "FI",
+          "FR",
+          "GB",
+          "GR",
+          "HR",
+          "HU",
+          "IE",
+          "IS",
+          "IT",
+          "LI",
+          "LT",
+          "LU",
+          "LV",
+          "MC",
+          "MD",
+          "ME",
+          "MK",
+          "MT",
+          "NL",
+          "NO",
+          "PL",
+          "PT",
+          "RO",
+          "RS",
+          "RU",
+          "SE",
+          "SI",
+          "SK",
+          "SM",
+          "UA",
+          "VA",
+          "XK"
+        ],
+        "country": "AD",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "欧州の気温・大気汚染とエネルギー消費動向を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-19",
+      "tool_id": "environment.air_quality",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-19",
+      "tool_id": "weather.open_meteo",
+      "status": "unsupported",
+      "arguments": {
+        "location": "欧州",
+        "unsupported_capability": true,
+        "request_text": "欧州の気温・大気汚染とエネルギー消費動向を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-19",
+      "tool_id": "econ.eurostat",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "欧州の気温・大気汚染とエネルギー消費動向を照合して",
+        "dataset": null,
+        "countries": []
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-19",
+      "tool_id": "energy.us_eia",
+      "status": "unsupported",
+      "arguments": {
+        "dataset": "crude_inventory",
+        "state_level": false,
+        "series_id": "PET.WCESTUS1.W",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "欧州の気温・大気汚染とエネルギー消費動向を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-20",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-20",
+      "tool_id": "earth.disasters",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "山火事や自然災害の発生と人口・人道支援の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-20",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "山火事や自然災害の発生と人口・人道支援の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-20",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "山火事や自然災害の発生と人口・人道支援の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-21",
+      "tool_id": "development.un_sdg",
+      "status": "compiled",
+      "arguments": {
+        "indicator": "6.4.2",
+        "limit": 5,
+        "request_text": "各地域の水資源ストレスと農業・持続可能性指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-21",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-21",
+      "tool_id": "econ.afdb",
+      "status": "unsupported",
+      "arguments": {
+        "country": "KEN",
+        "indicator": "GDP growth rate",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "request_text": "各地域の水資源ストレスと農業・持続可能性指標を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-22",
+      "tool_id": "weather.open_meteo",
+      "status": "compiled",
+      "arguments": {
+        "location": "太陽活動と宇宙",
+        "request_text": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-22",
+      "tool_id": "space.space_weather",
+      "status": "compiled",
+      "arguments": {
+        "metric": "latest",
+        "query": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して",
+        "request_text": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-22",
+      "tool_id": "astronomy.sunrise",
+      "status": "compiled",
+      "arguments": {
+        "latitude": 35.68,
+        "longitude": 139.76,
+        "date": "2026-10-21",
+        "output_timezone": "Asia/Tokyo",
+        "request_text": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-22",
+      "tool_id": "space.ephemeris",
+      "status": "compiled",
+      "arguments": {
+        "targets": [
+          "Sun"
+        ],
+        "target": "Sun",
+        "epoch": "2026-10-21",
+        "epochs": [
+          "2026-10-21"
+        ],
+        "request_text": "太陽活動と宇宙天気の変化を、観測時刻とあわせて説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-23",
+      "tool_id": "earth.earthquakes",
+      "status": "compiled",
+      "arguments": {
+        "query": "worldwide",
+        "minmagnitude": 5.0,
+        "starttime": "2026-09-21",
+        "endtime": "2026-10-21",
+        "limit": 100,
+        "request_text": "地震活動と津波・沿岸災害の記録を地域別に整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-23",
+      "tool_id": "earth.disasters",
+      "status": "unsupported",
+      "arguments": {
+        "request_text": "地震活動と津波・沿岸災害の記録を地域別に整理して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-23",
+      "tool_id": "ocean.tides",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-24",
+      "tool_id": "trade.un_comtrade",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-24",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "all"
+        ],
+        "country": "all",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "国別の電力生産と燃料貿易の構成を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-24",
+      "tool_id": "energy.us_eia",
+      "status": "unsupported",
+      "arguments": {
+        "dataset": "crude_inventory",
+        "state_level": false,
+        "series_id": "PET.WCESTUS1.W",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "国別の電力生産と燃料貿易の構成を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-25",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "country_id": "369",
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "ウクライナの紛争イベントと避難民の推移、人道支援状況を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-25",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "origin",
+        "country_codes": [
+          "UKR"
+        ],
+        "limit": 30,
+        "default_period": true,
+        "request_text": "ウクライナの紛争イベントと避難民の推移、人道支援状況を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-25",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "ウクライナの紛争イベントと避難民の推移、人道支援状況を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-26",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "サヘル地域の紛争と国内避難、人道ニーズの重なりを整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-26",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "origin",
+        "country_codes": [
+          "BFA",
+          "MLI",
+          "MRT",
+          "NER",
+          "NGA",
+          "SDN",
+          "SEN",
+          "TCD"
+        ],
+        "limit": 48,
+        "default_period": true,
+        "request_text": "サヘル地域の紛争と国内避難、人道ニーズの重なりを整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-26",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "サヘル地域の紛争と国内避難、人道ニーズの重なりを整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-26",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "BF",
+          "ML",
+          "MR",
+          "NE",
+          "NG",
+          "SD",
+          "SN",
+          "TD"
+        ],
+        "country": "BF",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "サヘル地域の紛争と国内避難、人道ニーズの重なりを整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-27",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "制裁対象の組織と武力紛争イベントの地理的な重なりを確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-27",
+      "tool_id": "sanctions.opensanctions",
+      "status": "compiled",
+      "arguments": {
+        "query": "の組織と武力紛争イベントの地理的な重なり",
+        "limit": 5,
+        "request_text": "制裁対象の組織と武力紛争イベントの地理的な重なりを確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-27",
+      "tool_id": "sanctions.unsc",
+      "status": "compiled",
+      "arguments": {
+        "query": "制裁対象の組織と武力紛争イベントの地理的な重なりを確認して",
+        "limit": 5,
+        "request_text": "制裁対象の組織と武力紛争イベントの地理的な重なりを確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-28",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-28",
+      "tool_id": "sanctions.unsc",
+      "status": "compiled",
+      "arguments": {
+        "query": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を",
+        "limit": 5,
+        "request_text": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-28",
+      "tool_id": "sanctions.us_ofac",
+      "status": "compiled",
+      "arguments": {
+        "query": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を",
+        "limit": 5,
+        "request_text": "国連と米国の制裁リストの登録内容を比較し、紛争関連性を調べて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-29",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "all"
+        ],
+        "country": "all",
+        "indicator": "SP.POP.TOTL",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "SP.POP.TOTL"
+        ],
+        "request_text": "難民受け入れの規模と各国の経済・人口指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-29",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "asylum",
+        "country_codes": [],
+        "limit": 30,
+        "default_period": true,
+        "request_text": "難民受け入れの規模と各国の経済・人口指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-29",
+      "tool_id": "development.un_sdg",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "難民受け入れの規模と各国の経済・人口指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-30",
+      "tool_id": "earth.disasters",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "災害後の人道支援要請と被災地域の災害記録を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-30",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "災害後の人道支援要請と被災地域の災害記録を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-30",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "origin",
+        "country_codes": [],
+        "limit": 30,
+        "default_period": true,
+        "request_text": "災害後の人道支援要請と被災地域の災害記録を照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-31",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "紛争地域周辺の航空機運航と民間航空気象情報を確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-31",
+      "tool_id": "aviation.opensky",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "紛争地域周辺の航空機運航と民間航空気象情報を確認して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-31",
+      "tool_id": "aviation.operational_weather",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-32",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "紛争地域の食料危機と避難民・支援ニーズを比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-32",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "origin",
+        "country_codes": [],
+        "limit": 30,
+        "default_period": true,
+        "request_text": "紛争地域の食料危機と避難民・支援ニーズを比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-32",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "紛争地域の食料危機と避難民・支援ニーズを比較して",
+        "query": "food security"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-32",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-33",
+      "tool_id": "trade.un_comtrade",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-33",
+      "tool_id": "sanctions.opensanctions",
+      "status": "compiled",
+      "arguments": {
+        "query": "企業の情報と国際貿易フローの変化を検討して",
+        "limit": 5,
+        "request_text": "制裁対象企業の情報と国際貿易フローの変化を検討して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-33",
+      "tool_id": "sanctions.us_ofac",
+      "status": "compiled",
+      "arguments": {
+        "query": "制裁対象企業の情報と国際貿易フローの変化を検討して",
+        "limit": 5,
+        "request_text": "制裁対象企業の情報と国際貿易フローの変化を検討して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-34",
+      "tool_id": "conflict.ucdp",
+      "status": "compiled",
+      "arguments": {
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "limit": 5,
+        "aggregate_by_time_region": false,
+        "default_period": true,
+        "request_text": "中南米の暴力イベントと人道的移動・避難の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-34",
+      "tool_id": "humanitarian.unhcr",
+      "status": "compiled",
+      "arguments": {
+        "query": "population",
+        "year_from": 2021,
+        "year_to": 2026,
+        "country_dimension": "origin",
+        "country_codes": [
+          "ARG",
+          "BOL",
+          "BRA",
+          "BLZ",
+          "CHL",
+          "COL",
+          "CRI",
+          "CUB",
+          "DOM",
+          "ECU",
+          "GTM",
+          "GUY",
+          "HND",
+          "HTI",
+          "MEX",
+          "NIC",
+          "PAN",
+          "PER",
+          "PRY",
+          "SUR",
+          "SLV",
+          "URY",
+          "VEN"
+        ],
+        "limit": 138,
+        "default_period": true,
+        "request_text": "中南米の暴力イベントと人道的移動・避難の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-34",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "中南米の暴力イベントと人道的移動・避難の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-34",
+      "tool_id": "development.idb",
+      "status": "compiled",
+      "arguments": {
+        "country": "Brazil",
+        "status": "implementation",
+        "query": "Brazil",
+        "limit": 5,
+        "request_text": "中南米の暴力イベントと人道的移動・避難の状況を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-35",
+      "tool_id": "development.un_sdg",
+      "status": "unsupported",
+      "arguments": {
+        "unsupported_capability": true,
+        "request_text": "人道危機の発生地域と国連SDGsの関連指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-35",
+      "tool_id": "humanitarian.hdx",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "人道危機の発生地域と国連SDGsの関連指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-35",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-36",
+      "tool_id": "sanctions.us_ofac",
+      "status": "compiled",
+      "arguments": {
+        "query": "制裁措置と米国の政府契約・支出記録の関連を調査して",
+        "limit": 5,
+        "request_text": "制裁措置と米国の政府契約・支出記録の関連を調査して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-36",
+      "tool_id": "gov.us_spending",
+      "status": "compiled",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "request_text": "制裁措置と米国の政府契約・支出記録の関連を調査して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-36",
+      "tool_id": "defense.us_contracts",
+      "status": "compiled",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "request_text": "制裁措置と米国の政府契約・支出記録の関連を調査して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-37",
+      "tool_id": "gov.us_spending",
+      "status": "unsupported",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "米国の気候関連法案、規則案、連邦支出を横断して整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-37",
+      "tool_id": "politics.us_congress",
+      "status": "compiled",
+      "arguments": {
+        "congress": 119,
+        "query": "climate change",
+        "limit": 5,
+        "request_text": "米国の気候関連法案、規則案、連邦支出を横断して整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-37",
+      "tool_id": "policy.us_federal_register",
+      "status": "compiled",
+      "arguments": {
+        "query": "climate change",
+        "limit": 5,
+        "type": "RULE",
+        "request_text": "米国の気候関連法案、規則案、連邦支出を横断して整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-37",
+      "tool_id": "policy.us_rulemaking",
+      "status": "compiled",
+      "arguments": {
+        "query": "climate change",
+        "limit": 5,
+        "request_text": "米国の気候関連法案、規則案、連邦支出を横断して整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-38",
+      "tool_id": "japan.diet_transcript",
+      "status": "compiled",
+      "arguments": {
+        "query": "日本のAI政策審議と関連法令 比較して",
+        "limit": 5,
+        "include_speaker_context": false,
+        "speaker_position": null,
+        "request_text": "日本のAI政策審議と関連法令、国会発言を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-38",
+      "tool_id": "japan.law",
+      "status": "compiled",
+      "arguments": {
+        "query": "日本 AI政策審議と関連 、国会発言を比較して",
+        "limit": 5,
+        "request_text": "日本のAI政策審議と関連法令、国会発言を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-38",
+      "tool_id": "knowledge.wikidata",
+      "status": "unsupported",
+      "arguments": {
+        "subject": "日本のAI政策審議と関連法令、国会発言を比較して",
+        "limit": 5,
+        "request_text": "日本のAI政策審議と関連法令、国会発言を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-39",
+      "tool_id": "econ.worldbank",
+      "status": "compiled",
+      "arguments": {
+        "countries": [
+          "AT",
+          "BE",
+          "BG",
+          "CY",
+          "CZ",
+          "DE",
+          "DK",
+          "EE",
+          "ES",
+          "FI",
+          "FR",
+          "GR",
+          "HR",
+          "HU",
+          "IE",
+          "IT",
+          "LT",
+          "LU",
+          "LV",
+          "MT",
+          "NL",
+          "PL",
+          "PT",
+          "RO",
+          "SE",
+          "SI",
+          "SK"
+        ],
+        "country": "AT",
+        "indicator": "EN.ATM.CO2E.KT",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "indicators": [
+          "EN.ATM.CO2E.KT"
+        ],
+        "request_text": "EUの環境政策審議と法令文書、排出指標を結びつけて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-39",
+      "tool_id": "politics.eu_parliament",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "EUの環境政策審議と法令文書、排出指標を結びつけて",
+        "query": "environment"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-39",
+      "tool_id": "law.eu_cellar",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "EUの環境政策審議と法令文書、排出指標を結びつけて"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-40",
+      "tool_id": "politics.uk_parliament",
+      "status": "unsupported",
+      "arguments": {
+        "request_text": "英国議会の医療政策議論と臨床試験の動向を整理して",
+        "query": "healthcare",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-40",
+      "tool_id": "health.clinical_trials",
+      "status": "compiled",
+      "arguments": {
+        "query": "英国議会の医療政策議論との動向を整理して",
+        "condition": "英国議会の医療政策議論との動向を整理して",
+        "limit": 5,
+        "request_text": "英国議会の医療政策議論と臨床試験の動向を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-40",
+      "tool_id": "health.openfda",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-41",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "CA"
+        ],
+        "country": "CA",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "カナダ議会の審議とカナダ・各国の経済指標を照らし、議論の背景を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-41",
+      "tool_id": "politics.ca_openparliament",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "カナダ議会の審議とカナダ・各国の経済指標を照らし、議論の背景を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-41",
+      "tool_id": "law.eu_cellar",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "カナダ議会の審議とカナダ・各国の経済指標を照らし、議論の背景を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-42",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "BR"
+        ],
+        "country": "BR",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "ブラジルの上下両院の審議と地域開発指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-42",
+      "tool_id": "politics.br_chamber",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "ブラジルの上下両院の審議と地域開発指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-42",
+      "tool_id": "politics.br_senate",
+      "status": "compiled",
+      "arguments": {
+        "query": "ブラジルの上下両院の と地域開発指標を比較して",
+        "year": null,
+        "limit": 5,
+        "request_text": "ブラジルの上下両院の審議と地域開発指標を比較して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-42",
+      "tool_id": "development.idb",
+      "status": "unsupported",
+      "arguments": {
+        "country": "Brazil",
+        "status": "implementation",
+        "query": "Brazil",
+        "limit": 5,
+        "request_text": "ブラジルの上下両院の審議と地域開発指標を比較して",
+        "unsupported_capability": true
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-43",
+      "tool_id": "gov.us_spending",
+      "status": "compiled",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "request_text": "米国の選挙資金と議会法案、政府契約支出の関係を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-43",
+      "tool_id": "politics.us_campaign_finance",
+      "status": "compiled",
+      "arguments": {
+        "cycle": 2024,
+        "office": "P",
+        "limit": 5,
+        "request_text": "米国の選挙資金と議会法案、政府契約支出の関係を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-43",
+      "tool_id": "politics.us_congress",
+      "status": "compiled",
+      "arguments": {
+        "congress": 119,
+        "query": "campaign finance",
+        "limit": 5,
+        "request_text": "米国の選挙資金と議会法案、政府契約支出の関係を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-43",
+      "tool_id": "defense.us_contracts",
+      "status": "compiled",
+      "arguments": {
+        "fiscal_year": 2026,
+        "recipient": "",
+        "agency": "",
+        "limit": 5,
+        "request_text": "米国の選挙資金と議会法案、政府契約支出の関係を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-44",
+      "tool_id": "politics.us_congress",
+      "status": "compiled",
+      "arguments": {
+        "congress": 119,
+        "query": "連邦規則制定と議会審議、裁判例の動きを照合して",
+        "limit": 5,
+        "request_text": "連邦規則制定と議会審議、裁判例の動きを照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-44",
+      "tool_id": "policy.us_federal_register",
+      "status": "compiled",
+      "arguments": {
+        "query": "連邦制定と議会審議、裁判例の動きを照合して",
+        "limit": 5,
+        "type": "RULE",
+        "request_text": "連邦規則制定と議会審議、裁判例の動きを照合して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-44",
+      "tool_id": "law.us_courts",
+      "status": "compiled",
+      "arguments": {
+        "request_text": "連邦規則制定と議会審議、裁判例の動きを照合して",
+        "federal_only": true,
+        "query": "(court_id:scotus OR court_id:ca1 OR court_id:ca2 OR court_id:ca3 OR court_id:ca4 OR court_id:ca5 OR court_id:ca6 OR court_id:ca7 OR court_id:ca8 OR court_id:ca9 OR court_id:ca10 OR court_id:ca11 OR court_id:cadc OR court_id:cafc OR court_id:*d)"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-45",
+      "tool_id": "health.clinical_trials",
+      "status": "compiled",
+      "arguments": {
+        "query": "immunotherapy",
+        "condition": "",
+        "intervention": "immunotherapy",
+        "limit": 5,
+        "request_text": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-45",
+      "tool_id": "health.openfda",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-45",
+      "tool_id": "research.openalex",
+      "status": "compiled",
+      "arguments": {
+        "query": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して",
+        "limit": 5,
+        "title_like": false,
+        "request_text": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-45",
+      "tool_id": "biology.protein",
+      "status": "compiled",
+      "arguments": {
+        "query": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して",
+        "request_text": "免疫療法の臨床試験・FDA有害事象報告と標的タンパク質の研究情報を照合し、解釈の限界も示して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-46",
+      "tool_id": "health.clinical_trials",
+      "status": "compiled",
+      "arguments": {
+        "query": "infectious disease",
+        "condition": "infectious disease",
+        "limit": 5,
+        "request_text": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-46",
+      "tool_id": "research.openalex",
+      "status": "compiled",
+      "arguments": {
+        "query": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して",
+        "limit": 5,
+        "title_like": false,
+        "request_text": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-46",
+      "tool_id": "biology.structure",
+      "status": "compiled",
+      "arguments": {
+        "pdb_id": null,
+        "query": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して",
+        "request_text": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して",
+        "limit": 6,
+        "nonhuman": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-46",
+      "tool_id": "econ.worldbank",
+      "status": "unsupported",
+      "arguments": {
+        "countries": [
+          "all"
+        ],
+        "country": "all",
+        "indicator": "NY.GDP.MKTP.CD",
+        "start_year": null,
+        "end_year": null,
+        "limit": 5,
+        "unsupported_capability": true,
+        "request_text": "感染症研究の論文動向と臨床試験、国別の健康指標を整理して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-47",
+      "tool_id": "security.cve",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-47",
+      "tool_id": "security.exploit_probability",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-47",
+      "tool_id": "dev.github",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-48",
+      "tool_id": "knowledge.qiita",
+      "status": "compiled",
+      "arguments": {
+        "query": "AIエージェント",
+        "limit": 5,
+        "request_text": "AIエージェント開発記事の傾向とGitHub上の実装活動を照合して",
+        "sort_comments": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-48",
+      "tool_id": "software.github",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-48",
+      "tool_id": "knowledge.devto",
+      "status": "compiled",
+      "arguments": {
+        "query": "AIエージェント開発記事の傾向とGitHub上の実装活動を照合して",
+        "limit": 5,
+        "request_text": "AIエージェント開発記事の傾向とGitHub上の実装活動を照合して",
+        "sort_comments": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-49",
+      "tool_id": "food.product_lookup",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-49",
+      "tool_id": "food.recipe",
+      "status": "compiled",
+      "arguments": {
+        "query": "食料の栄養成分と食品表示、での利用例を整理して",
+        "limit": 3,
+        "request_text": "食料の栄養成分と食品表示、レシピでの利用例を整理して",
+        "ingredients": [],
+        "exclude_dairy": false,
+        "non_spicy": false
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-49",
+      "tool_id": "econ.worldbank",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    },
+    {
+      "case_id": "multi-api-analysis-50",
+      "tool_id": "research.openalex",
+      "status": "compiled",
+      "arguments": {
+        "query": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して",
+        "limit": 5,
+        "title_like": false,
+        "request_text": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-50",
+      "tool_id": "biology.protein",
+      "status": "compiled",
+      "arguments": {
+        "query": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して",
+        "request_text": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-50",
+      "tool_id": "biology.occurrence",
+      "status": "compiled",
+      "arguments": {
+        "scientificName": "多様性のと系統関係、タンパク質研究をつないで説明して",
+        "limit": 5,
+        "request_text": "生物多様性の観察記録と系統関係、タンパク質研究をつないで説明して"
+      }
+    },
+    {
+      "case_id": "multi-api-analysis-50",
+      "tool_id": "biology.phylogeny",
+      "status": "clarification",
+      "error": "ARGUMENT_COMPILATION_FAILED"
+    }
+  ]
+}

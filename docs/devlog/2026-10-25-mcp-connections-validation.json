@@ -1,0 +1,76 @@
+{
+  "servers": [
+    {
+      "server": "serena",
+      "display_name": "Serena",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": false,
+      "resource_available": false,
+      "can_check": false,
+      "connection_status": "DISABLED",
+      "reason": "POLICY_DISABLED",
+      "checked_at": null,
+      "tool_count": null
+    },
+    {
+      "server": "devdocs",
+      "display_name": "DevDocs MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": false,
+      "resource_available": false,
+      "can_check": false,
+      "connection_status": "DISABLED",
+      "reason": "POLICY_DISABLED",
+      "checked_at": null,
+      "tool_count": null
+    },
+    {
+      "server": "playwright",
+      "display_name": "Playwright MCP",
+      "transport": "stdio",
+      "scope": "managed_browser",
+      "coding_enabled": false,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-10-24T23:10:06.768207+00:00",
+      "tool_count": 24,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "shadcn",
+      "display_name": "shadcn MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": true,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-10-24T23:10:06.617564+00:00",
+      "tool_count": 7,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "animejs",
+      "display_name": "OLCR Anime.js v4 Reference MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": true,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-10-24T23:10:06.638839+00:00",
+      "tool_count": 4,
+      "protocol_version": "2024-11-05"
+    }
+  ],
+  "backend_regression_tests": 135,
+  "frontend_tests": 7,
+  "frontend_build": "PASS",
+  "scope": "isolated subprocesses and headless browser, not native OLCR GUI or model tool selection"
+}

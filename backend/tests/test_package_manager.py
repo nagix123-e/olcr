@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -11,6 +12,7 @@ from olcr_api.coding_tasks import phase_executor_capability
 from olcr_api.package_manager import (
     PackageManagerError,
     PackageManagerExecutor,
+    _resolve_package_manager,
     package_manager_from_project,
 )
 
@@ -72,6 +74,96 @@ class PackageManagerTests(unittest.TestCase):
         self.assertEqual(str(self.root), self.calls[0][1]["cwd"])
         self.assertFalse(self.calls[0][1]["shell"])
         self.assertIn("--ignore-scripts", self.calls[0][0])
+
+    def test_uses_prepared_olcr_node_runtime_when_gui_path_has_no_package_manager(self):
+        runtime_root = self.root / "prepared-node-tools"
+        node_bin = runtime_root / "node" / "bin"
+        node_bin.mkdir(parents=True)
+        for name in ("node", "npm"):
+            executable = node_bin / name
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+
+        with patch.dict(os.environ, {"PATH": ""}), \
+                patch("olcr_api.node_mcp_runtime.runtime_root", return_value=runtime_root):
+            result = self.executor().install(
+                workspace_root=self.root, package_manager="npm", packages=["react"],
+                authorized_packages=["react"])
+
+        self.assertEqual(str(node_bin / "npm"), self.calls[0][0][0])
+        self.assertEqual(str(node_bin), self.calls[0][1]["env"]["PATH"].split(os.pathsep)[0])
+        self.assertTrue(result["process_started"])
+
+    def test_package_manager_searches_known_host_dirs_hidden_from_gui_path(self):
+        manager_bin = self.root / "homebrew" / "bin"
+        manager_bin.mkdir(parents=True)
+        for name in ("node", "npm"):
+            executable = manager_bin / name
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+
+        environment = {"PATH": "/usr/bin"}
+        with patch("olcr_api.package_manager._prepared_node_bin", return_value=None), \
+                patch("olcr_api.package_manager._known_package_manager_dirs", return_value=[manager_bin]):
+            resolved = _resolve_package_manager("npm", environment)
+
+        self.assertEqual(str(manager_bin / "npm"), resolved)
+        self.assertEqual(str(manager_bin), environment["PATH"].split(os.pathsep)[0])
+
+    def test_package_manager_keeps_its_sibling_node_ahead_of_gui_path_node(self):
+        manager_bin = self.root / "selected-node" / "bin"
+        other_bin = self.root / "system-node" / "bin"
+        manager_bin.mkdir(parents=True)
+        other_bin.mkdir(parents=True)
+        for directory in (manager_bin, other_bin):
+            node = directory / "node"
+            node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            node.chmod(0o755)
+        npm = manager_bin / "npm"
+        npm.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        npm.chmod(0o755)
+
+        environment = {"PATH": os.pathsep.join((str(other_bin), str(manager_bin)))}
+        with patch("olcr_api.package_manager._prepared_node_bin", return_value=None):
+            resolved = _resolve_package_manager("npm", environment)
+
+        self.assertEqual(str(npm), resolved)
+        self.assertEqual(str(manager_bin), environment["PATH"].split(os.pathsep)[0])
+
+    def test_symlinked_package_manager_keeps_node_from_public_bin_directory(self):
+        manager_bin = self.root / "public-bin"
+        npm_tree = self.root / "lib" / "node_modules" / "npm" / "bin"
+        manager_bin.mkdir(parents=True)
+        npm_tree.mkdir(parents=True)
+        node = manager_bin / "node"
+        node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        node.chmod(0o755)
+        npm_target = npm_tree / "npm-cli.js"
+        npm_target.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        npm_target.chmod(0o755)
+        npm_link = manager_bin / "npm"
+        npm_link.symlink_to(npm_target)
+
+        environment = {"PATH": str(manager_bin)}
+        with patch("olcr_api.package_manager._prepared_node_bin", return_value=None), \
+                patch("olcr_api.package_manager._known_package_manager_dirs", return_value=[]):
+            resolved = _resolve_package_manager("npm", environment)
+
+        self.assertEqual(str(npm_link), resolved)
+        self.assertEqual(str(manager_bin), environment["PATH"].split(os.pathsep)[0])
+
+    def test_missing_package_manager_fails_before_attempting_a_process(self):
+        with patch.dict(os.environ, {"PATH": ""}), \
+                patch("olcr_api.package_manager._known_package_manager_dirs", return_value=[]), \
+                patch("olcr_api.node_mcp_runtime.runtime_root", return_value=None):
+            with self.assertRaises(PackageManagerError) as caught:
+                self.executor().install(
+                    workspace_root=self.root, package_manager="npm", packages=["react"],
+                    authorized_packages=["react"])
+
+        self.assertEqual("PACKAGE_MANAGER_UNAVAILABLE", caught.exception.failure_class)
+        self.assertFalse(caught.exception.details["evidence"]["process_started"])
+        self.assertEqual([], self.calls)
 
     def test_package_not_in_canonical_requirements_is_rejected(self):
         with self.assertRaisesRegex(PackageManagerError, "canonical authorization"):

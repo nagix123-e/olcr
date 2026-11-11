@@ -17,6 +17,10 @@ def approved_plan(goal):
         "schema_version": 1,
         "original_goal": goal,
         "scope": {"allowed": ["workspace-a"], "forbidden": []},
+        "file_manifest": [
+            {"path": "runtime_p1.txt", "action": "create", "owner_phase": "p1"},
+            {"path": "runtime_p2.txt", "action": "create", "owner_phase": "p2"},
+        ],
         "assumptions": [],
         "phases": [
             {

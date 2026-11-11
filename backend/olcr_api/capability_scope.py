@@ -35,7 +35,25 @@ def _scope(title: str) -> str:
 def _negative(text: str) -> bool:
     return bool(re.search(
         r"\b(?:do\s+not|don't|must\s+not|never|without|no)\b|\bnot\s+(?:implement|modify|add|introduce|use|create|call)\b|"
-        r"不要|なし|使わない|使用しない|実装しない|導入しない|追加しない|含めない|対象外|禁止", text, re.I))
+        r"不要|なし|使わない|(?:使用|利用|実装|導入|追加|作成|変更|修正|呼び出し)(?:は|を|などは)?(?:一切|絶対に|まったく)?(?:しない|せず|しません|行わない|行わず)|含めない|対象外|禁止", text, re.I))
+
+
+_REPOSITORY_PATH_ONLY = re.compile(
+    r"^(?:(?:[A-Za-z]:)?[/\\]|\.\.?[/\\])?"
+    r"[A-Za-z0-9_.@+-]+(?:[/\\][A-Za-z0-9_.@+-]+)+(?:[/\\])?(?::\d+)?$"
+)
+_REPOSITORY_FILENAME_ONLY = re.compile(
+    r"^[A-Za-z0-9_@+-]+\.(?:py|tsx?|jsx?|html|css|json|md|rs|swift|sh|toml|ya?ml)$", re.I
+)
+
+
+def _is_repository_path_only(text: str) -> bool:
+    value = text.strip()
+    quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in {"`", "'", '"'}
+    if quoted:
+        value = value[1:-1].strip()
+    return bool(_REPOSITORY_PATH_ONLY.fullmatch(value)
+                or (quoted and _REPOSITORY_FILENAME_ONLY.fullmatch(value)))
 
 
 def parse_prompt_blocks(text: str) -> list[PromptBlock]:
@@ -130,6 +148,21 @@ def capability_evidence(text: str, aliases: dict[str, str]) -> list[dict]:
                 candidates = [(name, "capability") for name, pattern in aliases.items() if re.search(pattern, target_text, re.I)]
                 candidates += [(name, "technology") for name, pattern in _TECHNOLOGIES.items() if re.search(pattern, target_text, re.I)]
                 for name, category in candidates:
+                    # A bare repository path is a source location, not an
+                    # architectural request. Without this guard, a reference
+                    # such as `backend/olcr_api/app.py` becomes a positive
+                    # backend requirement and can falsely conflict with an
+                    # explicit "do not add a backend" constraint.
+                    if _is_repository_path_only(clause):
+                        evidence.append({"capability": name, "category": category,
+                            "polarity": "forbidden" if negative else "required",
+                            "source_scope": "current_user_text", "source_section": " > ".join(block.section_path),
+                            "section_path": list(block.section_path), "block_kind": block.block_kind,
+                            "semantic_scope": block.semantic_scope, "parent_polarity": block.polarity_context,
+                            "line_start": block.line_start, "line_end": block.line_end,
+                            "source_span_hash": hashlib.sha256(clause.encode()).hexdigest(),
+                            "reason": "REFERENCE_ONLY", "active_for_control": False, "decision": "IGNORED"})
+                        continue
                     # Package-manager and MCP policy prose can mention
                     # dependency/UI tokens without requesting or forbidding
                     # the capability itself. Keep that evidence visible for

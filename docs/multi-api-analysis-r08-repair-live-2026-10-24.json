@@ -1,0 +1,106 @@
+{
+  "execution_date": "2026-10-24 JST",
+  "verification": "real public API adapter calls; not post-fix GUI E2E",
+  "credentials": "Public EIA DEMO_KEY only; no saved secrets read by this verifier",
+  "results": [
+    {
+      "check": "fx",
+      "tool_id": "currency.frankfurter",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 3,
+      "request_complete": true,
+      "duration_seconds": 0.39
+    },
+    {
+      "check": "ghg",
+      "tool_id": "econ.worldbank",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 1,
+      "request_complete": true,
+      "duration_seconds": 21.11
+    },
+    {
+      "check": "trials",
+      "tool_id": "health.clinical_trials",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 0.39
+    },
+    {
+      "check": "uk",
+      "tool_id": "politics.uk_parliament",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 0.7
+    },
+    {
+      "check": "canada",
+      "tool_id": "politics.ca_openparliament",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 1.77
+    },
+    {
+      "check": "spending",
+      "tool_id": "gov.us_spending",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 1,
+      "request_complete": true,
+      "duration_seconds": 6.33
+    },
+    {
+      "check": "power",
+      "tool_id": "energy.us_eia",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 156,
+      "request_complete": true,
+      "duration_seconds": 0.78
+    },
+    {
+      "check": "hdx",
+      "tool_id": "humanitarian.hdx",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 0.79
+    },
+    {
+      "check": "unsc",
+      "tool_id": "sanctions.unsc",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 5.49
+    },
+    {
+      "check": "ofac",
+      "tool_id": "sanctions.us_ofac",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": false,
+      "duration_seconds": 4.0
+    },
+    {
+      "check": "github",
+      "tool_id": "dev.github",
+      "status": "ok",
+      "semantic_status": "DATA",
+      "row_count": 5,
+      "request_complete": true,
+      "duration_seconds": 0.46
+    }
+  ]
+}

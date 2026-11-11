@@ -1,0 +1,1762 @@
+[
+  {
+    "id": "overview",
+    "aliases": [
+      "使い方",
+      "操作方法",
+      "操作ガイド",
+      "ヘルプ",
+      "help",
+      "manual",
+      "getting started"
+    ],
+    "titles": {
+      "ja": "OLCRの使い方",
+      "en": "Using OLCR"
+    },
+    "questions": {
+      "ja": [
+        "OLCRの使い方を教えて",
+        "このアプリで何ができる？",
+        "OLCRの操作ガイドはある？",
+        "OLCRでは設定やツール操作をどこから始めればいい？"
+      ],
+      "en": [
+        "How do I get started with OLCR?",
+        "What can OLCR do?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/main.tsx"
+    ]
+  },
+  {
+    "id": "language",
+    "aliases": [
+      "言語",
+      "language",
+      "日本語",
+      "英語"
+    ],
+    "titles": {
+      "ja": "言語の変更",
+      "en": "Changing language"
+    },
+    "questions": {
+      "ja": [
+        "OLCRを日本語にするには？",
+        "UIの言語はどこで変える？",
+        "OLCRを英語表示に変える方法は？",
+        "画面表示を英語から日本語に切り替える設定はどこ？"
+      ],
+      "en": [
+        "How do I change the language in OLCR?",
+        "Where is the OLCR language setting?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/language.tsx"
+    ]
+  },
+  {
+    "id": "models",
+    "aliases": [
+      "モデル",
+      "brain",
+      "model",
+      "推論強度",
+      "effort",
+      "inference",
+      "coder",
+      "コーディングのモデル"
+    ],
+    "titles": {
+      "ja": "モデルの選択",
+      "en": "Choosing models"
+    },
+    "questions": {
+      "ja": [
+        "Brainのモデルはどこで選ぶ？",
+        "OLCRの推論強度はどう変える？",
+        "コーディングのモデルを変える方法は？",
+        "通常のチャットで使うモデルはどこで選べる？"
+      ],
+      "en": [
+        "How do I choose a Brain model?",
+        "Where do I adjust model effort in OLCR?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ModelsPanel.tsx"
+    ]
+  },
+  {
+    "id": "accounts",
+    "aliases": [
+      "アカウント",
+      "account",
+      "apiキー",
+      "api key",
+      "oauth",
+      "chatgpt",
+      "接続先"
+    ],
+    "titles": {
+      "ja": "APIアカウントの接続・追加",
+      "en": "Connecting API accounts"
+    },
+    "questions": {
+      "ja": [
+        "ChatGPTをOLCRにつなぐには？",
+        "APIアカウントの使い方を教えて",
+        "接続先の設定方法は？",
+        "ChatGPTのOAuth接続を設定する画面はどこ？"
+      ],
+      "en": [
+        "How do I connect my ChatGPT account to OLCR?",
+        "Where do I configure API accounts?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ProviderAccounts.tsx"
+    ]
+  },
+  {
+    "id": "voice",
+    "aliases": [
+      "音声入力",
+      "文字起こし",
+      "マイク",
+      "voice",
+      "dictation",
+      "transcription",
+      "録音"
+    ],
+    "titles": {
+      "ja": "音声入力",
+      "en": "Voice input"
+    },
+    "questions": {
+      "ja": [
+        "音声入力の使い方を教えて",
+        "録音を開始するには？",
+        "波形ボタンで音声入力を送る方法は？",
+        "録音した音声を文字にして入力するにはどう操作する？"
+      ],
+      "en": [
+        "How do I use voice input in OLCR?",
+        "How do I send a voice transcript?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatComposer.tsx"
+    ]
+  },
+  {
+    "id": "readout",
+    "aliases": [
+      "読み上げ",
+      "read aloud",
+      "tts",
+      "speech output",
+      "回答を声に出"
+    ],
+    "titles": {
+      "ja": "回答の読み上げ",
+      "en": "Read aloud"
+    },
+    "questions": {
+      "ja": [
+        "OLCRの読み上げはどこ？",
+        "回答を読み上げる方法は？",
+        "読み上げに使うモデルを教えて",
+        "OLCRの回答を声に出して再生する設定はどこ？"
+      ],
+      "en": [
+        "How do I enable read aloud?",
+        "Which model does read aloud use?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/readAloud.ts"
+    ]
+  },
+  {
+    "id": "thinking",
+    "aliases": [
+      "thinking",
+      "思考",
+      "思考ログ",
+      "thinking log",
+      "ゼロ",
+      "max"
+    ],
+    "titles": {
+      "ja": "Thinkingとログ",
+      "en": "Thinking and logs"
+    },
+    "questions": {
+      "ja": [
+        "Thinkingの使い方を教えて",
+        "思考をMAXにするには？",
+        "思考の自動とゼロの違いは？",
+        "応答を生成中の思考ログを表示するにはどうする？"
+      ],
+      "en": [
+        "How do I use Thinking in OLCR?",
+        "What does MAX thinking mean?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/thinking.py"
+    ]
+  },
+  {
+    "id": "quick",
+    "aliases": [
+      "quick",
+      "fast mode",
+      "高速モード",
+      "稲妻",
+      "speed"
+    ],
+    "titles": {
+      "ja": "Quickモード",
+      "en": "Quick mode"
+    },
+    "questions": {
+      "ja": [
+        "Quickモードの使い方は？",
+        "OLCRの稲妻は何？",
+        "Quickはどこでオンにする？",
+        "使えるAPIでQuickの高速応答を切り替える操作は？"
+      ],
+      "en": [
+        "How do I enable Quick?",
+        "What is fast mode in OLCR?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/brain_providers.py"
+    ]
+  },
+  {
+    "id": "agents",
+    "aliases": [
+      "エージェント",
+      "agent",
+      "カスタム"
+    ],
+    "titles": {
+      "ja": "カスタムエージェント",
+      "en": "Custom agents"
+    },
+    "questions": {
+      "ja": [
+        "カスタムエージェントを使うには？",
+        "エージェントの作り方を教えて",
+        "エージェントのアイコンを設定する方法は？",
+        "カスタムエージェントを作って、そのエージェントとの会話を始めるには？"
+      ],
+      "en": [
+        "How do I create a custom agent?",
+        "How do I change an agent icon?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/CustomAgents.tsx"
+    ]
+  },
+  {
+    "id": "skills",
+    "aliases": [
+      "スキル",
+      "skills",
+      "/skill"
+    ],
+    "titles": {
+      "ja": "Skillsの表示と利用",
+      "en": "Viewing and using Skills"
+    },
+    "questions": {
+      "ja": [
+        "OLCRのSkillsはどこ？",
+        "スキルの見方を教えて",
+        "Skillsの画面から戻るには？"
+      ],
+      "en": [
+        "Where is the Skills screen?",
+        "How do I browse installed skills?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/SkillsLibrary.tsx"
+    ]
+  },
+  {
+    "id": "projects",
+    "aliases": [
+      "プロジェクト",
+      "作業フォルダ",
+      "project",
+      "workspace",
+      "working folder"
+    ],
+    "titles": {
+      "ja": "プロジェクトと作業フォルダー",
+      "en": "Projects and folders"
+    },
+    "questions": {
+      "ja": [
+        "OLCRの作業フォルダーの設定方法は？",
+        "プロジェクトの使い方は？",
+        "作業フォルダを指定するには？",
+        "プロジェクトを作って既存の作業フォルダを選ぶには？"
+      ],
+      "en": [
+        "How do I choose a project workspace?",
+        "What is the working folder in OLCR?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/main.tsx"
+    ]
+  },
+  {
+    "id": "coding",
+    "aliases": [
+      "コーディング",
+      "実装",
+      "オーケストレーター",
+      "coding",
+      "resume",
+      "再開",
+      "続行",
+      "修正指示"
+    ],
+    "titles": {
+      "ja": "コーディングと再開",
+      "en": "Coding and resuming"
+    },
+    "questions": {
+      "ja": [
+        "コーディングオーケストレーターの使い方は？",
+        "OLCRで実装を頼む方法は？",
+        "コーディングの検証結果はどこ？",
+        "コーディングを依頼した後、進捗や変更ファイルを確認するには？"
+      ],
+      "en": [
+        "How do I request coding work in OLCR?",
+        "Where are coding verification results?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/app.py"
+    ]
+  },
+  {
+    "id": "permissions",
+    "aliases": [
+      "権限",
+      "permission",
+      "外部アクセス",
+      "external access",
+      "フルアクセス",
+      "アクセシビリティ権限",
+      "画面収録の権限"
+    ],
+    "titles": {
+      "ja": "操作権限",
+      "en": "Permissions"
+    },
+    "questions": {
+      "ja": [
+        "OLCRの権限設定はどこ？",
+        "外部アクセスをオンにするには？",
+        "フルアクセスの操作方法を教えて",
+        "OLCRの画面収録とアクセシビリティ権限はどこで許可する？"
+      ],
+      "en": [
+        "How do I enable external access?",
+        "Where are OLCR permissions?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatSettingsCard.tsx"
+    ]
+  },
+  {
+    "id": "github",
+    "aliases": [
+      "github",
+      "git",
+      "コミット",
+      "ステージ",
+      "プッシュ",
+      "commit",
+      "push"
+    ],
+    "titles": {
+      "ja": "GitHub連携とGit操作",
+      "en": "GitHub and Git"
+    },
+    "questions": {
+      "ja": [
+        "GitHubを接続するには？",
+        "OLCRでコミットする方法は？",
+        "ステージとプッシュの使い方は？"
+      ],
+      "en": [
+        "How do I connect GitHub?",
+        "How do I stage and commit changes in OLCR?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/GitHubSettings.tsx"
+    ]
+  },
+  {
+    "id": "youtube",
+    "aliases": [
+      "youtube",
+      "動画",
+      "音楽",
+      "再生",
+      "全画面",
+      "video",
+      "music",
+      "fullscreen"
+    ],
+    "titles": {
+      "ja": "YouTubeの検索と再生",
+      "en": "YouTube search and playback"
+    },
+    "questions": {
+      "ja": [
+        "YouTubeで動画を見る方法は？",
+        "OLCRで音楽を探すには？",
+        "動画のサムネイル候補はどう選ぶ？"
+      ],
+      "en": [
+        "How do I search YouTube in OLCR?",
+        "How do I select video thumbnails?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/AssistantActions.tsx"
+    ]
+  },
+  {
+    "id": "calendar",
+    "aliases": [
+      "カレンダー",
+      "calendar",
+      "予定",
+      "スケジュール"
+    ],
+    "titles": {
+      "ja": "Macのカレンダー接続",
+      "en": "Mac Calendar connection"
+    },
+    "questions": {
+      "ja": [
+        "OLCRのカレンダーの使い方は？",
+        "Macの予定を確認するには？",
+        "Googleカレンダー用のAPI発行は必要ですか？"
+      ],
+      "en": [
+        "How do I connect Mac Calendar?",
+        "How do I list calendar events?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/apple_calendar.py"
+    ]
+  },
+  {
+    "id": "timers",
+    "aliases": [
+      "タイマー",
+      "timer",
+      "アラーム",
+      "alarm",
+      "目覚まし"
+    ],
+    "titles": {
+      "ja": "タイマーとアラーム",
+      "en": "Timers and alarms"
+    },
+    "questions": {
+      "ja": [
+        "タイマーを使うには？",
+        "タイマーの一時停止方法は？",
+        "タイマーを一覧で見る方法は？",
+        "時刻を指定したアラームの設定方法は？",
+        "タイマーが切れたら通知される？",
+        "タイマーの残り時間と通知をチャットで確認するには？"
+      ],
+      "en": [
+        "How do I pause a timer?",
+        "Where can I list timers?",
+        "How do I set an alarm at a specific time?",
+        "Will a timer send a notification?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/assistant_actions.py",
+      "frontend/src/AssistantActions.tsx",
+      "frontend/src/assistantBridge.ts",
+      "desktop/src-tauri/src/assistant_notifications.rs"
+    ]
+  },
+  {
+    "id": "files",
+    "aliases": [
+      "添付",
+      "ファイルリンク",
+      "ファイル変換",
+      "csv",
+      "attachment",
+      "file link",
+      "convert",
+      "attach a file",
+      "attach files",
+      "attachment"
+    ],
+    "titles": {
+      "ja": "添付ファイルとファイルリンク",
+      "en": "Attachments and file links"
+    },
+    "questions": {
+      "ja": [
+        "OLCRで添付する方法は？",
+        "CSVに変換するには？",
+        "添付画像を読み取る方法は？",
+        "画像をメッセージに添付して送信する手順は？"
+      ],
+      "en": [
+        "How do I attach a file?",
+        "How do I convert an attachment to CSV?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/main.tsx"
+    ]
+  },
+  {
+    "id": "editing",
+    "aliases": [
+      "メッセージ編集",
+      "回答停止",
+      "生成停止",
+      "stop generation",
+      "edit message",
+      "edit a message",
+      "edit message",
+      "edit my message",
+      "メッセージを編集",
+      "送信済みメッセージ"
+    ],
+    "titles": {
+      "ja": "メッセージ編集と生成停止",
+      "en": "Editing messages and stopping generation"
+    },
+    "questions": {
+      "ja": [
+        "OLCRのメッセージ編集はどこ？",
+        "回答停止の操作方法は？",
+        "生成停止はどうする？",
+        "OLCRで送信済みメッセージを編集するには？"
+      ],
+      "en": [
+        "How do I edit a message?",
+        "How do I stop generation?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/main.tsx"
+    ]
+  },
+  {
+    "id": "vision",
+    "aliases": [
+      "画像理解",
+      "画像認識",
+      "vision",
+      "画像モデル",
+      "image understanding"
+    ],
+    "titles": {
+      "ja": "画像理解モデルの設定",
+      "en": "Configuring vision models"
+    },
+    "questions": {
+      "ja": [
+        "画像理解モデルを選ぶには？",
+        "Visionの設定はどこ？",
+        "画像認識の対応モデルを選ぶ方法は？"
+      ],
+      "en": [
+        "How do I choose a vision model?",
+        "Where do I configure image understanding?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/PurposeModelsPanel.tsx"
+    ]
+  },
+  {
+    "id": "routines",
+    "aliases": [
+      "ルーチン",
+      "routine"
+    ],
+    "titles": {
+      "ja": "ルーチンの記録",
+      "en": "Routine evidence"
+    },
+    "questions": {
+      "ja": [
+        "ルーチン画面はどこ？",
+        "ルーチン候補の見方は？",
+        "ルーチンの承認は何をする？",
+        "決まった処理をルーチンとして登録して後から実行するには？"
+      ],
+      "en": [
+        "How do I open routines?",
+        "Does routine approval execute it?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/RoutinePanel.tsx"
+    ]
+  },
+  {
+    "id": "scraping",
+    "aliases": [
+      "スクレイピング",
+      "ウェブ収集",
+      "scraping",
+      "scrape"
+    ],
+    "titles": {
+      "ja": "ウェブ収集の管理",
+      "en": "Managing web scraping"
+    },
+    "questions": {
+      "ja": [
+        "スクレイピング管理を開く方法は？",
+        "ウェブ収集の件数を指定するには？",
+        "スクレイピング結果の見方を教えて"
+      ],
+      "en": [
+        "How do I manage scraping?",
+        "How do I specify fields for web scraping?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ScrapeStudio.tsx"
+    ]
+  },
+  {
+    "id": "computeruse",
+    "aliases": [
+      "コンピューター操作",
+      "computer use",
+      "画面操作",
+      "アクセシビリティ",
+      "screen control"
+    ],
+    "titles": {
+      "ja": "Macのアプリ操作",
+      "en": "Controlling Mac apps"
+    },
+    "questions": {
+      "ja": [
+        "Macの画面操作の使い方は？",
+        "コンピューター操作はどう始める？",
+        "アクセシビリティの許可はどこ？"
+      ],
+      "en": [
+        "How do I enable computer use?",
+        "How do I choose the app for screen control?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/AccessibilityPanel.tsx"
+    ]
+  },
+  {
+    "id": "settings",
+    "aliases": [
+      "設定画面",
+      "設定の開き方",
+      "settings",
+      "オプション",
+      "/option"
+    ],
+    "titles": {
+      "ja": "設定画面の開き方",
+      "en": "Opening Settings"
+    },
+    "questions": {
+      "ja": [
+        "OLCRの設定画面はどこ？",
+        "設定の開き方を教えて",
+        "OLCRのオプションはどう変更する？"
+      ],
+      "en": [
+        "Where are Settings in OLCR?",
+        "How do I open the OLCR settings?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatSettingsCard.tsx"
+    ]
+  },
+  {
+    "id": "voice-permission",
+    "parent": "voice",
+    "titles": {
+      "ja": "録音が開始できないとき",
+      "en": "When recording will not start"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "音声入力",
+        "録音",
+        "マイク",
+        "voice",
+        "recording",
+        "microphone"
+      ],
+      [
+        "できない",
+        "使えない",
+        "始まらない",
+        "権限",
+        "許可",
+        "cannot",
+        "not start",
+        "permission"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "音声入力のマイク権限はどこ？",
+        "録音が始まらないときは？"
+      ],
+      "en": [
+        "Why can recording not start?",
+        "Where is microphone permission?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatComposer.tsx"
+    ]
+  },
+  {
+    "id": "voice-provider",
+    "parent": "voice",
+    "titles": {
+      "ja": "macOSとLFMの切り替え",
+      "en": "Switching macOS and LFM transcription"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "音声入力",
+        "文字起こし",
+        "transcription",
+        "voice"
+      ],
+      [
+        "macos",
+        "lfm",
+        "切り替",
+        "方式",
+        "provider",
+        "switch"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "文字起こしをmacOSに切り替える方法は？",
+        "音声入力のLFMとmacOSはどう変える？"
+      ],
+      "en": [
+        "How do I switch transcription to macOS?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatSettingsCard.tsx"
+    ]
+  },
+  {
+    "id": "audio-download",
+    "parent": "voice",
+    "titles": {
+      "ja": "音声モデルの初回ダウンロード",
+      "en": "First-use audio download"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "lfm",
+        "音声モデル",
+        "audio model"
+      ],
+      [
+        "ダウンロード",
+        "初回",
+        "download",
+        "first"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "LFMの初回ダウンロードはどうする？",
+        "音声モデルを日本語にすると再ダウンロードが必要？"
+      ],
+      "en": [
+        "How does the first LFM audio model download work?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/audio_transcription.py"
+    ]
+  },
+  {
+    "id": "handsfree",
+    "parent": "voice",
+    "titles": {
+      "ja": "ハンズフリーモードの使い分け",
+      "en": "Hands-free mode"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "ハンズフリー",
+        "hands-free",
+        "handsfree"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "ハンズフリーモードはどこで切り替える？",
+        "ハンズフリーをやめる方法は？"
+      ],
+      "en": [
+        "How do I turn hands-free mode off?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/HandsFreePanel.tsx"
+    ]
+  },
+  {
+    "id": "thinking-missing",
+    "parent": "thinking",
+    "titles": {
+      "ja": "Thinkingオンでもログがない理由",
+      "en": "Missing thinking logs"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "thinking",
+        "思考",
+        "思考ログ",
+        "thinking log"
+      ],
+      [
+        "出ない",
+        "ない",
+        "見えない",
+        "表示",
+        "missing",
+        "no log",
+        "not show"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "Thinkingオンなのにログが出ないのはなぜ？",
+        "思考ログが表示されない理由を教えて"
+      ],
+      "en": [
+        "Why are thinking logs missing when enabled?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/thinking.py"
+    ]
+  },
+  {
+    "id": "quick-missing",
+    "parent": "quick",
+    "titles": {
+      "ja": "稲妻が表示されない・速度が変わらない",
+      "en": "Quick availability and speed"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "quick",
+        "稲妻",
+        "fast mode"
+      ],
+      [
+        "出ない",
+        "ない",
+        "表示",
+        "遅い",
+        "速度",
+        "料金",
+        "missing",
+        "speed",
+        "cost"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "ローカルモデルにQuickの稲妻がないのはなぜ？",
+        "Quickにしても速度が変わらないのは？"
+      ],
+      "en": [
+        "Why is the Quick lightning button missing?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/brain_providers.py"
+    ]
+  },
+  {
+    "id": "fallback-order",
+    "parent": "models",
+    "titles": {
+      "ja": "アカウントとモデルのフォールバックの違い",
+      "en": "Account versus model fallback"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "フォールバック",
+        "fallback",
+        "代替モデル",
+        "replacement model"
+      ],
+      [
+        "順",
+        "アカウント",
+        "モデル",
+        "order",
+        "account",
+        "model"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "フォールバックはアカウントとモデルどちらが先？",
+        "代替モデルの順序はどこで変える？"
+      ],
+      "en": [
+        "What is the account and model fallback order?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/model_provider.py"
+    ]
+  },
+  {
+    "id": "account-slots",
+    "parent": "accounts",
+    "titles": {
+      "ja": "アカウント追加と3枠の上限",
+      "en": "Account slots and limits"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "アカウント",
+        "account"
+      ],
+      [
+        "追加",
+        "3",
+        "三",
+        "上限",
+        "add",
+        "limit",
+        "slot"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "アカウントを4つ追加できますか？",
+        "アカウント追加の上限はいくつ？"
+      ],
+      "en": [
+        "How many account slots can I add?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ProviderAccounts.tsx"
+    ]
+  },
+  {
+    "id": "keychain",
+    "parent": "accounts",
+    "titles": {
+      "ja": "保存済みキーと再接続",
+      "en": "Saved credentials and reconnection"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "キー",
+        "keychain",
+        "キーチェーン",
+        "credential",
+        "api key"
+      ],
+      [
+        "保存",
+        "再入力",
+        "復元",
+        "変更",
+        "saved",
+        "restore",
+        "change"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "APIキーは毎回再入力する必要がありますか？",
+        "保存済みキーを変更する方法は？"
+      ],
+      "en": [
+        "Can I leave the saved API key blank when editing?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/brainModels.ts"
+    ]
+  },
+  {
+    "id": "local-unavailable",
+    "parent": "models",
+    "titles": {
+      "ja": "ローカルモデルが選べないとき",
+      "en": "Unavailable local models"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "ローカルモデル",
+        "local model",
+        "ollama",
+        "mlx"
+      ],
+      [
+        "使えない",
+        "選べない",
+        "表示されない",
+        "unavailable",
+        "cannot",
+        "not listed"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "ローカルモデルが選べないときはどうする？",
+        "Ollamaのモデルが表示されない理由は？"
+      ],
+      "en": [
+        "What should I check when a local model is unavailable?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/brain_models.py"
+    ]
+  },
+  {
+    "id": "context-length",
+    "parent": "models",
+    "titles": {
+      "ja": "長い会話・YaRN・自動圧縮",
+      "en": "Long context, YaRN and compression"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "コンテキスト",
+        "コンテクスト",
+        "yarn",
+        "圧縮",
+        "context",
+        "compression"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "YaRNと自動圧縮はどこで設定する？",
+        "長い会話のコンテキストを増やす方法は？"
+      ],
+      "en": [
+        "How do YaRN and context compression differ?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ContextExtensionSettings.tsx"
+    ]
+  },
+  {
+    "id": "rag-controls",
+    "parent": "models",
+    "titles": {
+      "ja": "参考資料が回答に入らないとき",
+      "en": "Retrieval relevance controls"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "rag",
+        "関連度",
+        "参考資料",
+        "retrieval",
+        "relevance"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "RAGの関連度を変えるには？",
+        "参考資料が回答に入らないときはどうする？"
+      ],
+      "en": [
+        "Where do I change RAG relevance controls?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/RetrievalSettings.tsx"
+    ]
+  },
+  {
+    "id": "web-search",
+    "parent": "settings",
+    "titles": {
+      "ja": "ウェブ検索の設定",
+      "en": "Web search configuration"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "ウェブ検索",
+        "web search",
+        "brave",
+        "tavily"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "ウェブ検索のmanualとautoの違いは？",
+        "Braveのキーはどこで設定する？"
+      ],
+      "en": [
+        "How do I configure Web search and its mode?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/WebSettings.tsx"
+    ]
+  },
+  {
+    "id": "mcp-check",
+    "parent": "settings",
+    "titles": {
+      "ja": "MCP接続確認の意味",
+      "en": "Checking MCP connections"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "mcp"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "MCPの接続確認はツールも実行する？",
+        "MCP接続に失敗したときはどこを見る？"
+      ],
+      "en": [
+        "Does an MCP connection check execute tools?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/MCPConnectionsSettings.tsx"
+    ]
+  },
+  {
+    "id": "agent-knowledge",
+    "parent": "agents",
+    "titles": {
+      "ja": "エージェントの知識とモデル",
+      "en": "Agent knowledge and model roles"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "エージェント",
+        "agent"
+      ],
+      [
+        "知識",
+        "knowledge",
+        "画像モデル",
+        "vision model"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "エージェントの画像モデルと回答モデルは同じ？",
+        "エージェントの知識は全部毎回読まれる？"
+      ],
+      "en": [
+        "Are agent knowledge and vision models separate?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/custom_agent_runtime.py"
+    ]
+  },
+  {
+    "id": "agent-image-error",
+    "parent": "agents",
+    "titles": {
+      "ja": "画像付きエージェントが失敗するとき",
+      "en": "Image agent failures"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "エージェント",
+        "agent"
+      ],
+      [
+        "画像",
+        "image"
+      ],
+      [
+        "失敗",
+        "エラー",
+        "読めない",
+        "failure",
+        "error",
+        "cannot"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "画像付きエージェントがエラーになる原因は？",
+        "エージェントで画像を読めないときは？"
+      ],
+      "en": [
+        "What should I check for an image agent error?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/custom_agent_api.py"
+    ]
+  },
+  {
+    "id": "coding-console",
+    "parent": "coding",
+    "titles": {
+      "ja": "コーディングカードを閉じた後の再開",
+      "en": "Resuming after closing the coding card"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "コーディング",
+        "オーケストレーター",
+        "coding"
+      ],
+      [
+        "閉じ",
+        "消し",
+        "消え",
+        "再開",
+        "close",
+        "dismiss",
+        "resume"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "コーディングのカードを消したらどう再開する？",
+        "オーケストレーターを閉じても続きは残る？"
+      ],
+      "en": [
+        "How do I resume coding after closing the card?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/app.py"
+    ]
+  },
+  {
+    "id": "coding-followup",
+    "parent": "coding",
+    "titles": {
+      "ja": "実装中の追加・修正指示",
+      "en": "Steering coding work"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "コーディング",
+        "実装",
+        "coding"
+      ],
+      [
+        "追加指示",
+        "修正指示",
+        "途中",
+        "follow-up",
+        "steer",
+        "follow up"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "実装途中の追加指示はどう送る？",
+        "コーディングの修正指示と過去メッセージ編集は同じ？"
+      ],
+      "en": [
+        "How do I send a coding follow-up instruction?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/ChatComposer.tsx"
+    ]
+  },
+  {
+    "id": "calendar-denied",
+    "parent": "calendar",
+    "titles": {
+      "ja": "カレンダー接続を拒否した場合",
+      "en": "Denied Calendar access"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "カレンダー",
+        "calendar"
+      ],
+      [
+        "拒否",
+        "権限",
+        "許可",
+        "接続できない",
+        "denied",
+        "permission",
+        "cannot connect"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "カレンダーの権限を拒否した後はどうする？",
+        "カレンダーに接続できないときの許可はどこ？"
+      ],
+      "en": [
+        "How do I recover denied Calendar permission?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/AssistantSettings.tsx"
+    ]
+  },
+  {
+    "id": "calendar-write",
+    "parent": "calendar",
+    "titles": {
+      "ja": "予定の書き込みと確認",
+      "en": "Calendar write review"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "カレンダー",
+        "calendar",
+        "予定"
+      ],
+      [
+        "削除",
+        "変更",
+        "書き込",
+        "読み取り専用",
+        "確認",
+        "delete",
+        "write",
+        "read-only",
+        "review"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "予定を削除する前に確認はある？",
+        "カレンダーが読み取り専用のとき変更できますか？",
+        "OLCRからカレンダーに予定を書き込む前に内容を確認する方法は？"
+      ],
+      "en": [
+        "Can I write to a read-only calendar?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/apple_calendar.py"
+    ]
+  },
+  {
+    "id": "youtube-setup",
+    "parent": "youtube",
+    "titles": {
+      "ja": "YouTubeと検索APIキーの違い",
+      "en": "YouTube versus Web search setup"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "youtube",
+        "動画"
+      ],
+      [
+        "キー",
+        "設定",
+        "接続",
+        "key",
+        "setup",
+        "connect"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "YouTubeにAPIキー設定は必要？",
+        "動画を見る前にYouTube接続が必要ですか？"
+      ],
+      "en": [
+        "Does YouTube require an API key or setup?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/assistant_integrations.py"
+    ]
+  },
+  {
+    "id": "youtube-playback",
+    "parent": "youtube",
+    "titles": {
+      "ja": "再生できない・全画面から戻る",
+      "en": "Playback and fullscreen recovery"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "youtube",
+        "動画",
+        "再生",
+        "video",
+        "playback",
+        "fullscreen"
+      ],
+      [
+        "できない",
+        "全画面",
+        "戻",
+        "autoplay",
+        "blocked",
+        "cannot",
+        "fullscreen",
+        "return"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "動画が自動再生できないときは？",
+        "YouTubeの全画面から戻る方法は？",
+        "YouTube動画を全画面表示してOLCRに戻るにはどうする？"
+      ],
+      "en": [
+        "How do I return from fullscreen playback?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/AssistantActions.tsx"
+    ]
+  },
+  {
+    "id": "readout-stop",
+    "parent": "readout",
+    "titles": {
+      "ja": "読み上げを止める・録音との違い",
+      "en": "Stopping read aloud versus recording"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "読み上げ",
+        "read aloud",
+        "readout"
+      ],
+      [
+        "止",
+        "停止",
+        "オフ",
+        "音声入力",
+        "stop",
+        "off",
+        "voice"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "読み上げだけ止めるには？",
+        "読み上げをオフにすると音声入力も止まる？"
+      ],
+      "en": [
+        "How do I stop read aloud without changing voice input?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/readAloud.ts"
+    ]
+  },
+  {
+    "id": "skills-usage",
+    "parent": "skills",
+    "titles": {
+      "ja": "スキル一覧と/skill実行の違い",
+      "en": "Skill browsing versus execution"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "スキル",
+        "skill"
+      ],
+      [
+        "一覧",
+        "登録",
+        "/skill",
+        "使",
+        "list",
+        "use",
+        "register",
+        "listing",
+        "using"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "スキル一覧にあるだけで使われるの？",
+        "/skillの使い方を教えて",
+        "登録済みのスキルを作業依頼に使うにはどう入力する？"
+      ],
+      "en": [
+        "What is the difference between listing and using a skill?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/SkillsLibrary.tsx"
+    ]
+  },
+  {
+    "id": "projectless",
+    "parent": "projects",
+    "titles": {
+      "ja": "プロジェクトなしでできること",
+      "en": "Working without a project"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "プロジェクト",
+        "project"
+      ],
+      [
+        "なし",
+        "不要",
+        "必要",
+        "without",
+        "need",
+        "no project"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "プロジェクトなしでエージェントは使える？",
+        "質問するだけでもプロジェクトは必要？"
+      ],
+      "en": [
+        "Do I need a project to use an agent?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/custom_agent_api.py"
+    ]
+  },
+  {
+    "id": "git-review",
+    "parent": "github",
+    "titles": {
+      "ja": "Git操作の確認と自律実行",
+      "en": "Git review and autonomy"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "git",
+        "github",
+        "プッシュ",
+        "コミット"
+      ],
+      [
+        "確認",
+        "自律",
+        "しない",
+        "review",
+        "autonom",
+        "not push"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "Gitの自律実行をオフにすると確認できる？",
+        "GitHubにプッシュしないよう指定できますか？",
+        "GitHubで変更をプッシュする前に内容を確認する設定は？"
+      ],
+      "en": [
+        "Can I review Git actions before pushing?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/GitHubSettings.tsx"
+    ]
+  },
+  {
+    "id": "file-links",
+    "parent": "files",
+    "titles": {
+      "ja": "空白入りファイルパスとリンク",
+      "en": "Paths with spaces and file links"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "ファイル",
+        "パス",
+        "リンク",
+        "file",
+        "path"
+      ],
+      [
+        "空白",
+        "開けない",
+        "リンク",
+        "space",
+        "open",
+        "link"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "空白入りのファイルリンクは開ける？",
+        "ファイルリンクを押しても開けない場合は？"
+      ],
+      "en": [
+        "How do file links handle spaces in paths?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/main.tsx"
+    ]
+  },
+  {
+    "id": "network-error",
+    "parent": "settings",
+    "titles": {
+      "ja": "通信エラーと処理失敗の切り分け",
+      "en": "Network versus processing failures"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "network_error",
+        "http_502",
+        "http_500",
+        "通信エラー",
+        "ネットワークエラー"
+      ],
+      [
+        "意味",
+        "原因",
+        "対処",
+        "どう",
+        "なぜ",
+        "what",
+        "why",
+        "how"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "NETWORK_ERRORの原因はネットだけ？",
+        "HTTP_502の意味と対処を教えて"
+      ],
+      "en": [
+        "What does NETWORK_ERROR mean in OLCR?"
+      ]
+    },
+    "implementation_sources": [
+      "frontend/src/api.ts"
+    ]
+  },
+  {
+    "id": "help-offline",
+    "parent": "overview",
+    "titles": {
+      "ja": "操作ガイドが答える範囲",
+      "en": "Operation help availability"
+    },
+    "aliases": [],
+    "match_all": [
+      [
+        "操作ガイド",
+        "内蔵ガイド",
+        "operation help",
+        "bundled help"
+      ],
+      [
+        "オフライン",
+        "モデル",
+        "範囲",
+        "offline",
+        "model",
+        "cover"
+      ]
+    ],
+    "questions": {
+      "ja": [
+        "操作ガイドはモデルなしのオフラインでも答える？",
+        "内蔵ガイドが答える範囲は？"
+      ],
+      "en": [
+        "Does operation help work offline without a model?"
+      ]
+    },
+    "implementation_sources": [
+      "backend/olcr_api/operation_help.py"
+    ]
+  }
+]

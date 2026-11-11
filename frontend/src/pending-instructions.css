@@ -1,0 +1,20 @@
+.pending-instructions{flex:none;width:min(820px,100%);align-self:center;max-height:min(260px,25vh);overflow:auto;overscroll-behavior:contain;margin:10px 0;padding:12px 14px;border:1px solid var(--olcr-border);border-radius:var(--radius-md);background:var(--olcr-surface);font-size:13px}
+.pending-instructions h3{display:flex;align-items:center;gap:8px;font-size:13px;margin:0 0 8px}
+.pending-instructions h3 span{color:var(--olcr-text-secondary);font-weight:400;font-variant-numeric:tabular-nums}
+.pending-instructions ul{list-style:none;padding:0;margin:0}
+.pending-instructions li+li{border-top:1px solid var(--olcr-border);margin-top:12px;padding-top:12px}
+.pending-instructions small,.pending-instructions>p{font-size:12px;color:var(--olcr-text-secondary)}
+.pending-instructions p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;line-height:1.6}
+.pending-instruction-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pending-instruction-actions button,.composer .coding-followup-controls .one-off-steer{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 9px;border:1px solid var(--olcr-border-strong);border-radius:8px;background:var(--olcr-surface);color:var(--olcr-text-primary);font-size:12px;font-weight:500}
+.pending-instruction-actions button:hover,.composer .coding-followup-controls .one-off-steer:hover{background:#f1f8e9}
+.pending-instruction-actions button:disabled,.composer .coding-followup-controls .one-off-steer:disabled{opacity:.5;cursor:not-allowed}
+.pending-instructions :is(button,textarea):focus-visible,.composer .coding-followup-controls .one-off-steer:focus-visible{outline:2px solid var(--olcr-text-primary);outline-offset:2px}
+.pending-instruction-actions button:active:not(:disabled),.composer .coding-followup-controls .one-off-steer:active:not(:disabled){transform:scale(.96)}
+.coding-followup-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px}
+.composer .coding-followup-controls .one-off-steer{position:static;box-shadow:none;transform:none}
+.coding-followup-controls .coding-followup-mode{margin:0}
+.instruction-notice{font-size:12px;color:var(--olcr-text-secondary);line-height:1.6;margin:6px 0}
+@media(prefers-reduced-motion:reduce){.pending-instruction-actions button:active:not(:disabled),.composer .coding-followup-controls .one-off-steer:active:not(:disabled){transform:none}}
+
+@media(max-width:700px),(max-height:760px){.pending-instructions{max-height:140px}}

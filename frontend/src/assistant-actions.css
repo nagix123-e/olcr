@@ -1,0 +1,25 @@
+.assistant-action{max-width:760px;margin:12px 0;padding:16px;border:1px solid var(--olcr-border);border-radius:12px;background:var(--olcr-surface);color:var(--olcr-text-primary);font-size:13px}
+.assistant-action p{margin:8px 0}.assistant-action button,.assistant-settings button{border:1px solid var(--olcr-border-strong);border-radius:9px;padding:8px 12px;background:var(--olcr-surface);color:var(--olcr-text-primary);cursor:pointer;font:inherit}.assistant-action button:disabled,.assistant-settings button:disabled{opacity:.55;cursor:default}.assistant-action .primary{background:var(--olcr-accent)}
+.assistant-action-heading,.assistant-setting-status{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.assistant-action-heading>span{color:var(--olcr-text-secondary);font-size:12px}.assistant-setting-status{justify-content:flex-start}
+.assistant-action-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.assistant-countdown{display:block;font-size:28px;font-variant-numeric:tabular-nums;margin:12px 0}.assistant-timer+.assistant-timer{border-top:1px solid var(--olcr-border);margin-top:14px;padding-top:14px}
+.assistant-action label,.assistant-settings form label{display:grid;gap:6px;margin:10px 0}.assistant-action input,.assistant-action select,.assistant-settings input,.assistant-settings select{width:100%;min-width:0;padding:9px 11px;border:1px solid var(--olcr-border-strong);border-radius:8px;background:var(--olcr-surface);color:var(--olcr-text-primary);font:inherit}.assistant-datetime-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.assistant-calendar-action>small{display:block;overflow-wrap:anywhere;margin:8px 0;color:var(--olcr-text-secondary)}
+.assistant-calendar-events ul{list-style:none;padding:0;margin:0}.assistant-calendar-events li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--olcr-border)}.assistant-calendar-events li>div:first-child{display:grid;gap:4px}.assistant-calendar-events li span{color:var(--olcr-text-secondary)}
+.assistant-youtube-player{display:block;width:100%;height:clamp(220px,35vw,390px);min-height:200px;border:0;border-radius:8px;background:#000}.assistant-action [role=alert],.assistant-settings [role=alert]{color:var(--olcr-error,#a3322c)}
+.assistant-action button:focus-visible,.assistant-action input:focus-visible,.assistant-action select:focus-visible,.assistant-settings button:focus-visible,.assistant-settings input:focus-visible,.assistant-settings select:focus-visible{outline:3px solid #95e32966;outline-offset:2px}
+@media(max-width:600px){.assistant-datetime-fields{grid-template-columns:1fr}.assistant-calendar-events li{align-items:flex-start;flex-direction:column}}
+
+.assistant-action .destructive{color:var(--olcr-error,#a3322c);background:var(--olcr-surface)}
+
+.assistant-video-results{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;list-style:none;padding:0;margin:14px 0}
+.assistant-video-results li{min-width:0}
+.assistant-action .assistant-video-candidate{display:flex;flex-direction:column;width:100%;height:100%;padding:0 0 12px;overflow:hidden;text-align:left;border-radius:12px;transition:border-color .15s,box-shadow .15s}
+.assistant-action .assistant-video-candidate:hover{border-color:var(--olcr-text-secondary);box-shadow:0 3px 12px #0000000d}
+.assistant-action .assistant-video-candidate[aria-pressed=true]{border-color:var(--olcr-accent);box-shadow:0 0 0 2px var(--olcr-accent)}
+.assistant-video-thumbnail{position:relative;display:block;width:100%;aspect-ratio:16/9;overflow:hidden;background:#20251c;color:white}
+.assistant-video-thumbnail img{display:block;width:100%;height:100%;object-fit:cover}
+.assistant-video-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#0009;font-size:16px;padding-left:2px;box-sizing:border-box}
+.assistant-video-rank{position:absolute;left:8px;top:8px;border-radius:5px;padding:2px 6px;background:#000b;font-size:11px}
+.assistant-video-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:10px 10px 0;font-weight:600;line-height:1.5}
+.assistant-video-channel{display:block;margin:5px 10px 0;color:var(--olcr-text-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 20px)}
+.assistant-player-stage{min-width:0}
+@media(prefers-reduced-motion:reduce){.assistant-action .assistant-video-candidate{transition:none}}

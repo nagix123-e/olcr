@@ -2,8 +2,8 @@
 """Prepare and validate the offline wheelhouse used by build_release.py.
 
 The command intentionally downloads wheels only during dependency preparation;
-OLCR startup never invokes it.  The default target is the bundled runtime's
-CPython 3.10 on macOS Apple Silicon.
+OLCR startup never invokes it. The default target is the bundled runtime's
+CPython 3.12 on macOS Apple Silicon.
 """
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = ROOT / "backend" / "requirements.txt"
-# Current SciPy CPython 3.10 arm64 wheels start at macOS 12.  A 12.0 target
+# Current SciPy CPython 3.12 arm64 wheels start at macOS 12.  A 12.0 target
 # remains compatible with the older 11.0 wheels used by the other dependencies.
 DEFAULT_PLATFORM = "macosx_12_0_arm64"
-DEFAULT_PYTHON = "3.10"
-DEFAULT_ABI = "cp310"
+DEFAULT_PYTHON = "3.12"
+DEFAULT_ABI = "cp312"
 
 
 def _requirements(path: Path = REQUIREMENTS) -> set[str]:

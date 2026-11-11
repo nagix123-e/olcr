@@ -1,0 +1,75 @@
+{
+  "servers": [
+    {
+      "server": "serena",
+      "display_name": "Serena",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": false,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-11-09T13:17:58.846941+00:00",
+      "tool_count": 29,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "devdocs",
+      "display_name": "DevDocs MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": false,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-11-09T13:17:58.931366+00:00",
+      "tool_count": 5,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "playwright",
+      "display_name": "Playwright MCP",
+      "transport": "stdio",
+      "scope": "managed_browser",
+      "coding_enabled": false,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-11-09T13:17:59.066604+00:00",
+      "tool_count": 24,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "shadcn",
+      "display_name": "shadcn MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": true,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-11-09T13:17:59.432715+00:00",
+      "tool_count": 7,
+      "protocol_version": "2025-11-25"
+    },
+    {
+      "server": "animejs",
+      "display_name": "OLCR Anime.js v4 Reference MCP",
+      "transport": "stdio",
+      "scope": "coding",
+      "coding_enabled": true,
+      "resource_available": true,
+      "can_check": true,
+      "connection_status": "CONNECTED",
+      "reason": "READY",
+      "checked_at": "2026-11-09T13:17:59.458395+00:00",
+      "tool_count": 4,
+      "protocol_version": "2024-11-05"
+    }
+  ],
+  "verification": "initialize + notifications/initialized + tools/list; child closed after each probe"
+}

@@ -1,0 +1,79 @@
+{
+  "date_local": "2026-10-12 Asia/Tokyo",
+  "source_e2e": "SEMANTIC_FOLLOWUP_RETEST_AFTER_REPAIRS_20261012.json",
+  "target_count": 6,
+  "indices": [
+    27,
+    42,
+    90,
+    97,
+    142,
+    316
+  ],
+  "status": "SOURCE_FIXED_GUI_RETEST_PENDING",
+  "changes": [
+    {
+      "indices": [
+        27,
+        97
+      ],
+      "change": "Preserve retrieved evidence and source links when the outer direct-provider fallback task fails after composition timeout. Keep failed task state and primary API error, and disclose incomplete synthesis."
+    },
+    {
+      "indices": [
+        42
+      ],
+      "change": "Use shared typed streamflow renderer. Convert ft3/s to m3/s arithmetically and display measurement, timestamp, site identity and provisional flag without model reinterpretation."
+    },
+    {
+      "indices": [
+        90
+      ],
+      "change": "Request hard movie trivia for film enthusiasts, validate requested difficulty, translate question/choices using existing MyMemory provider without sending the answer marker. Honor selected response language; on translation failure disclose incompleteness without foreign question dump or correct-answer leak."
+    },
+    {
+      "indices": [
+        142
+      ],
+      "change": "For current Southeast Asia requests require open status and observations within 30 days, excluding closed/stale/future records. Show latest and first observation dates, excluded count, source links and bounded meaning of current candidates."
+    },
+    {
+      "indices": [
+        316
+      ],
+      "change": "After opinion API authentication failure, fetch same-host public opinion URL and extract only its opinion-content container, ignoring navigation/scripts. Record body source and render bounded body or search snippet with explicit missing-body caveats."
+    }
+  ],
+  "verification": {
+    "offline_followup_regressions": 37,
+    "offline_existing_semantic_regressions": 23,
+    "total": 60,
+    "python_ast": "PASS",
+    "diff_whitespace": "PASS",
+    "gui_retest": "NOT_RUN",
+    "installed_app_update": "NOT_RUN",
+    "logs": [
+      ".live/semantic6-20261012-check.log",
+      ".live/semantic6-20261012-regression.log"
+    ]
+  },
+  "source_files": [
+    {
+      "path": "backend/olcr_api/app.py",
+      "before_sha256": "1ee45d7e1623e8aed919f312406cb600a712083143f93e1b25bf07f62e7de186",
+      "after_sha256": "3520eb559d7f5a72b4d4a3a4eaec6ee789548a3ee2be0beb737ad8924aec7890"
+    },
+    {
+      "path": "backend/olcr_api/external_tools.py",
+      "before_sha256": "fcd0fac32880449e25088833cccfe33ac90a957ac0163a6e1f119644931a9679",
+      "after_sha256": "410e9b47d9768c66e7504536609cbf1f7db32d1ee91ad95f3cf142b27392809e"
+    }
+  ],
+  "backup": ".live/semantic6-20261012-before",
+  "source_diff": ".live/semantic6-20261012-source.diff",
+  "limits": [
+    "The existing isolated GUI app was kept open; it is the previous E2E build, not a restarted application containing these changes.",
+    "Provider availability, translation quality and public CourtListener page body extraction require real GUI retest. A source fix is not a new PASS verdict.",
+    "EONET open registration and recent observation are candidate evidence, not proof of continuing harm or exact physical onset."
+  ]
+}

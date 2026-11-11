@@ -1,0 +1,490 @@
+{
+  "schema_version": 1,
+  "memory_policy": {
+    "reserved_system_gb": {
+      "16": 2,
+      "32": 6,
+      "64": 10,
+      "128": 16,
+      "192": 24,
+      "256": 32
+    },
+    "runtime_overhead_gb": 3,
+    "tier_order": [
+      "16",
+      "32",
+      "64",
+      "128",
+      "192",
+      "256"
+    ]
+  },
+  "models": {
+    "ternary_bonsai_2_27b": {
+      "id": "ternary_bonsai_2_27b",
+      "label": "Ternary Bonsai 2 · 27B",
+      "runtime": "MLX",
+      "type": "bundled",
+      "relative": "bonsai/Ternary-Bonsai-2-27B-mlx-2bit",
+      "size_bytes": 12200000000,
+      "license": "check source model card",
+      "weight_gb": 9.2,
+      "verified": true,
+      "brain_id": "mlx:ternary_bonsai_2_27b",
+      "runtime_profile_id": "mlx-vlm-legacy-v1",
+      "loader_id": "bonsai-vision-artifact",
+      "artifact_format": "mlx-bonsai-custom-runtime"
+    },
+    "ornith_1_5_9b_8bit": {
+      "id": "ornith_1_5_9b_8bit",
+      "label": "Ornith 1.5 · 9B · MLX 8-bit",
+      "runtime": "MLX",
+      "type": "huggingface",
+      "repo": "ornith-ai/Ornith-1.5-9B-MLX-8bit",
+      "revision": "b4b70543d60c81e7c418a001b74cd4352212bd44",
+      "relative": "ornith/Ornith-1.5-9B-MLX-8bit",
+      "size_bytes": 10000000000,
+      "license": "MIT",
+      "weight_gb": 9.4,
+      "verified": true,
+      "brain_id": "mlx:ornith_1_5_9b_8bit",
+      "runtime_profile_id": "mlx-text-v1",
+      "loader_id": "mlx-lm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "ornith_1_5_35b_a3b_4bit": {
+      "id": "ornith_1_5_35b_a3b_4bit",
+      "label": "Ornith 1.5 · 35B-A3B · MLX 4-bit",
+      "runtime": "MLX",
+      "type": "huggingface",
+      "repo": "ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit",
+      "revision": "19504d912fa8fc7622bf6b1de3db5d5d890b1f02",
+      "relative": "ornith/Ornith-1.5-35B-A3B-MLX-4bit",
+      "size_bytes": 19530936278,
+      "license": "see repository model card",
+      "weight_gb": 18.2,
+      "verified": true,
+      "brain_id": "mlx:ornith_1_5_35b_a3b_4bit",
+      "runtime_profile_id": "mlx-text-v1",
+      "loader_id": "mlx-lm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "ornith_1_5_122b_4bit": {
+      "id": "ornith_1_5_122b_4bit",
+      "label": "Ornith 1.5 · 122B · MLX 4-bit",
+      "runtime": "MLX",
+      "type": "huggingface",
+      "repo": "ornith-ai/Ornith-1.5-122B-MLX-4bit",
+      "revision": "06a57aba4fbae218efc9716bcdf7d6b3035331c8",
+      "relative": "ornith/Ornith-1.5-122B-MLX-4bit",
+      "size_bytes": 69645012324,
+      "license": "MIT",
+      "weight_gb": 64.9,
+      "verified": true,
+      "brain_id": "mlx:ornith_1_5_122b_4bit",
+      "runtime_profile_id": "mlx-text-v1",
+      "loader_id": "mlx-lm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "ornith_1_5_122b_8bit": {
+      "id": "ornith_1_5_122b_8bit",
+      "label": "Ornith 1.5 · 122B · MLX 8-bit",
+      "runtime": "MLX",
+      "type": "huggingface",
+      "repo": "ornith-ai/Ornith-1.5-122B-MLX-8bit",
+      "revision": "5e8df2d2e50478f221602f0997b8cbbec51f9c8a",
+      "relative": "ornith/Ornith-1.5-122B-MLX-8bit",
+      "size_bytes": 130680785994,
+      "license": "MIT",
+      "weight_gb": 121.7,
+      "verified": true,
+      "brain_id": "mlx:ornith_1_5_122b_8bit",
+      "runtime_profile_id": "mlx-text-v1",
+      "loader_id": "mlx-lm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "qwen3_8_27b_mxfp8": {
+      "id": "qwen3_8_27b_mxfp8",
+      "label": "Qwen3.8 · 27B · MXFP8",
+      "runtime": "Ollama",
+      "type": "ollama",
+      "repo": "qwen3.8:27b-mxfp8",
+      "revision": "569f507f4d14",
+      "size_bytes": 30000000000,
+      "license": "Apache-2.0",
+      "weight_gb": 30,
+      "verified": true,
+      "brain_id": "ollama:qwen3.8:27b-mxfp8",
+      "runtime_profile_id": "ollama-external-v1",
+      "loader_id": "ollama",
+      "artifact_format": "ollama-model-store"
+    },
+    "qwen3_8_27b_bf16": {
+      "id": "qwen3_8_27b_bf16",
+      "label": "Qwen3.8 · 27B · BF16",
+      "runtime": "Ollama",
+      "type": "ollama",
+      "repo": "qwen3.8:27b-bf16",
+      "revision": "1aa85dae8b2d",
+      "size_bytes": 56000000000,
+      "license": "Apache-2.0",
+      "weight_gb": 56,
+      "verified": true,
+      "brain_id": "ollama:qwen3.8:27b-bf16",
+      "runtime_profile_id": "ollama-external-v1",
+      "loader_id": "ollama",
+      "artifact_format": "ollama-model-store"
+    },
+    "qwen3_8_flash_125b_nvfp4": {
+      "id": "qwen3_8_flash_125b_nvfp4",
+      "label": "Qwen3.8 Flash Next · 125B-A6B · NVFP4 (experimental)",
+      "runtime": "Ollama",
+      "type": "ollama",
+      "repo": "qwen3.8-flash-next:125b-a6b-nvfp4",
+      "revision": "5fcb32f20cb4",
+      "size_bytes": 105000000000,
+      "license": "Apache-2.0",
+      "weight_gb": 98,
+      "verified": false,
+      "experimental": true,
+      "brain_id": "ollama:qwen3.8-flash-next:125b-a6b-nvfp4",
+      "runtime_profile_id": "ollama-external-v1",
+      "loader_id": "ollama",
+      "artifact_format": "ollama-model-store"
+    },
+    "plamo_3_translate_2b": {
+      "id": "plamo_3_translate_2b",
+      "label": "PLaMo 3 Translate · 2B · MLX 4-bit",
+      "runtime": "plamo-translate 1.2.0 + MLX",
+      "type": "huggingface",
+      "repo": "pfnet/plamo-3-translate-2b",
+      "revision": "355637cc04db67195ba87a97da85eaf1d52a22e8",
+      "relative": "plamo-3-translate-2b",
+      "size_bytes": 5760000000,
+      "license": "PLaMo Community License",
+      "weight_gb": 5.4,
+      "verified": true,
+      "runtime_profile_id": "mlx-plamo-v1",
+      "loader_id": "plamo-translate-cli",
+      "artifact_format": "mlx-safetensors"
+    },
+    "plamo_3_translate_8b": {
+      "id": "plamo_3_translate_8b",
+      "label": "PLaMo 3 Translate · 8B · MLX 4-bit",
+      "runtime": "plamo-translate 1.2.0 + MLX",
+      "type": "huggingface",
+      "repo": "pfnet/plamo-3-translate-8b-MLX-4bit",
+      "revision": "3623015236aa51fe290f02cff01135dfcadb9816",
+      "relative": "plamo-3-translate-8b-MLX-4bit",
+      "size_bytes": 6071028728,
+      "license": "PLaMo Community License",
+      "weight_gb": 5.7,
+      "verified": true,
+      "runtime_profile_id": "mlx-plamo-v1",
+      "loader_id": "plamo-translate-cli",
+      "artifact_format": "mlx-safetensors"
+    },
+    "plamo_3_translate_31b": {
+      "id": "plamo_3_translate_31b",
+      "label": "PLaMo 3 Translate · 31B · MLX 4-bit",
+      "runtime": "plamo-translate 1.2.0 + MLX",
+      "type": "huggingface",
+      "repo": "pfnet/plamo-3-translate-31b-MLX-4bit",
+      "revision": "eeb4dcc2d38a9ada804e278515a8dcf30ff9804d",
+      "relative": "plamo-3-translate-31b-MLX-4bit",
+      "size_bytes": 18661967576,
+      "license": "PLaMo Community License",
+      "weight_gb": 17.4,
+      "verified": true,
+      "runtime_profile_id": "mlx-plamo-v1",
+      "loader_id": "plamo-translate-cli",
+      "artifact_format": "mlx-safetensors"
+    },
+    "whisper_large_v3_turbo": {
+      "id": "whisper_large_v3_turbo",
+      "label": "Whisper large-v3-turbo · MLX",
+      "runtime": "mlx-whisper 0.4.3",
+      "type": "huggingface",
+      "repo": "mlx-community/whisper-large-v3-turbo",
+      "revision": "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",
+      "relative": "speech/whisper-large-v3-turbo",
+      "size_bytes": 1613979758,
+      "license": "MIT",
+      "weight_gb": 1.5,
+      "verified": true,
+      "runtime_profile_id": "mlx-whisper-v1",
+      "loader_id": "mlx-whisper",
+      "artifact_format": "mlx-whisper-snapshot"
+    },
+    "whisper_large_v3": {
+      "id": "whisper_large_v3",
+      "label": "Whisper large-v3 · MLX",
+      "runtime": "mlx-whisper 0.4.3",
+      "type": "huggingface",
+      "repo": "mlx-community/whisper-large-v3-mlx",
+      "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+      "relative": "speech/whisper-large-v3-mlx",
+      "size_bytes": 3083522487,
+      "license": "MIT",
+      "weight_gb": 2.9,
+      "verified": true,
+      "runtime_profile_id": "mlx-whisper-v1",
+      "loader_id": "mlx-whisper",
+      "artifact_format": "mlx-whisper-snapshot"
+    },
+    "transcription_ja": {
+      "id": "transcription_ja",
+      "label": "LFM2.5 Audio · 日本語",
+      "runtime": "Liquid Audio / MLX",
+      "type": "audio",
+      "size_bytes": 3700000000,
+      "license": "LiquidAI model terms",
+      "weight_gb": 3.5,
+      "verified": true,
+      "runtime_profile_id": "mlx-audio-v1",
+      "loader_id": "mlx-audio",
+      "artifact_format": "liquid-audio-snapshot"
+    },
+    "transcription_en": {
+      "id": "transcription_en",
+      "label": "LFM2.5 Audio · English",
+      "runtime": "Liquid Audio / MLX",
+      "type": "audio",
+      "size_bytes": 3700000000,
+      "license": "LiquidAI model terms",
+      "weight_gb": 3.5,
+      "verified": true,
+      "runtime_profile_id": "mlx-audio-v1",
+      "loader_id": "mlx-audio",
+      "artifact_format": "liquid-audio-snapshot"
+    },
+    "lfm2_5_audio_1_5b": {
+      "id": "lfm2_5_audio_1_5b",
+      "label": "LFM2.5 Audio · 読み上げ",
+      "runtime": "Liquid Audio / MLX",
+      "type": "audio",
+      "size_bytes": 3700000000,
+      "license": "LiquidAI model terms",
+      "weight_gb": 3.5,
+      "verified": true,
+      "runtime_profile_id": "mlx-audio-v1",
+      "loader_id": "mlx-audio",
+      "artifact_format": "liquid-audio-snapshot"
+    },
+    "ternary_bonsai_2_27b_6bit": {
+      "id": "ternary_bonsai_2_27b_6bit",
+      "label": "Ternary Bonsai 2 · 27B · MLX 6-bit",
+      "runtime": "MLX-VLM 0.7.8 + MLX-LM 0.32.0",
+      "type": "huggingface",
+      "repo": "pipenetwork/Ternary-Bonsai-2-27B-MLX-6bit",
+      "revision": "653e53ccfbd67c3c11dc9f758f6ca33b11514035",
+      "relative": "bonsai/Ternary-Bonsai-2-27B-MLX-6bit",
+      "size_bytes": 22800000000,
+      "license": "Apache-2.0",
+      "weight_gb": 22.8,
+      "verified": true,
+      "brain_id": "mlx:ternary_bonsai_2_27b_6bit",
+      "runtime_profile_id": "mlx-vlm-v1",
+      "loader_id": "mlx-vlm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "ternary_bonsai_2_27b_8bit": {
+      "id": "ternary_bonsai_2_27b_8bit",
+      "label": "Ternary Bonsai 2 · 27B · MLX 8-bit",
+      "runtime": "MLX-VLM 0.7.8 + MLX-LM 0.32.0",
+      "type": "huggingface",
+      "repo": "pipenetwork/Ternary-Bonsai-2-27B-MLX-8bit",
+      "revision": "f9e984b5d200e719a6f054db33315dc2a2e32d3f",
+      "relative": "bonsai/Ternary-Bonsai-2-27B-MLX-8bit",
+      "size_bytes": 29500000000,
+      "license": "Apache-2.0",
+      "weight_gb": 29.5,
+      "verified": true,
+      "brain_id": "mlx:ternary_bonsai_2_27b_8bit",
+      "runtime_profile_id": "mlx-vlm-v1",
+      "loader_id": "mlx-vlm",
+      "artifact_format": "mlx-safetensors"
+    },
+    "ternary_bonsai_2_27b_bf16": {
+      "id": "ternary_bonsai_2_27b_bf16",
+      "label": "Ternary Bonsai 2 · 27B · MLX BF16",
+      "runtime": "MLX-VLM 0.7.8 + MLX-LM 0.32.0",
+      "type": "huggingface",
+      "repo": "pipenetwork/Ternary-Bonsai-2-27B-MLX-bf16",
+      "revision": "4649a6d09329d24c5c8afd644cf1a093e0c7dfea",
+      "relative": "bonsai/Ternary-Bonsai-2-27B-MLX-bf16",
+      "size_bytes": 54700000000,
+      "license": "Apache-2.0",
+      "weight_gb": 54.7,
+      "verified": true,
+      "brain_id": "mlx:ternary_bonsai_2_27b_bf16",
+      "runtime_profile_id": "mlx-vlm-v1",
+      "loader_id": "mlx-vlm",
+      "artifact_format": "mlx-safetensors"
+    }
+  },
+  "tiers": [
+    {
+      "id": "16",
+      "label": "16GB以下",
+      "max_memory_gb": 16,
+      "brain": {
+        "brain": "mlx:ternary_bonsai_2_27b",
+        "coder": "mlx:ternary_bonsai_2_27b",
+        "short_coding": "mlx:ternary_bonsai_2_27b",
+        "general_inference": "mlx:ternary_bonsai_2_27b"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b",
+        "long_implementation": "ornith_1_5_9b",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_2b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "transcription_ja",
+        "transcription_en": "transcription_en",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    },
+    {
+      "id": "32",
+      "label": "32GB",
+      "max_memory_gb": 32,
+      "brain": {
+        "brain": "mlx:ornith_1_5_9b_8bit",
+        "coder": "mlx:ornith_1_5_9b_8bit",
+        "short_coding": "mlx:ternary_bonsai_2_27b",
+        "general_inference": "mlx:ternary_bonsai_2_27b"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b",
+        "long_implementation": "ornith_1_5_9b",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_2b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "transcription_ja",
+        "transcription_en": "transcription_en",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    },
+    {
+      "id": "64",
+      "label": "64GB",
+      "max_memory_gb": 64,
+      "brain": {
+        "brain": "ollama:qwen3.8:27b-mxfp8",
+        "coder": "mlx:ornith_1_5_35b_a3b_4bit",
+        "short_coding": "ollama:qwen3.8:27b-mxfp8",
+        "general_inference": "mlx:ternary_bonsai_2_27b_8bit"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b_8bit",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b_8bit",
+        "long_implementation": "ornith_1_5_35b_a3b_4bit",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_31b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "whisper_large_v3_turbo",
+        "transcription_en": "whisper_large_v3_turbo",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    },
+    {
+      "id": "128",
+      "label": "128GB",
+      "max_memory_gb": 128,
+      "brain": {
+        "brain": "ollama:qwen3.8:27b-bf16",
+        "coder": "mlx:ornith_1_5_122b_4bit",
+        "short_coding": "ollama:qwen3.8:27b-bf16",
+        "general_inference": "mlx:ternary_bonsai_2_27b_bf16"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b_bf16",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b_bf16",
+        "long_implementation": "ornith_1_5_122b_4bit",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_31b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "whisper_large_v3",
+        "transcription_en": "whisper_large_v3",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    },
+    {
+      "id": "192",
+      "label": "192GB",
+      "max_memory_gb": 192,
+      "brain": {
+        "brain": "mlx:ornith_1_5_122b_4bit",
+        "coder": "mlx:ornith_1_5_122b_8bit",
+        "short_coding": "mlx:ornith_1_5_122b_4bit",
+        "general_inference": "mlx:ternary_bonsai_2_27b_bf16"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b_bf16",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b_bf16",
+        "long_implementation": "ornith_1_5_122b_8bit",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_31b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "whisper_large_v3",
+        "transcription_en": "whisper_large_v3",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    },
+    {
+      "id": "256",
+      "label": "256GB以上",
+      "max_memory_gb": null,
+      "brain": {
+        "brain": "mlx:ornith_1_5_122b_4bit",
+        "coder": "mlx:ornith_1_5_122b_8bit",
+        "short_coding": "mlx:ornith_1_5_122b_4bit",
+        "general_inference": "mlx:ternary_bonsai_2_27b_bf16"
+      },
+      "roles": {
+        "semantic_embedding": "embeddinggemma",
+        "typed_local_decisions": "laya_multilingual",
+        "planner_replanner": "ternary_bonsai_2_27b_bf16",
+        "short_coding_fix_debug": "ternary_bonsai_2_27b_bf16",
+        "long_implementation": "ornith_1_5_122b_8bit",
+        "gui_grounding": "ui_venus_mlx_6bit",
+        "general_image": "fastvlm_mlx_bf16",
+        "translation": "plamo_3_translate_31b",
+        "normal_chat": "ornith_1_5_9b"
+      },
+      "audio": {
+        "transcription_ja": "whisper_large_v3",
+        "transcription_en": "whisper_large_v3",
+        "read_aloud": "lfm2_5_audio_1_5b"
+      }
+    }
+  ]
+}

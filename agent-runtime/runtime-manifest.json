@@ -1,0 +1,16 @@
+{
+  "engine": "@librechat/agents",
+  "engine_version": "4.0.4",
+  "entrypoint": "runner.mjs",
+  "immutable": true,
+  "license_inventory": "licenses/license-inventory.json",
+  "licensed_component_count": 441,
+  "node": {
+    "arch": "arm64",
+    "platform": "darwin",
+    "version": "v24.18.0"
+  },
+  "node_entrypoint": "node_modules/node/bin/node",
+  "package_lock_sha256": "0c234fc3dd8141060e2826989fac29b83f4f593e65fc90d786022c1ab7271bf3",
+  "runner_sha256": "a3fbfc878a90c6452156b2fe98e5e504cb46cc872687eb3a5e3843227e7ff633"
+}

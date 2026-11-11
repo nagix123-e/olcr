@@ -14,6 +14,8 @@ from .config import MODEL_REQUEST_TIMEOUT_SECONDS
 from .db import Database
 from .models import SearchResult
 from .retrieval import PathGuard, VectorStore
+from .model_telemetry import model_telemetry
+from .model_registry import default_registry
 
 
 NORMALIZATION_SYSTEM_PROMPT = """You are a deterministic retrieval-intent normalizer. Convert only the user's retrieval query into a compact semantic specification. Preserve its meaning, named entities, negation, numbers, units, and constraints. Clarify terse wording into requested information when safely entailed, but do not invent facts, entities, answers, candidate-specific language, or search expansions. Return only the required JSON object."""
@@ -67,47 +69,19 @@ class LocalReranker:
 
 
 class QwenReranker(LocalReranker):
-    """Lazy local-only Qwen3 reranker using the model's documented yes/no logits."""
+    """Retired compatibility symbol; never loads or invokes a reranker."""
     def __init__(self, model: str, enabled: bool, threshold: float=RERANKER_THRESHOLD):
-        self.model_name,self.enabled,self.threshold=model,enabled,threshold
-        self._model=self._tokenizer=self._torch=None; self._device=""; self._load_latency_ms=None; self._error=None
+        self.model_name,self.enabled,self.threshold=model,False,threshold
     @property
     def model(self) -> str: return self.model_name
     @property
     def status(self) -> dict[str, Any]:
-        return {"enabled":self.enabled,"model":self.model_name,"state":"ready" if self._model is not None else ("error" if self._error else "uninitialized"),"device":self._device or None,"load_latency_ms":self._load_latency_ms,"error_category":self._error}
+        return {"enabled":False,"model":"RETIRED","state":"retired","device":None,"load_latency_ms":None,"error_category":"RETIRED_MODEL"}
     def _load(self) -> None:
-        if self._model is not None: return
-        if self._error: raise RerankerFailure(self._error,"Local reranker is unavailable")
-        if not self.enabled or not self.model_name: raise RerankerFailure("unavailable","Local reranker is disabled or unconfigured")
-        started=time.perf_counter()
-        try:
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            self._device="mps" if torch.backends.mps.is_available() else "cpu"
-            self._tokenizer=AutoTokenizer.from_pretrained(self.model_name,padding_side="left",local_files_only=True)
-            self._model=AutoModelForCausalLM.from_pretrained(self.model_name,local_files_only=True).eval().to(self._device)
-            self._torch=torch; self._load_latency_ms=(time.perf_counter()-started)*1000
-        except ModuleNotFoundError as exc:
-            self._error="runtime_unavailable"; raise RerankerFailure(self._error,"PyTorch/Transformers reranker runtime is unavailable") from exc
-        except Exception as exc:
-            self._error="load_failed"; raise RerankerFailure(self._error,"Local reranker model could not load") from exc
-    @staticmethod
-    def _prompt(query: str, document: str) -> str:
-        return ("<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be 'yes' or 'no'.<|im_end|>\n<|im_start|>user\n"
-                "<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n"
-                f"<Query>: {query}\n<Document>: {document}\n<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        raise RerankerFailure("retired_model", "Qwen3 reranker production path is retired")
     def score(self, query: str, candidate: SearchResult, candidate_id: str) -> RerankerScore:
-        self._load(); started=time.perf_counter()
-        try:
-            yes=self._tokenizer("yes",add_special_tokens=False).input_ids[0]; no=self._tokenizer("no",add_special_tokens=False).input_ids[0]
-            inputs=self._tokenizer(self._prompt(query,candidate.snippet[:1000]),return_tensors="pt").to(self._device)
-            with self._torch.no_grad(): logits=self._model(**inputs).logits[0,-1,[no,yes]].float().cpu()
-            score=float(self._torch.softmax(logits,dim=0)[1].item())
-            if not math.isfinite(score): raise RerankerFailure("non_finite_score","Reranker score is not finite")
-            return RerankerScore(candidate_id,score,(time.perf_counter()-started)*1000)
-        except RerankerFailure: raise
-        except Exception as exc: raise RerankerFailure("scoring_failed","Local reranker scoring failed") from exc
+        self._load()
+        raise RerankerFailure("retired_model", "Qwen3 reranker production path is retired")
 
 
 @dataclass(frozen=True)
@@ -133,13 +107,26 @@ class OllamaIntentNormalizer(SemanticIntentNormalizer):
     def normalize(self,query:str)->SemanticIntent:
         if not self.model: raise IntentNormalizationFailure("model_unavailable","No local intent normalizer model configured")
         schema={"type":"object","properties":{"intent":{"type":"string"},"requested_information":{"type":"string"},"constraints":{"type":"array","items":{"type":"string"}}},"required":["intent","requested_information","constraints"],"additionalProperties":False}
-        payload=json.dumps({"model":self.model,"messages":[{"role":"system","content":NORMALIZATION_SYSTEM_PROMPT},{"role":"user","content":json.dumps({"query":query},ensure_ascii=False)}],"stream":False,"think":False,"format":schema,"options":{"temperature":0,"seed":0,"num_predict":NORMALIZATION_MAX_TOKENS}}).encode()
+        request_payload={"model":self.model,"messages":[{"role":"system","content":NORMALIZATION_SYSTEM_PROMPT},{"role":"user","content":json.dumps({"query":query},ensure_ascii=False)}],"stream":False,"think":False,"format":schema,"options":{"temperature":0,"seed":0,"num_predict":NORMALIZATION_MAX_TOKENS}}
+        payload=json.dumps(request_payload).encode()
         req=request.Request(self.endpoint+"/api/chat",data=payload,headers={"Content-Type":"application/json"});started=time.perf_counter()
+        from .model_traffic_logs import begin_model_traffic, uses_internet
+        traffic_call=begin_model_traffic(role='semantic_intent_normalization',model=self.model,runtime='ollama',
+                                         request_body={"path":"/api/chat","payload":request_payload},
+                                         internet=uses_internet(self.endpoint))
         self.last_diagnostics={"call_start":True,"model":self.model}
         try:
             with request.urlopen(req,timeout=self.timeout) as response:data=json.load(response)
-        except error.HTTPError as exc: raise IntentNormalizationFailure("provider_error",f"Ollama normalizer HTTP {exc.code}") from exc
-        except (error.URLError,TimeoutError) as exc: raise IntentNormalizationFailure("timeout" if isinstance(exc,TimeoutError) else "provider_unavailable",str(exc)) from exc
+            traffic_call.finish(status='success',response_body=data)
+        except error.HTTPError as exc:
+            traffic_call.finish(status='error',error_code='provider_error')
+            raise IntentNormalizationFailure("provider_error",f"Ollama normalizer HTTP {exc.code}") from exc
+        except (error.URLError,TimeoutError) as exc:
+            traffic_call.finish(status='error',error_code='timeout' if isinstance(exc,TimeoutError) else 'provider_unavailable')
+            raise IntentNormalizationFailure("timeout" if isinstance(exc,TimeoutError) else "provider_unavailable",str(exc)) from exc
+        except BaseException as exc:
+            traffic_call.finish(status='error',error_code=type(exc).__name__)
+            raise
         content=data.get("message",{}).get("content", "") if isinstance(data,dict) else ""
         stripped=content.strip(); fences=stripped.count("```")
         start_kind="EMPTY" if not stripped else ("FENCE" if stripped.startswith("```") else ("JSON_OBJECT" if stripped.startswith("{") else ("JSON_ARRAY" if stripped.startswith("[") else ("JSON_STRING" if stripped.startswith('"') else "TEXT"))))
@@ -169,12 +156,25 @@ class OllamaSemanticRelationEvaluator(SemanticRelationEvaluator):
             {"role":"system","content":RELATION_CLASSIFIER_SYSTEM_PROMPT},
             {"role":"user","content":json.dumps({"query":query,"normalized_intent":{"intent":intent.intent,"requested_information":intent.requested_information,"constraints":list(intent.constraints)},"candidate_id":candidate_id,"source_name":Path(candidate.source).name,"candidate_text":candidate.snippet[:1000]},ensure_ascii=False)},
         ]
-        payload=json.dumps({"model":self.model,"messages":messages,"stream":False,"think":False,"format":schema,"options":{"temperature":0,"seed":0,"num_predict":ADMISSIBILITY_MAX_TOKENS}}).encode()
+        request_payload={"model":self.model,"messages":messages,"stream":False,"think":False,"format":schema,"options":{"temperature":0,"seed":0,"num_predict":ADMISSIBILITY_MAX_TOKENS}}
+        payload=json.dumps(request_payload).encode()
         req=request.Request(self.endpoint+"/api/chat",data=payload,headers={"Content-Type":"application/json"});started=time.perf_counter()
+        from .model_traffic_logs import begin_model_traffic, uses_internet
+        traffic_call=begin_model_traffic(role='semantic_relation_evaluation',model=self.model,runtime='ollama',
+                                         request_body={"path":"/api/chat","payload":request_payload},
+                                         internet=uses_internet(self.endpoint))
         try:
             with request.urlopen(req,timeout=self.timeout) as response: data=json.load(response)
-        except error.HTTPError as exc: raise SemanticRelationFailure("provider_error",f"Ollama relation evaluator HTTP {exc.code}") from exc
-        except (error.URLError,TimeoutError) as exc: raise SemanticRelationFailure("timeout" if isinstance(exc,TimeoutError) else "provider_unavailable",str(exc)) from exc
+            traffic_call.finish(status='success',response_body=data)
+        except error.HTTPError as exc:
+            traffic_call.finish(status='error',error_code='provider_error')
+            raise SemanticRelationFailure("provider_error",f"Ollama relation evaluator HTTP {exc.code}") from exc
+        except (error.URLError,TimeoutError) as exc:
+            traffic_call.finish(status='error',error_code='timeout' if isinstance(exc,TimeoutError) else 'provider_unavailable')
+            raise SemanticRelationFailure("timeout" if isinstance(exc,TimeoutError) else "provider_unavailable",str(exc)) from exc
+        except BaseException as exc:
+            traffic_call.finish(status='error',error_code=type(exc).__name__)
+            raise
         try:
             value=json.loads(data["message"]["content"])
         except json.JSONDecodeError as exc:
@@ -189,6 +189,15 @@ class OllamaSemanticRelationEvaluator(SemanticRelationEvaluator):
 
 class OllamaEmbeddingProvider(EmbeddingProvider):
     def __init__(self, endpoint: str, timeout: float=MODEL_REQUEST_TIMEOUT_SECONDS): self.endpoint,self.timeout=endpoint.rstrip("/"),timeout
+    @staticmethod
+    def deployment_revision(model: str) -> str:
+        try:
+            binding = default_registry.binding("semantic_embedding")
+            if model in {binding.deployment_model, binding.model_id, binding.deployment_repo}:
+                return binding.deployment_revision
+        except Exception:
+            pass
+        return "UNKNOWN"
     def model_identity(self, model: str) -> str:
         """Return Ollama's immutable digest when it exposes one.
 
@@ -206,11 +215,26 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         return digest.strip()
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not model: raise EmbeddingFailure("model_unavailable","No embedding model configured")
-        req=request.Request(self.endpoint+"/api/embed",data=json.dumps({"model":model,"input":texts,"truncate":True}).encode(),headers={"Content-Type":"application/json"})
+        model_telemetry.record(role="semantic_embedding", model=model, runtime="ollama", revision=self.deployment_revision(model), stage="EMBED")
+        request_payload={"model":model,"input":texts,"truncate":True}
+        payload=json.dumps(request_payload).encode()
+        req=request.Request(self.endpoint+"/api/embed",data=payload,headers={"Content-Type":"application/json"})
+        from .model_traffic_logs import begin_model_traffic, uses_internet
+        traffic_call=begin_model_traffic(role='semantic_embedding',model=model,runtime='ollama',
+                                         request_body={"path":"/api/embed","payload":request_payload},
+                                         internet=uses_internet(self.endpoint))
         try:
             with request.urlopen(req,timeout=self.timeout) as response: data=json.load(response)
-        except error.HTTPError as exc: raise EmbeddingFailure("model_unavailable" if exc.code==404 else "provider_error",f"Ollama embedding HTTP {exc.code}") from exc
-        except (error.URLError,TimeoutError) as exc: raise EmbeddingFailure("provider_unavailable",str(exc)) from exc
+            traffic_call.finish(status='success',response_body=data)
+        except error.HTTPError as exc:
+            traffic_call.finish(status='error',error_code='model_unavailable' if exc.code==404 else 'provider_error')
+            raise EmbeddingFailure("model_unavailable" if exc.code==404 else "provider_error",f"Ollama embedding HTTP {exc.code}") from exc
+        except (error.URLError,TimeoutError) as exc:
+            traffic_call.finish(status='error',error_code='provider_unavailable')
+            raise EmbeddingFailure("provider_unavailable",str(exc)) from exc
+        except BaseException as exc:
+            traffic_call.finish(status='error',error_code=type(exc).__name__)
+            raise
         vectors=data.get("embeddings")
         if not isinstance(vectors,list) or len(vectors)!=len(texts): raise EmbeddingFailure("invalid_response","Embedding count mismatch")
         dimensions={len(v) for v in vectors if isinstance(v,list)}
@@ -248,7 +272,7 @@ class LocalVectorStore(VectorStore):
         dimension=len(vectors[0]) if vectors else 0; doc_hash=self._hash(text)
         if any(len(v)!=dimension for v in vectors): raise EmbeddingFailure("invalid_response","Embedding dimension mismatch")
         with self.db.connect() as db:
-            db.execute("DELETE FROM vector_embeddings WHERE document_id=?",(document_id,))
+            db.execute("DELETE FROM vector_embeddings WHERE document_id=? AND model=?",(document_id,self.model))
             for ordinal,((line,chunk),vector) in enumerate(zip(chunks,vectors)):
                 db.execute("INSERT INTO vector_embeddings(document_id,chunk_ordinal,line_start,text,content_hash,document_hash,model,dimension,index_version,vector_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (document_id,ordinal,line,chunk,self._hash(chunk),doc_hash,self.model,dimension,self.INDEX_VERSION,json.dumps(vector),time.time()))

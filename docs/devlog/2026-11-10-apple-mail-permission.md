@@ -1,0 +1,9 @@
+# Apple Mail automation consent correction
+
+The live user app's Apple Mail connect endpoint returned `APPLE_MAIL_AUTOMATION_PERMISSION_REQUIRED` immediately. The app owned its backend and the bundled helper carried the automation entitlement and approved signing identity. macOS TCC logs showed a passive (`preflight=true`) Apple Events check, attributed to responsible app `local.olcr.desktop` and accessing helper `local.olcr.mail`.
+
+The old connect operation read Mail's version and then called the same passive permission check as status. It now starts Mail if needed and explicitly requests consent with `AEDeterminePermissionToAutomateTarget(..., true)`. Inventory remains passive. The helper and UI distinguish denied, unrequested, not-running and unexpected permission errors. Guidance names the responsible app OLCR, matching TCC attribution.
+
+Validation: 36 backend tests (including a compiled harness exercising production Swift authorization logic without real account access), 13 service-settings UI tests, frontend build, and signed native helper verification passed. The native request and UI denial tests failed before the corresponding fixes. A separate read-only code review found no actionable issues.
+
+Live verification completed at 19:24 JST after observing the user app already restarted into build `olcr-dev-independent-20261110-192038`. The app PID 25602 owned backend PID 25616 and loopback port 61265. Bundled and source mail-helper SHA-256 hashes matched. No process was terminated by this agent. The authenticated connect request returned HTTP 200; refreshed inventory reported `connected` and `enabled=true`. A read-only Inbox list with limit 1 returned one summary successfully. Only state/count were printed, with no message contents, subjects, addresses or credentials. No TCC grant was reset and no email was sent. This verifies the real native/API path; no GUI automation was used.

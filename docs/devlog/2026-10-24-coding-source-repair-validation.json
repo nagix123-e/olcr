@@ -1,0 +1,51 @@
+{
+  "executor_revision": 27,
+  "regression_suite": {
+    "tests": 357,
+    "result": "PASS",
+    "log": "/tmp/olcr-final-progress-regression.log"
+  },
+  "native_acceptance": {
+    "phase": "ORIGINAL_REQUIREMENTS_AUDIT",
+    "criteria": 9,
+    "result": "PASS",
+    "original_criteria": {
+      "VERIFY:1": "In the browser, verify the original requirement: 料理名を1行に1つ入力できる",
+      "VERIFY:2": "In the browser, verify the original requirement: 「候補から選ぶ」を押すと、入力した料理から1つをランダムに選んで大きく表示する",
+      "VERIFY:3": "In the browser, verify the original requirement: 直近5回の結果を履歴として表示する",
+      "VERIFY:4": "In the browser, verify the original requirement: 料理名が2つ以上あるときは、可能なら直前と同じ料理が連続で選ばれないようにする",
+      "VERIFY:5": "In the browser, verify the original requirement: 入力が空、または有効な候補が1つもない場合は、分かりやすいメッセージを表示する",
+      "VERIFY:6": "In the browser, verify the original requirement: スマートフォンでも使いやすい見た目にする"
+    },
+    "semantically_reviewed_original_ids": [
+      "VERIFY:1",
+      "VERIFY:2",
+      "VERIFY:3",
+      "VERIFY:4",
+      "VERIFY:5",
+      "VERIFY:6"
+    ],
+    "node_test_runs": [
+      {
+        "registered_tests": 16,
+        "passed": 16,
+        "returncode": 0
+      }
+    ],
+    "changed_targets": [],
+    "source_sha256": {
+      "index.html": "141df3b714203c92421f24a554be3a22718b1ff165e9ead8f8fa1103e567c1ee",
+      "style.css": "425ef471f62cadd240ad02a7bbdbfe69cacb00dbf882e044da2d99122fa142db",
+      "lunch-roulette.js": "ef97270141ee2842a66dea17c4d5fa6b1cf10be71745202dab1686fef7f14fec",
+      "lunch-roulette.test.js": "1767e7a504bf77205a5d26676f001a86e8d3d6a2b163b2c9ddff6b937fd70ab8",
+      "package.json": "d6a23fcb59192380d1e4a1d1d92956bd9920b93f4f5fab781d988ba95aae6639"
+    }
+  },
+  "model_configuration": "Existing local deployments and settings unchanged",
+  "limits": [
+    "Acceptance starts from the repaired isolated copy of the reported artifacts, not a fresh empty-project run.",
+    "The native harness invokes verifier/repair components directly; full production scheduler recovery-budget behavior is covered by fixture-based regressions.",
+    "Browser checks use headless Chromium. No native OLCR GUI actions were performed.",
+    "The user project, database and running OLCR app were not modified."
+  ]
+}

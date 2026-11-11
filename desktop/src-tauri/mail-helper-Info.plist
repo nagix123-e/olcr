@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>local.olcr.mail</string>
+  <key>CFBundleName</key><string>OLCR Mail</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>OLCR reads requested messages and sends emails only when an agent is asked to send them. Sent messages always include an AI-agent disclosure.</string>
+</dict></plist>

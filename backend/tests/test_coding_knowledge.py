@@ -115,6 +115,20 @@ class CodingKnowledgeTests(unittest.TestCase):
         self.assertFalse(hasattr(knowledge.index, "write"))
         self.assertEqual(before, hashlib.sha256(self.index_path.read_bytes()).hexdigest())
 
+    def test_alternative_embedding_reindexes_without_mutating_release_artifact(self):
+        knowledge=CodingKnowledge(self.index_path)
+        before=hashlib.sha256(self.index_path.read_bytes()).hexdigest()
+        with patch.object(self.provider,'embed',wraps=self.provider.embed) as embed:
+            result=knowledge.context_for_embedding('Implement FastAPI validation',None,self.provider,'purpose:first')
+            self.assertEqual('AVAILABLE',result.status)
+            self.assertTrue(result.records)
+            self.assertEqual(2,embed.call_count)
+            knowledge.context_for_embedding('FastAPI security',None,self.provider,'purpose:first')
+            self.assertEqual(3,embed.call_count)
+            knowledge.context_for_embedding('FastAPI security',None,self.provider,'purpose:second')
+            self.assertEqual(5,embed.call_count)
+        self.assertEqual(before,hashlib.sha256(self.index_path.read_bytes()).hexdigest())
+
     def test_benchmark_and_adversarial_stack_selection(self):
         benchmark = json.loads((INPUTS / "benchmark.json").read_text(encoding="utf-8"))["queries"]
         self.assertEqual(16, len(benchmark))

@@ -14,6 +14,10 @@ from olcr_api.models import Task
 
 class ProjectContextTests(unittest.TestCase):
     def setUp(self):
+        # API/context tests may enqueue tasks, but must never invoke real MLX
+        # planning through the process-wide background scheduler.
+        self.planning_patcher = patch.object(api, "_run_coding_planning", return_value=None)
+        self.planning_patcher.start()
         api.start_coding_scheduler()
         self.tmp = tempfile.TemporaryDirectory(dir="/private/tmp")
         self.old_db = api.db
@@ -26,6 +30,7 @@ class ProjectContextTests(unittest.TestCase):
 
     def tearDown(self):
         api.stop_coding_scheduler()
+        self.planning_patcher.stop()
         api.db = self.old_db
         self.tmp.cleanup()
         api.start_coding_scheduler()
@@ -41,7 +46,8 @@ class ProjectContextTests(unittest.TestCase):
         self.assertTrue(api._coding_scheduler_thread.is_alive())
 
     def test_context_survives_reload_and_is_used_for_image_follow_up(self):
-        with patch.object(api.runtime, "execute", return_value=(Task("first"), "noted")):
+        with patch.object(api.settings, "task_manager_enabled", False), \
+             patch.object(api.runtime, "execute", return_value=(Task("first"), "noted")):
             self.assertEqual(200, self.send("tetris-chat", "tetris", "ReactでテトリスのWebゲームを作る").status_code)
         reopened = Database(api.db.path); reopened.initialize()
         self.assertEqual("Tetris web game", reopened.load_settings()["conversation_project_context:tetris-chat"]["current_subject"])
@@ -49,7 +55,8 @@ class ProjectContextTests(unittest.TestCase):
         def image(message, image, context):
             captured["context"] = context
             return Task(message), "grounded"
-        with patch.object(api.runtime, "execute_image", side_effect=image):
+        with patch.object(api.settings, "task_manager_enabled", False), \
+             patch.object(api.runtime, "execute_image", side_effect=image):
             result = self.send("tetris-chat", "tetris", "スクショを見ればわかるように、そもそもゲームが開始しない", image={"name": "screen.png", "mime_type": "image/png", "data_url": "data:image/png;base64,AA=="})
         self.assertEqual(200, result.status_code)
         self.assertIn('"current_subject": "Tetris web game"', captured["context"])
@@ -58,14 +65,16 @@ class ProjectContextTests(unittest.TestCase):
         self.assertIn("ACTIVE_CONVERSATION", captured["context"])
 
     def test_project_context_is_isolated_and_current_turn_can_change_subject(self):
-        with patch.object(api.runtime, "execute", return_value=(Task("x"), "ok")):
+        with patch.object(api.settings, "task_manager_enabled", False), \
+             patch.object(api.runtime, "execute", return_value=(Task("x"), "ok")):
             self.send("tetris-chat", "tetris", "テトリスを作る")
             self.send("olcr-chat", "olcr", "OLCR Webサイトを作る")
         captured = {}
         def execute(message, approved, context, **kwargs):
             captured["context"] = context
             return Task(message), "ok"
-        with patch.object(api.runtime, "execute", side_effect=execute):
+        with patch.object(api.settings, "task_manager_enabled", False), \
+             patch.object(api.runtime, "execute", side_effect=execute):
             self.send("tetris-chat", "tetris", "別件としてOLCRのWebサイトを直したい")
         self.assertIn('"current_subject": "OLCR website"', captured["context"])
         self.assertNotIn('"project_id": "olcr"', captured["context"])
@@ -101,7 +110,8 @@ class ProjectContextTests(unittest.TestCase):
         def brain(messages, text):
             captured["packet"] = messages[0]["content"]
             return {"text": "The rendered Tetris UI has not entered gameplay."}
-        with patch.object(api.runtime.model, "vision", return_value={"text": json.dumps(visual)}), \
+        with patch.object(api.settings, "task_manager_enabled", False), \
+             patch.object(api.runtime.model, "vision", return_value={"text": json.dumps(visual)}), \
              patch.object(api.runtime.retrieval, "retrieve", return_value=([], "none")), \
              patch.object(api.runtime, "_generate_brain", side_effect=brain):
             result = self.send("tetris-chat", "tetris", "スクショを見ればわかるように、そもそもゲームが開始しない",
@@ -112,6 +122,31 @@ class ProjectContextTests(unittest.TestCase):
         self.assertIn("ACTIVE_PROJECT_CONTEXT", captured["packet"])
         self.assertIn('"current_subject": "Tetris project"', captured["packet"])
         self.assertLess(captured["packet"].index("CURRENT_ATTACHMENT_VISION_EVIDENCE"), captured["packet"].index("ACTIVE_PROJECT_AND_CONVERSATION_CONTEXT"))
+
+    def test_ambiguous_image_description_bypasses_coding_clarification(self):
+        image = {"name": "screen.png", "mime_type": "image/png", "data_url": "data:image/png;base64,AA=="}
+        with patch.object(api.settings, "task_manager_enabled", True), \
+             patch.object(api.runtime, "execute_image", return_value=(Task("image-task"), "image described")) as execute_image, \
+             patch.object(api.runtime, "execute", side_effect=AssertionError("ambiguous image must not use text runtime")):
+            result = self.send("tetris-chat", "tetris", "画面を確認し、UI上の主要なボタンと入力欄を説明してください。", image=image)
+        self.assertEqual(200, result.status_code)
+        self.assertEqual("image described", result.json()["response"])
+        execute_image.assert_called_once()
+
+    def test_image_coordinate_prompt_bypasses_accidental_geo_provider_route(self):
+        image = {"name": "ui_large_button.png", "mime_type": "image/png",
+                 "data_url": "data:image/png;base64,AA=="}
+        prompt = ("Output the center point of the position corresponding to the following instruction: "
+                  "Click the Save button. The output should just be the coordinates of a point, "
+                  "in the format [x,y]. Additionally, if the task is infeasible, output [-1,-1].")
+        with patch.object(api, "route_external_tool", side_effect=AssertionError("image task must bypass provider matching")), \
+             patch.object(api, "_external_router_candidate", side_effect=AssertionError("image task must bypass API router")), \
+             patch.object(api.runtime, "execute_image", return_value=(Task("image-task"), "[879,73]")) as execute_image, \
+             patch.object(api.runtime, "execute", side_effect=AssertionError("image task must not use text runtime")):
+            result = self.send("tetris-chat", "tetris", prompt, image=image)
+        self.assertEqual(200, result.status_code)
+        self.assertEqual("[879,73]", result.json()["response"])
+        execute_image.assert_called_once()
 
     def test_project_screenshot_repair_request_starts_coding_task(self):
         with patch.object(api.settings, "task_manager_enabled", True), \

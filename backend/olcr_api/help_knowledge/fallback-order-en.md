@@ -1,0 +1,6 @@
+# Account versus model fallback
+
+Accounts for the same selected model are tried in provider priority order first. If none is available, configured replacement models are tried. Reorder accounts under Providers → Accounts and priority with ↑↓; configure replacement model order in Model fallback. Existing temporarily unavailable fallbacks are retained when changing another model. An external fallback sends the request to that provider.
+
+Before invocation, availability is classified as available, unavailable, or unknown. Missing credentials, required reauthentication, disabled external access, missing local runtimes/models, and confirmed recent quota or access failures can skip a candidate without a generation request. Unknown candidates are checked by the normal requested call; no probe completion is generated.
+Known reset times and Retry-After are respected. Limits without a reset time and recent connection failures use short cooldowns, then become eligible for retry. Reconnection, credential replacement and re-registering connection settings clear old failure evidence. Request-specific input/image/schema 400 errors do not disable the model. OLCR status entries in the thinking log show skip reasons and retry times.

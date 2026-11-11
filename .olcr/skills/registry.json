@@ -1,0 +1,21 @@
+[
+  {
+    "name": "calculator",
+    "version": "1",
+    "source": "local-e2e-fixture",
+    "content_hash": "bc5f351a0edf7327052874b655b42ad206c5f1f973677f2982ff687c9aaa043d",
+    "state": "ACTIVE",
+    "enabled": true,
+    "trusted": true,
+    "permission": "explicit",
+    "description": "Deterministic arithmetic Skill",
+    "scope": "project",
+    "revision": "e2e",
+    "scripts": [],
+    "references": [],
+    "requested_permissions": [],
+    "validation_state": "PASS",
+    "blocked": false,
+    "update_state": "CURRENT"
+  }
+]

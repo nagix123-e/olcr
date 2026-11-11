@@ -1,0 +1,6 @@
+# Optional Apple Silicon audio runtime. Install in .venv-mlx, never the backend
+# Python 3.12 environment. Uses the original language-selected HF checkpoints.
+mlx==0.32.0
+mlx-audio==0.4.6
+mlx-lm==0.32.0
+transformers==5.5.0

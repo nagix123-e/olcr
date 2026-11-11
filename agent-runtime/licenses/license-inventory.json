@@ -1,0 +1,2650 @@
+{
+  "components": [
+    {
+      "component": "Node.js",
+      "license": "MIT",
+      "path": "node/LICENSE"
+    },
+    {
+      "component": "@anthropic-ai/sdk",
+      "license": "MIT",
+      "path": "node_modules/@anthropic-ai/sdk/package.json",
+      "version": "0.115.0"
+    },
+    {
+      "component": "@aws/lambda-invoke-store",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws/lambda-invoke-store/package.json",
+      "version": "0.3.0"
+    },
+    {
+      "component": "@aws-sdk/client-bedrock-agent-runtime",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/client-bedrock-agent-runtime/package.json",
+      "version": "3.1147.0"
+    },
+    {
+      "component": "@aws-sdk/client-bedrock-runtime",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/client-bedrock-runtime/package.json",
+      "version": "3.1147.0"
+    },
+    {
+      "component": "@aws-sdk/client-kendra",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/client-kendra/package.json",
+      "version": "3.1147.0"
+    },
+    {
+      "component": "@aws-sdk/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/core/package.json",
+      "version": "3.978.1"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-env",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-env/package.json",
+      "version": "3.972.72"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-http",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-http/package.json",
+      "version": "3.972.74"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-ini",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-ini/package.json",
+      "version": "3.973.17"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-login",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-login/package.json",
+      "version": "3.972.79"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-node",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-node/package.json",
+      "version": "3.972.84"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-process",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-process/package.json",
+      "version": "3.972.72"
+    },
+    {
+      "component": "@aws-sdk/token-providers",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers/package.json",
+      "version": "3.1138.0"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-sso",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-sso/package.json",
+      "version": "3.973.16"
+    },
+    {
+      "component": "@aws-sdk/credential-provider-web-identity",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/credential-provider-web-identity/package.json",
+      "version": "3.972.78"
+    },
+    {
+      "component": "@aws-sdk/eventstream-handler-node",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/eventstream-handler-node/package.json",
+      "version": "3.972.35"
+    },
+    {
+      "component": "@aws-sdk/middleware-eventstream",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/middleware-eventstream/package.json",
+      "version": "3.972.30"
+    },
+    {
+      "component": "@aws-sdk/middleware-websocket",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/middleware-websocket/package.json",
+      "version": "3.972.54"
+    },
+    {
+      "component": "@aws-sdk/nested-clients",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/nested-clients/package.json",
+      "version": "3.997.46"
+    },
+    {
+      "component": "@aws-sdk/signature-v4-multi-region",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/signature-v4-multi-region/package.json",
+      "version": "3.996.47"
+    },
+    {
+      "component": "@aws-sdk/token-providers",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/token-providers/package.json",
+      "version": "3.1147.0"
+    },
+    {
+      "component": "@aws-sdk/types",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/types/package.json",
+      "version": "3.974.6"
+    },
+    {
+      "component": "@aws-sdk/xml-builder",
+      "license": "Apache-2.0",
+      "path": "node_modules/@aws-sdk/xml-builder/package.json",
+      "version": "3.972.41"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/@babel/runtime/helpers/esm",
+      "license": "see package metadata",
+      "path": "node_modules/@babel/runtime/helpers/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "@babel/runtime",
+      "license": "MIT",
+      "path": "node_modules/@babel/runtime/package.json",
+      "version": "7.29.7"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/@cfworker/json-schema/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/@cfworker/json-schema/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/@cfworker/json-schema/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/@cfworker/json-schema/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "@cfworker/json-schema",
+      "license": "MIT",
+      "path": "node_modules/@cfworker/json-schema/package.json",
+      "version": "4.1.1"
+    },
+    {
+      "component": "@google/generative-ai",
+      "license": "Apache-2.0",
+      "path": "node_modules/@google/generative-ai/package.json",
+      "version": "0.24.1"
+    },
+    {
+      "component": "@google/generative-ai-server",
+      "license": "see package metadata",
+      "path": "node_modules/@google/generative-ai/server/package.json",
+      "version": ""
+    },
+    {
+      "component": "@grpc/grpc-js",
+      "license": "Apache-2.0",
+      "path": "node_modules/@grpc/grpc-js/package.json",
+      "version": "1.14.5"
+    },
+    {
+      "component": "@grpc/proto-loader",
+      "license": "Apache-2.0",
+      "path": "node_modules/@grpc/proto-loader/package.json",
+      "version": "0.8.1"
+    },
+    {
+      "component": "@js-sdsl/ordered-map",
+      "license": "MIT",
+      "path": "node_modules/@js-sdsl/ordered-map/package.json",
+      "version": "4.4.2"
+    },
+    {
+      "component": "@langchain/anthropic",
+      "license": "MIT",
+      "path": "node_modules/@langchain/anthropic/package.json",
+      "version": "1.5.2"
+    },
+    {
+      "component": "@langchain/aws",
+      "license": "MIT",
+      "path": "node_modules/@langchain/aws/package.json",
+      "version": "1.4.6"
+    },
+    {
+      "component": "@langchain/core",
+      "license": "MIT",
+      "path": "node_modules/@langchain/core/package.json",
+      "version": "1.2.8"
+    },
+    {
+      "component": "@langchain/openai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/deepseek/node_modules/@langchain/openai/package.json",
+      "version": "1.6.2"
+    },
+    {
+      "component": "openai",
+      "license": "Apache-2.0",
+      "path": "node_modules/@langchain/deepseek/node_modules/openai/package.json",
+      "version": "7.30.0"
+    },
+    {
+      "component": "@langchain/deepseek",
+      "license": "MIT",
+      "path": "node_modules/@langchain/deepseek/package.json",
+      "version": "1.1.17"
+    },
+    {
+      "component": "@langchain/google-common",
+      "license": "MIT",
+      "path": "node_modules/@langchain/google-common/package.json",
+      "version": "2.2.0"
+    },
+    {
+      "component": "@langchain/google-gauth",
+      "license": "MIT",
+      "path": "node_modules/@langchain/google-gauth/package.json",
+      "version": "2.2.0"
+    },
+    {
+      "component": "@langchain/google-genai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/google-genai/package.json",
+      "version": "2.2.0"
+    },
+    {
+      "component": "@langchain/google-vertexai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/google-vertexai/package.json",
+      "version": "2.2.0"
+    },
+    {
+      "component": "@langchain/langgraph",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph/package.json",
+      "version": "1.4.8"
+    },
+    {
+      "component": "@langchain/langgraph-checkpoint",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-checkpoint/package.json",
+      "version": "1.1.6"
+    },
+    {
+      "component": "@langchain/langgraph-checkpoint-sqlite",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-checkpoint-sqlite/package.json",
+      "version": "1.0.4"
+    },
+    {
+      "component": "eventemitter3",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-sdk/node_modules/eventemitter3/package.json",
+      "version": "5.0.4"
+    },
+    {
+      "component": "p-queue",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-sdk/node_modules/p-queue/package.json",
+      "version": "9.3.3"
+    },
+    {
+      "component": "p-timeout",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-sdk/node_modules/p-timeout/package.json",
+      "version": "7.0.2"
+    },
+    {
+      "component": "@langchain/langgraph-sdk",
+      "license": "MIT",
+      "path": "node_modules/@langchain/langgraph-sdk/package.json",
+      "version": "1.9.31"
+    },
+    {
+      "component": "@langchain/mistralai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/mistralai/package.json",
+      "version": "1.2.0"
+    },
+    {
+      "component": "@langchain/openai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/openai/package.json",
+      "version": "1.5.8"
+    },
+    {
+      "component": "@langchain/protocol",
+      "license": "MIT",
+      "path": "node_modules/@langchain/protocol/package.json",
+      "version": "0.0.18"
+    },
+    {
+      "component": "@langchain/textsplitters",
+      "license": "MIT",
+      "path": "node_modules/@langchain/textsplitters/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "@langchain/openai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/xai/node_modules/@langchain/openai/package.json",
+      "version": "1.6.2"
+    },
+    {
+      "component": "openai",
+      "license": "Apache-2.0",
+      "path": "node_modules/@langchain/xai/node_modules/openai/package.json",
+      "version": "7.30.0"
+    },
+    {
+      "component": "@langchain/xai",
+      "license": "MIT",
+      "path": "node_modules/@langchain/xai/package.json",
+      "version": "1.4.17"
+    },
+    {
+      "component": "@langfuse/core",
+      "license": "MIT",
+      "path": "node_modules/@langfuse/core/package.json",
+      "version": "5.13.0"
+    },
+    {
+      "component": "@langfuse/langchain",
+      "license": "MIT",
+      "path": "node_modules/@langfuse/langchain/package.json",
+      "version": "5.13.0"
+    },
+    {
+      "component": "@langfuse/otel",
+      "license": "MIT",
+      "path": "node_modules/@langfuse/otel/package.json",
+      "version": "5.13.0"
+    },
+    {
+      "component": "@langfuse/tracing",
+      "license": "MIT",
+      "path": "node_modules/@langfuse/tracing/package.json",
+      "version": "5.13.0"
+    },
+    {
+      "component": "@librechat/agents",
+      "license": "MIT",
+      "path": "node_modules/@librechat/agents/package.json",
+      "version": "4.0.4"
+    },
+    {
+      "component": "@mistralai/mistralai",
+      "license": "Apache-2.0",
+      "path": "node_modules/@mistralai/mistralai/package.json",
+      "version": "2.2.1"
+    },
+    {
+      "component": "@opentelemetry/api",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/api/package.json",
+      "version": "1.9.1"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.223.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/configuration/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/configuration",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/configuration/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/context-async-hooks",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/context-async-hooks/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/core/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-logs-otlp-grpc",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-grpc/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-logs-otlp-http",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-http/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-logs-otlp-proto",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-logs-otlp-proto/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-metrics-otlp-grpc",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-grpc/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-metrics-otlp-http",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-http/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-metrics-otlp-proto",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-metrics-otlp-proto/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-prometheus/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-prometheus/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-prometheus/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-prometheus",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-prometheus/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-trace-otlp-grpc",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-grpc/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-trace-otlp-http",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-http/package.json",
+      "version": "0.223.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-trace-otlp-proto",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-trace-otlp-proto/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-zipkin/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-zipkin/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-zipkin/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-zipkin",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/exporter-zipkin/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/instrumentation/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/instrumentation",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/instrumentation/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.223.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-grpc-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-grpc-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.223.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/propagator-b3/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/propagator-b3",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/propagator-b3/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/propagator-jaeger/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/propagator-jaeger",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/propagator-jaeger/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/resources/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.223.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/api-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/api-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/context-async-hooks",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/context-async-hooks/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/exporter-trace-otlp-http",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/exporter-trace-otlp-http/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-exporter-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/otlp-exporter-base/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/otlp-transformer",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/otlp-transformer/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-logs",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/sdk-logs/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-metrics",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/sdk-metrics/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/node_modules/@opentelemetry/sdk-trace-base/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-node",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-node/package.json",
+      "version": "0.220.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-base/package.json",
+      "version": "2.12.0"
+    },
+    {
+      "component": "@opentelemetry/context-async-hooks",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/node_modules/@opentelemetry/context-async-hooks/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/node_modules/@opentelemetry/core/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/resources",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/node_modules/@opentelemetry/resources/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/node_modules/@opentelemetry/sdk-trace/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace-base",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/node_modules/@opentelemetry/sdk-trace-base/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/sdk-trace-node",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/sdk-trace-node/package.json",
+      "version": "2.9.0"
+    },
+    {
+      "component": "@opentelemetry/semantic-conventions",
+      "license": "Apache-2.0",
+      "path": "node_modules/@opentelemetry/semantic-conventions/package.json",
+      "version": "1.43.0"
+    },
+    {
+      "component": "@protobufjs/aspromise",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/aspromise/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "@protobufjs/base64",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/base64/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "@protobufjs/codegen",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/codegen/package.json",
+      "version": "2.0.5"
+    },
+    {
+      "component": "@protobufjs/eventemitter",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/eventemitter/package.json",
+      "version": "1.1.1"
+    },
+    {
+      "component": "@protobufjs/fetch",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/fetch/package.json",
+      "version": "1.1.1"
+    },
+    {
+      "component": "@protobufjs/float",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/float/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "@protobufjs/path",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/path/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "@protobufjs/pool",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/pool/package.json",
+      "version": "1.1.0"
+    },
+    {
+      "component": "@protobufjs/utf8",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/@protobufjs/utf8/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "@smithy/core",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/core/package.json",
+      "version": "3.35.1"
+    },
+    {
+      "component": "@smithy/credential-provider-imds",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/credential-provider-imds/package.json",
+      "version": "4.5.2"
+    },
+    {
+      "component": "@smithy/fetch-http-handler",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/fetch-http-handler/package.json",
+      "version": "5.8.0"
+    },
+    {
+      "component": "@smithy/node-http-handler",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/node-http-handler/package.json",
+      "version": "4.12.1"
+    },
+    {
+      "component": "@smithy/signature-v4",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/signature-v4/package.json",
+      "version": "5.7.4"
+    },
+    {
+      "component": "@smithy/types",
+      "license": "Apache-2.0",
+      "path": "node_modules/@smithy/types/package.json",
+      "version": "4.19.0"
+    },
+    {
+      "component": "@stablelib/base64",
+      "license": "MIT",
+      "path": "node_modules/@stablelib/base64/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "@standard-schema/spec",
+      "license": "MIT",
+      "path": "node_modules/@standard-schema/spec/package.json",
+      "version": "1.1.0"
+    },
+    {
+      "component": "@types/diff",
+      "license": "MIT",
+      "path": "node_modules/@types/diff/package.json",
+      "version": "7.0.2"
+    },
+    {
+      "component": "@types/json-schema",
+      "license": "MIT",
+      "path": "node_modules/@types/json-schema/package.json",
+      "version": "7.0.15"
+    },
+    {
+      "component": "@types/node",
+      "license": "MIT",
+      "path": "node_modules/@types/node/package.json",
+      "version": "26.6.4"
+    },
+    {
+      "component": "agent-base",
+      "license": "MIT",
+      "path": "node_modules/agent-base/package.json",
+      "version": "7.1.4"
+    },
+    {
+      "component": "ai-tokenizer",
+      "license": "MIT",
+      "path": "node_modules/ai-tokenizer/package.json",
+      "version": "1.0.7"
+    },
+    {
+      "component": "ansi-regex",
+      "license": "MIT",
+      "path": "node_modules/ansi-regex/package.json",
+      "version": "5.0.1"
+    },
+    {
+      "component": "ansi-styles",
+      "license": "MIT",
+      "path": "node_modules/ansi-styles/package.json",
+      "version": "4.3.0"
+    },
+    {
+      "component": "asynckit",
+      "license": "MIT",
+      "path": "node_modules/asynckit/package.json",
+      "version": "0.4.0"
+    },
+    {
+      "component": "agent-base",
+      "license": "MIT",
+      "path": "node_modules/axios/node_modules/agent-base/package.json",
+      "version": "6.0.2"
+    },
+    {
+      "component": "https-proxy-agent",
+      "license": "MIT",
+      "path": "node_modules/axios/node_modules/https-proxy-agent/package.json",
+      "version": "5.0.1"
+    },
+    {
+      "component": "axios",
+      "license": "MIT",
+      "path": "node_modules/axios/package.json",
+      "version": "1.20.0"
+    },
+    {
+      "component": "base64-js",
+      "license": "MIT",
+      "path": "node_modules/base64-js/package.json",
+      "version": "1.5.1"
+    },
+    {
+      "component": "better-sqlite3",
+      "license": "MIT",
+      "path": "node_modules/better-sqlite3/package.json",
+      "version": "12.11.1"
+    },
+    {
+      "component": "bignumber.js",
+      "license": "MIT",
+      "path": "node_modules/bignumber.js/package.json",
+      "version": "9.3.1"
+    },
+    {
+      "component": "bindings",
+      "license": "MIT",
+      "path": "node_modules/bindings/package.json",
+      "version": "1.5.0"
+    },
+    {
+      "component": "bl",
+      "license": "MIT",
+      "path": "node_modules/bl/package.json",
+      "version": "4.1.0"
+    },
+    {
+      "component": "boolbase",
+      "license": "ISC",
+      "path": "node_modules/boolbase/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "bowser",
+      "license": "MIT",
+      "path": "node_modules/bowser/package.json",
+      "version": "2.14.1"
+    },
+    {
+      "component": "buffer",
+      "license": "MIT",
+      "path": "node_modules/buffer/package.json",
+      "version": "5.7.1"
+    },
+    {
+      "component": "buffer-equal-constant-time",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/buffer-equal-constant-time/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "call-bind-apply-helpers",
+      "license": "MIT",
+      "path": "node_modules/call-bind-apply-helpers/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/cheerio/dist/browser",
+      "license": "see package metadata",
+      "path": "node_modules/cheerio/dist/browser/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/cheerio/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/cheerio/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/cheerio/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/cheerio/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "cheerio",
+      "license": "MIT",
+      "path": "node_modules/cheerio/package.json",
+      "version": "1.2.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/cheerio-select/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/cheerio-select/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "cheerio-select",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/cheerio-select/package.json",
+      "version": "2.1.0"
+    },
+    {
+      "component": "chownr",
+      "license": "ISC",
+      "path": "node_modules/chownr/package.json",
+      "version": "1.1.4"
+    },
+    {
+      "component": "cjs-module-lexer",
+      "license": "MIT",
+      "path": "node_modules/cjs-module-lexer/package.json",
+      "version": "2.3.0"
+    },
+    {
+      "component": "cliui",
+      "license": "ISC",
+      "path": "node_modules/cliui/package.json",
+      "version": "8.0.1"
+    },
+    {
+      "component": "color-convert",
+      "license": "MIT",
+      "path": "node_modules/color-convert/package.json",
+      "version": "2.0.1"
+    },
+    {
+      "component": "color-name",
+      "license": "MIT",
+      "path": "node_modules/color-name/package.json",
+      "version": "1.1.4"
+    },
+    {
+      "component": "combined-stream",
+      "license": "MIT",
+      "path": "node_modules/combined-stream/package.json",
+      "version": "1.0.8"
+    },
+    {
+      "component": "complex.js",
+      "license": "MIT",
+      "path": "node_modules/complex.js/package.json",
+      "version": "2.4.3"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/css-select/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/css-select/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "css-select",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/css-select/package.json",
+      "version": "5.2.2"
+    },
+    {
+      "component": "css-what",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/css-what/package.json",
+      "version": "6.2.2"
+    },
+    {
+      "component": "data-uri-to-buffer",
+      "license": "MIT",
+      "path": "node_modules/data-uri-to-buffer/package.json",
+      "version": "4.0.1"
+    },
+    {
+      "component": "debug",
+      "license": "MIT",
+      "path": "node_modules/debug/package.json",
+      "version": "4.4.3"
+    },
+    {
+      "component": "decimal.js",
+      "license": "MIT",
+      "path": "node_modules/decimal.js/package.json",
+      "version": "10.6.0"
+    },
+    {
+      "component": "decompress-response",
+      "license": "MIT",
+      "path": "node_modules/decompress-response/package.json",
+      "version": "6.0.0"
+    },
+    {
+      "component": "deep-extend",
+      "license": "MIT",
+      "path": "node_modules/deep-extend/package.json",
+      "version": "0.6.0"
+    },
+    {
+      "component": "delayed-stream",
+      "license": "MIT",
+      "path": "node_modules/delayed-stream/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "detect-libc",
+      "license": "Apache-2.0",
+      "path": "node_modules/detect-libc/package.json",
+      "version": "2.1.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/diff/libcjs",
+      "license": "see package metadata",
+      "path": "node_modules/diff/libcjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/diff/libesm",
+      "license": "see package metadata",
+      "path": "node_modules/diff/libesm/package.json",
+      "version": ""
+    },
+    {
+      "component": "diff",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/diff/package.json",
+      "version": "9.0.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/dom-serializer/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/dom-serializer/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "dom-serializer",
+      "license": "MIT",
+      "path": "node_modules/dom-serializer/package.json",
+      "version": "2.0.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/domelementtype/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/domelementtype/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "domelementtype",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/domelementtype/package.json",
+      "version": "2.3.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/domhandler/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/domhandler/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "domhandler",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/domhandler/package.json",
+      "version": "5.0.3"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/domutils/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/domutils/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "domutils",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/domutils/package.json",
+      "version": "3.2.2"
+    },
+    {
+      "component": "dotenv",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/dotenv/package.json",
+      "version": "16.6.1"
+    },
+    {
+      "component": "dunder-proto",
+      "license": "MIT",
+      "path": "node_modules/dunder-proto/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "ecdsa-sig-formatter",
+      "license": "Apache-2.0",
+      "path": "node_modules/ecdsa-sig-formatter/package.json",
+      "version": "1.0.11"
+    },
+    {
+      "component": "emoji-regex",
+      "license": "MIT",
+      "path": "node_modules/emoji-regex/package.json",
+      "version": "8.0.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/encoding-sniffer/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/encoding-sniffer/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/encoding-sniffer/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/encoding-sniffer/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "encoding-sniffer",
+      "license": "MIT",
+      "path": "node_modules/encoding-sniffer/package.json",
+      "version": "0.2.1"
+    },
+    {
+      "component": "end-of-stream",
+      "license": "MIT",
+      "path": "node_modules/end-of-stream/package.json",
+      "version": "1.4.5"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/entities/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/entities/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "entities",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/entities/package.json",
+      "version": "4.5.0"
+    },
+    {
+      "component": "es-define-property",
+      "license": "MIT",
+      "path": "node_modules/es-define-property/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "es-errors",
+      "license": "MIT",
+      "path": "node_modules/es-errors/package.json",
+      "version": "1.3.0"
+    },
+    {
+      "component": "es-module-lexer",
+      "license": "MIT",
+      "path": "node_modules/es-module-lexer/package.json",
+      "version": "3.0.3"
+    },
+    {
+      "component": "es-object-atoms",
+      "license": "MIT",
+      "path": "node_modules/es-object-atoms/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "es-set-tostringtag",
+      "license": "MIT",
+      "path": "node_modules/es-set-tostringtag/package.json",
+      "version": "2.1.0"
+    },
+    {
+      "component": "escalade",
+      "license": "MIT",
+      "path": "node_modules/escalade/package.json",
+      "version": "3.2.0"
+    },
+    {
+      "component": "escape-latex",
+      "license": "MIT",
+      "path": "node_modules/escape-latex/package.json",
+      "version": "1.2.0"
+    },
+    {
+      "component": "eventemitter3",
+      "license": "MIT",
+      "path": "node_modules/eventemitter3/package.json",
+      "version": "4.0.7"
+    },
+    {
+      "component": "expand-template",
+      "license": "(MIT OR WTFPL)",
+      "path": "node_modules/expand-template/package.json",
+      "version": "2.0.3"
+    },
+    {
+      "component": "extend",
+      "license": "MIT",
+      "path": "node_modules/extend/package.json",
+      "version": "3.0.2"
+    },
+    {
+      "component": "fast-sha256",
+      "license": "Unlicense",
+      "path": "node_modules/fast-sha256/package.json",
+      "version": "1.3.0"
+    },
+    {
+      "component": "fetch-blob",
+      "license": "MIT",
+      "path": "node_modules/fetch-blob/package.json",
+      "version": "3.2.0"
+    },
+    {
+      "component": "file-uri-to-path",
+      "license": "MIT",
+      "path": "node_modules/file-uri-to-path/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "follow-redirects",
+      "license": "MIT",
+      "path": "node_modules/follow-redirects/package.json",
+      "version": "1.16.1"
+    },
+    {
+      "component": "form-data",
+      "license": "MIT",
+      "path": "node_modules/form-data/package.json",
+      "version": "4.0.6"
+    },
+    {
+      "component": "formdata-polyfill",
+      "license": "MIT",
+      "path": "node_modules/formdata-polyfill/package.json",
+      "version": "4.0.10"
+    },
+    {
+      "component": "fraction.js",
+      "license": "MIT",
+      "path": "node_modules/fraction.js/package.json",
+      "version": "5.3.4"
+    },
+    {
+      "component": "fs-constants",
+      "license": "MIT",
+      "path": "node_modules/fs-constants/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "function-bind",
+      "license": "MIT",
+      "path": "node_modules/function-bind/package.json",
+      "version": "1.1.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/gaxios/build/esm",
+      "license": "see package metadata",
+      "path": "node_modules/gaxios/build/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "gaxios",
+      "license": "Apache-2.0",
+      "path": "node_modules/gaxios/package.json",
+      "version": "7.3.1"
+    },
+    {
+      "component": "gcp-metadata",
+      "license": "Apache-2.0",
+      "path": "node_modules/gcp-metadata/package.json",
+      "version": "8.1.2"
+    },
+    {
+      "component": "get-caller-file",
+      "license": "ISC",
+      "path": "node_modules/get-caller-file/package.json",
+      "version": "2.0.5"
+    },
+    {
+      "component": "get-intrinsic",
+      "license": "MIT",
+      "path": "node_modules/get-intrinsic/package.json",
+      "version": "1.3.0"
+    },
+    {
+      "component": "get-proto",
+      "license": "MIT",
+      "path": "node_modules/get-proto/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "beep-boop",
+      "license": "see package metadata",
+      "path": "node_modules/github-from-package/example/package.json",
+      "version": "1.2.3"
+    },
+    {
+      "component": "github-from-package",
+      "license": "MIT",
+      "path": "node_modules/github-from-package/package.json",
+      "version": "0.0.0"
+    },
+    {
+      "component": "google-auth-library",
+      "license": "Apache-2.0",
+      "path": "node_modules/google-auth-library/package.json",
+      "version": "10.9.1"
+    },
+    {
+      "component": "google-logging-utils",
+      "license": "Apache-2.0",
+      "path": "node_modules/google-logging-utils/package.json",
+      "version": "1.1.3"
+    },
+    {
+      "component": "gopd",
+      "license": "MIT",
+      "path": "node_modules/gopd/package.json",
+      "version": "1.2.0"
+    },
+    {
+      "component": "has-symbols",
+      "license": "MIT",
+      "path": "node_modules/has-symbols/package.json",
+      "version": "1.1.0"
+    },
+    {
+      "component": "has-tostringtag",
+      "license": "MIT",
+      "path": "node_modules/has-tostringtag/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "hasown",
+      "license": "MIT",
+      "path": "node_modules/hasown/package.json",
+      "version": "2.0.4"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/htmlparser2/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/htmlparser2/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/htmlparser2/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/htmlparser2/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/htmlparser2/node_modules/entities/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/htmlparser2/node_modules/entities/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/htmlparser2/node_modules/entities/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/htmlparser2/node_modules/entities/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "entities",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/htmlparser2/node_modules/entities/package.json",
+      "version": "7.0.1"
+    },
+    {
+      "component": "htmlparser2",
+      "license": "MIT",
+      "path": "node_modules/htmlparser2/package.json",
+      "version": "10.1.0"
+    },
+    {
+      "component": "https-proxy-agent",
+      "license": "MIT",
+      "path": "node_modules/https-proxy-agent/package.json",
+      "version": "7.0.6"
+    },
+    {
+      "component": "iconv-lite",
+      "license": "MIT",
+      "path": "node_modules/iconv-lite/package.json",
+      "version": "0.6.3"
+    },
+    {
+      "component": "ieee754",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/ieee754/package.json",
+      "version": "1.2.1"
+    },
+    {
+      "component": "import-in-the-middle",
+      "license": "Apache-2.0",
+      "path": "node_modules/import-in-the-middle/package.json",
+      "version": "3.5.2"
+    },
+    {
+      "component": "inherits",
+      "license": "ISC",
+      "path": "node_modules/inherits/package.json",
+      "version": "2.0.4"
+    },
+    {
+      "component": "ini",
+      "license": "ISC",
+      "path": "node_modules/ini/package.json",
+      "version": "1.3.8"
+    },
+    {
+      "component": "ip-address",
+      "license": "MIT",
+      "path": "node_modules/ip-address/package.json",
+      "version": "10.7.3"
+    },
+    {
+      "component": "is-fullwidth-code-point",
+      "license": "MIT",
+      "path": "node_modules/is-fullwidth-code-point/package.json",
+      "version": "3.0.0"
+    },
+    {
+      "component": "is-network-error",
+      "license": "MIT",
+      "path": "node_modules/is-network-error/package.json",
+      "version": "1.3.2"
+    },
+    {
+      "component": "javascript-natural-sort",
+      "license": "MIT",
+      "path": "node_modules/javascript-natural-sort/package.json",
+      "version": "0.7.1"
+    },
+    {
+      "component": "js-tiktoken",
+      "license": "MIT",
+      "path": "node_modules/js-tiktoken/package.json",
+      "version": "1.0.21"
+    },
+    {
+      "component": "json-bigint",
+      "license": "MIT",
+      "path": "node_modules/json-bigint/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "json-schema-to-ts",
+      "license": "MIT",
+      "path": "node_modules/json-schema-to-ts/package.json",
+      "version": "3.1.1"
+    },
+    {
+      "component": "jwa",
+      "license": "MIT",
+      "path": "node_modules/jwa/package.json",
+      "version": "2.0.1"
+    },
+    {
+      "component": "jws",
+      "license": "MIT",
+      "path": "node_modules/jws/package.json",
+      "version": "4.0.1"
+    },
+    {
+      "component": "langsmith",
+      "license": "MIT",
+      "path": "node_modules/langsmith/package.json",
+      "version": "0.10.8"
+    },
+    {
+      "component": "lodash.camelcase",
+      "license": "MIT",
+      "path": "node_modules/lodash.camelcase/package.json",
+      "version": "4.3.0"
+    },
+    {
+      "component": "long",
+      "license": "Apache-2.0",
+      "path": "node_modules/long/package.json",
+      "version": "5.3.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/long/umd",
+      "license": "see package metadata",
+      "path": "node_modules/long/umd/package.json",
+      "version": ""
+    },
+    {
+      "component": "math-intrinsics",
+      "license": "MIT",
+      "path": "node_modules/math-intrinsics/package.json",
+      "version": "1.1.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/mathjs/bin",
+      "license": "see package metadata",
+      "path": "node_modules/mathjs/bin/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/mathjs/lib/browser",
+      "license": "see package metadata",
+      "path": "node_modules/mathjs/lib/browser/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/mathjs/lib/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/mathjs/lib/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "mathjs",
+      "license": "Apache-2.0",
+      "path": "node_modules/mathjs/package.json",
+      "version": "15.2.0"
+    },
+    {
+      "component": "mime-db",
+      "license": "MIT",
+      "path": "node_modules/mime-db/package.json",
+      "version": "1.52.0"
+    },
+    {
+      "component": "mime-types",
+      "license": "MIT",
+      "path": "node_modules/mime-types/package.json",
+      "version": "2.1.35"
+    },
+    {
+      "component": "mimic-response",
+      "license": "MIT",
+      "path": "node_modules/mimic-response/package.json",
+      "version": "3.1.0"
+    },
+    {
+      "component": "minimist",
+      "license": "MIT",
+      "path": "node_modules/minimist/package.json",
+      "version": "1.2.8"
+    },
+    {
+      "component": "mkdirp-classic",
+      "license": "MIT",
+      "path": "node_modules/mkdirp-classic/package.json",
+      "version": "0.5.3"
+    },
+    {
+      "component": "module-details-from-path",
+      "license": "MIT",
+      "path": "node_modules/module-details-from-path/package.json",
+      "version": "1.0.4"
+    },
+    {
+      "component": "ms",
+      "license": "MIT",
+      "path": "node_modules/ms/package.json",
+      "version": "2.1.3"
+    },
+    {
+      "component": "mustache",
+      "license": "MIT",
+      "path": "node_modules/mustache/package.json",
+      "version": "4.2.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/nanoid/async",
+      "license": "see package metadata",
+      "path": "node_modules/nanoid/async/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/nanoid/non-secure",
+      "license": "see package metadata",
+      "path": "node_modules/nanoid/non-secure/package.json",
+      "version": ""
+    },
+    {
+      "component": "nanoid",
+      "license": "MIT",
+      "path": "node_modules/nanoid/package.json",
+      "version": "3.3.20"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/nanoid/url-alphabet",
+      "license": "see package metadata",
+      "path": "node_modules/nanoid/url-alphabet/package.json",
+      "version": ""
+    },
+    {
+      "component": "napi-build-utils",
+      "license": "MIT",
+      "path": "node_modules/napi-build-utils/package.json",
+      "version": "2.0.0"
+    },
+    {
+      "component": "node",
+      "license": "MIT",
+      "path": "node_modules/node/package.json",
+      "version": "24.18.0"
+    },
+    {
+      "component": "node-abi",
+      "license": "MIT",
+      "path": "node_modules/node-abi/package.json",
+      "version": "3.97.0"
+    },
+    {
+      "component": "node-bin-setup",
+      "license": "ISC",
+      "path": "node_modules/node-bin-setup/package.json",
+      "version": "1.1.4"
+    },
+    {
+      "component": "node-domexception",
+      "license": "MIT",
+      "path": "node_modules/node-domexception/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "node-fetch",
+      "license": "MIT",
+      "path": "node_modules/node-fetch/package.json",
+      "version": "3.3.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/nth-check/lib/esm",
+      "license": "see package metadata",
+      "path": "node_modules/nth-check/lib/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "nth-check",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/nth-check/package.json",
+      "version": "2.1.1"
+    },
+    {
+      "component": "okapibm25",
+      "license": "MIT",
+      "path": "node_modules/okapibm25/package.json",
+      "version": "1.4.1"
+    },
+    {
+      "component": "once",
+      "license": "ISC",
+      "path": "node_modules/once/package.json",
+      "version": "1.4.0"
+    },
+    {
+      "component": "openai",
+      "license": "Apache-2.0",
+      "path": "node_modules/openai/package.json",
+      "version": "6.49.0"
+    },
+    {
+      "component": "p-finally",
+      "license": "MIT",
+      "path": "node_modules/p-finally/package.json",
+      "version": "1.0.0"
+    },
+    {
+      "component": "p-queue",
+      "license": "MIT",
+      "path": "node_modules/p-queue/package.json",
+      "version": "6.6.2"
+    },
+    {
+      "component": "p-retry",
+      "license": "MIT",
+      "path": "node_modules/p-retry/package.json",
+      "version": "7.1.1"
+    },
+    {
+      "component": "p-timeout",
+      "license": "MIT",
+      "path": "node_modules/p-timeout/package.json",
+      "version": "3.2.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/parse5/dist/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/parse5/dist/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/parse5/node_modules/entities/dist/commonjs",
+      "license": "see package metadata",
+      "path": "node_modules/parse5/node_modules/entities/dist/commonjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/parse5/node_modules/entities/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/parse5/node_modules/entities/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "entities",
+      "license": "BSD-2-Clause",
+      "path": "node_modules/parse5/node_modules/entities/package.json",
+      "version": "6.0.1"
+    },
+    {
+      "component": "parse5",
+      "license": "MIT",
+      "path": "node_modules/parse5/package.json",
+      "version": "7.3.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/parse5-htmlparser2-tree-adapter/dist/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/parse5-htmlparser2-tree-adapter/dist/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "parse5-htmlparser2-tree-adapter",
+      "license": "MIT",
+      "path": "node_modules/parse5-htmlparser2-tree-adapter/package.json",
+      "version": "7.1.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/parse5-parser-stream/dist/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/parse5-parser-stream/dist/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "parse5-parser-stream",
+      "license": "MIT",
+      "path": "node_modules/parse5-parser-stream/package.json",
+      "version": "7.1.2"
+    },
+    {
+      "component": "prebuild-install",
+      "license": "MIT",
+      "path": "node_modules/prebuild-install/package.json",
+      "version": "7.1.3"
+    },
+    {
+      "component": "protobufjs",
+      "license": "BSD-3-Clause",
+      "path": "node_modules/protobufjs/package.json",
+      "version": "7.6.6"
+    },
+    {
+      "component": "proxy-from-env",
+      "license": "MIT",
+      "path": "node_modules/proxy-from-env/package.json",
+      "version": "2.1.0"
+    },
+    {
+      "component": "pump",
+      "license": "MIT",
+      "path": "node_modules/pump/package.json",
+      "version": "3.0.4"
+    },
+    {
+      "component": "rc",
+      "license": "(BSD-2-Clause OR MIT OR Apache-2.0)",
+      "path": "node_modules/rc/package.json",
+      "version": "1.2.8"
+    },
+    {
+      "component": "readable-stream",
+      "license": "MIT",
+      "path": "node_modules/readable-stream/package.json",
+      "version": "3.6.2"
+    },
+    {
+      "component": "reova",
+      "license": "MIT",
+      "path": "node_modules/reova/package.json",
+      "version": "0.4.1"
+    },
+    {
+      "component": "require-directory",
+      "license": "MIT",
+      "path": "node_modules/require-directory/package.json",
+      "version": "2.1.1"
+    },
+    {
+      "component": "require-in-the-middle",
+      "license": "MIT",
+      "path": "node_modules/require-in-the-middle/package.json",
+      "version": "8.0.1"
+    },
+    {
+      "component": "safe-buffer",
+      "license": "MIT",
+      "path": "node_modules/safe-buffer/package.json",
+      "version": "5.2.1"
+    },
+    {
+      "component": "safer-buffer",
+      "license": "MIT",
+      "path": "node_modules/safer-buffer/package.json",
+      "version": "2.1.2"
+    },
+    {
+      "component": "seedrandom",
+      "license": "MIT",
+      "path": "node_modules/seedrandom/package.json",
+      "version": "3.0.5"
+    },
+    {
+      "component": "semver",
+      "license": "ISC",
+      "path": "node_modules/semver/package.json",
+      "version": "7.8.5"
+    },
+    {
+      "component": "simple-concat",
+      "license": "MIT",
+      "path": "node_modules/simple-concat/package.json",
+      "version": "1.0.1"
+    },
+    {
+      "component": "simple-get",
+      "license": "MIT",
+      "path": "node_modules/simple-get/package.json",
+      "version": "4.0.1"
+    },
+    {
+      "component": "smart-buffer",
+      "license": "MIT",
+      "path": "node_modules/smart-buffer/package.json",
+      "version": "4.2.0"
+    },
+    {
+      "component": "socks",
+      "license": "MIT",
+      "path": "node_modules/socks/package.json",
+      "version": "2.8.10"
+    },
+    {
+      "component": "socks-proxy-agent",
+      "license": "MIT",
+      "path": "node_modules/socks-proxy-agent/package.json",
+      "version": "8.0.5"
+    },
+    {
+      "component": "standardwebhooks",
+      "license": "MIT",
+      "path": "node_modules/standardwebhooks/package.json",
+      "version": "1.1.1"
+    },
+    {
+      "component": "string-width",
+      "license": "MIT",
+      "path": "node_modules/string-width/package.json",
+      "version": "4.2.3"
+    },
+    {
+      "component": "string_decoder",
+      "license": "MIT",
+      "path": "node_modules/string_decoder/package.json",
+      "version": "1.3.0"
+    },
+    {
+      "component": "strip-ansi",
+      "license": "MIT",
+      "path": "node_modules/strip-ansi/package.json",
+      "version": "6.0.1"
+    },
+    {
+      "component": "strip-json-comments",
+      "license": "MIT",
+      "path": "node_modules/strip-json-comments/package.json",
+      "version": "2.0.1"
+    },
+    {
+      "component": "tar-fs",
+      "license": "MIT",
+      "path": "node_modules/tar-fs/package.json",
+      "version": "2.1.5"
+    },
+    {
+      "component": "tar-stream",
+      "license": "MIT",
+      "path": "node_modules/tar-stream/package.json",
+      "version": "2.2.0"
+    },
+    {
+      "component": "tiny-emitter",
+      "license": "MIT",
+      "path": "node_modules/tiny-emitter/package.json",
+      "version": "2.1.0"
+    },
+    {
+      "component": "ts-algebra",
+      "license": "MIT",
+      "path": "node_modules/ts-algebra/package.json",
+      "version": "2.0.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/tslib/modules",
+      "license": "see package metadata",
+      "path": "node_modules/tslib/modules/package.json",
+      "version": ""
+    },
+    {
+      "component": "tslib",
+      "license": "0BSD",
+      "path": "node_modules/tslib/package.json",
+      "version": "2.8.1"
+    },
+    {
+      "component": "tunnel-agent",
+      "license": "Apache-2.0",
+      "path": "node_modules/tunnel-agent/package.json",
+      "version": "0.6.0"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/typed-function/lib/umd",
+      "license": "see package metadata",
+      "path": "node_modules/typed-function/lib/umd/package.json",
+      "version": ""
+    },
+    {
+      "component": "typed-function",
+      "license": "MIT",
+      "path": "node_modules/typed-function/package.json",
+      "version": "4.2.2"
+    },
+    {
+      "component": "undici",
+      "license": "MIT",
+      "path": "node_modules/undici/package.json",
+      "version": "7.30.0"
+    },
+    {
+      "component": "undici-types",
+      "license": "MIT",
+      "path": "node_modules/undici-types/package.json",
+      "version": "8.9.0"
+    },
+    {
+      "component": "util-deprecate",
+      "license": "MIT",
+      "path": "node_modules/util-deprecate/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/uuid/dist/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/uuid/dist/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/uuid/dist/cjs-browser",
+      "license": "see package metadata",
+      "path": "node_modules/uuid/dist/cjs-browser/package.json",
+      "version": ""
+    },
+    {
+      "component": "uuid",
+      "license": "MIT",
+      "path": "node_modules/uuid/package.json",
+      "version": "11.1.1"
+    },
+    {
+      "component": "web-streams-polyfill-es2018",
+      "license": "see package metadata",
+      "path": "node_modules/web-streams-polyfill/es2018/package.json",
+      "version": ""
+    },
+    {
+      "component": "web-streams-polyfill-es6",
+      "license": "see package metadata",
+      "path": "node_modules/web-streams-polyfill/es6/package.json",
+      "version": ""
+    },
+    {
+      "component": "web-streams-polyfill",
+      "license": "MIT",
+      "path": "node_modules/web-streams-polyfill/package.json",
+      "version": "3.3.3"
+    },
+    {
+      "component": "web-streams-ponyfill-es2018",
+      "license": "see package metadata",
+      "path": "node_modules/web-streams-polyfill/ponyfill/es2018/package.json",
+      "version": ""
+    },
+    {
+      "component": "web-streams-ponyfill-es6",
+      "license": "see package metadata",
+      "path": "node_modules/web-streams-polyfill/ponyfill/es6/package.json",
+      "version": ""
+    },
+    {
+      "component": "web-streams-ponyfill",
+      "license": "see package metadata",
+      "path": "node_modules/web-streams-polyfill/ponyfill/package.json",
+      "version": ""
+    },
+    {
+      "component": "whatwg-encoding",
+      "license": "MIT",
+      "path": "node_modules/whatwg-encoding/package.json",
+      "version": "3.1.1"
+    },
+    {
+      "component": "whatwg-mimetype",
+      "license": "MIT",
+      "path": "node_modules/whatwg-mimetype/package.json",
+      "version": "4.0.0"
+    },
+    {
+      "component": "wrap-ansi",
+      "license": "MIT",
+      "path": "node_modules/wrap-ansi/package.json",
+      "version": "7.0.0"
+    },
+    {
+      "component": "wrappy",
+      "license": "ISC",
+      "path": "node_modules/wrappy/package.json",
+      "version": "1.0.2"
+    },
+    {
+      "component": "ws",
+      "license": "MIT",
+      "path": "node_modules/ws/package.json",
+      "version": "8.22.0"
+    },
+    {
+      "component": "y18n",
+      "license": "ISC",
+      "path": "node_modules/y18n/package.json",
+      "version": "5.0.8"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/yaml/browser",
+      "license": "see package metadata",
+      "path": "node_modules/yaml/browser/package.json",
+      "version": ""
+    },
+    {
+      "component": "yaml",
+      "license": "ISC",
+      "path": "node_modules/yaml/package.json",
+      "version": "2.9.1"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/yargs/helpers",
+      "license": "see package metadata",
+      "path": "node_modules/yargs/helpers/package.json",
+      "version": ""
+    },
+    {
+      "component": "yargs",
+      "license": "MIT",
+      "path": "node_modules/yargs/package.json",
+      "version": "17.7.3"
+    },
+    {
+      "component": "yargs-parser",
+      "license": "ISC",
+      "path": "node_modules/yargs-parser/package.json",
+      "version": "21.1.1"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/locales",
+      "license": "see package metadata",
+      "path": "node_modules/zod/locales/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/mini",
+      "license": "see package metadata",
+      "path": "node_modules/zod/mini/package.json",
+      "version": ""
+    },
+    {
+      "component": "zod",
+      "license": "MIT",
+      "path": "node_modules/zod/package.json",
+      "version": "4.6.5"
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v3",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v3/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4/classic",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4/classic/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4/core",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4/core/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4/locales",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4/locales/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4/mini",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4/mini/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod/v4-mini",
+      "license": "see package metadata",
+      "path": "node_modules/zod/v4-mini/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod-to-json-schema/dist/cjs",
+      "license": "see package metadata",
+      "path": "node_modules/zod-to-json-schema/dist/cjs/package.json",
+      "version": ""
+    },
+    {
+      "component": "/var/folders/fj/pkqk1ltd68v_mvg11pnyrx280000gn/T/olcr-agent-inventory-231_nu5s/node_modules/zod-to-json-schema/dist/esm",
+      "license": "see package metadata",
+      "path": "node_modules/zod-to-json-schema/dist/esm/package.json",
+      "version": ""
+    },
+    {
+      "component": "zod-to-json-schema",
+      "license": "ISC",
+      "path": "node_modules/zod-to-json-schema/package.json",
+      "version": "3.25.2"
+    }
+  ],
+  "runtime": "custom-agents"
+}

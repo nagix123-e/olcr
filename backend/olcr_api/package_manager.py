@@ -109,6 +109,11 @@ def _canonical_authorized_packages(value: Any) -> dict[str, set[str]]:
     return result
 
 
+def allow_bootstrap_default(requirements: dict) -> bool:
+    # Existing packageManager/lockfile evidence still wins during resolution.
+    return requirements.get('new_project_intent') is True
+
+
 def package_manager_from_project(root: str | Path, requested: str | None = None,
                                  *, allow_explicit_default: bool = False) -> dict[str, Any]:
     """Resolve a package manager from typed request or project metadata."""
@@ -154,6 +159,96 @@ def package_manager_from_project(root: str | Path, requested: str | None = None,
 def _safe_environment() -> dict[str, str]:
     allowed = {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "CI", "NPM_CONFIG_CACHE"}
     return {key: value for key, value in os.environ.items() if key in allowed}
+
+
+def _prepared_node_bin() -> Path | None:
+    """Find the immutable OLCR-managed Node installation used by MCP tools."""
+    try:
+        from .node_mcp_runtime import runtime_root
+        root = runtime_root()
+    except Exception:
+        return None
+    if root is None:
+        return None
+    node_bin = Path(root) / "node" / "bin"
+    node = node_bin / "node"
+    return node_bin if node.is_file() and os.access(node, os.X_OK) else None
+
+
+def _known_package_manager_dirs() -> list[Path]:
+    """Return conventional Node installation directories hidden from GUI PATHs."""
+    home = Path.home()
+    candidates = [
+        home / ".volta" / "bin",
+        home / ".local" / "share" / "mise" / "shims",
+        home / ".asdf" / "shims",
+        Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"),
+        Path("/opt/local/bin"),
+    ]
+    nvm_versions = home / ".nvm" / "versions" / "node"
+    try:
+        versions = sorted((item for item in nvm_versions.iterdir() if item.is_dir()), reverse=True)
+    except OSError:
+        versions = []
+    candidates.extend(item / "bin" for item in versions)
+    result: list[Path] = []
+    seen: set[str] = set()
+    for item in candidates:
+        try:
+            resolved = str(item.expanduser().resolve())
+        except OSError:
+            continue
+        if resolved not in seen and Path(resolved).is_dir():
+            seen.add(resolved)
+            result.append(Path(resolved))
+    return result
+
+
+def _resolve_package_manager(manager: str, environment: dict[str, str]) -> str | None:
+    """Resolve from PATH, a prepared OLCR Node runtime, or known host installs.
+
+    macOS GUI/launchd processes do not inherit an interactive shell PATH. The
+    package manager can still be available in OLCR's immutable node-tools
+    component, which is already used to launch MCP servers. On a host install,
+    keep the selected package manager's sibling Node ahead of unrelated Node
+    executables from a GUI PATH.
+    """
+    path = environment.get("PATH", "")
+    resolved = shutil.which(manager, path=path) if path else None
+    node_bin = _prepared_node_bin()
+    if not resolved and node_bin:
+        candidate = node_bin / manager
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            resolved = str(candidate)
+    if not resolved:
+        for directory in _known_package_manager_dirs():
+            candidate = directory / manager
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                resolved = str(candidate)
+                break
+    if resolved:
+        # Keep the symlink's directory. Common npm installations expose
+        # /usr/local/bin/npm or /opt/homebrew/bin/npm as a symlink into
+        # npm's package tree; resolving it first would lose the sibling Node
+        # executable that belongs to that installation.
+        manager_dir = os.path.dirname(os.path.abspath(os.path.expanduser(resolved)))
+        # Prefer the Node shipped alongside npm/pnpm/yarn when present. Some
+        # GUI processes expose /usr/bin/node while the selected npm belongs to
+        # Homebrew, nvm, or Volta; that mismatched pair can fail before npm
+        # reaches the project. OLCR's prepared Node is the deterministic next
+        # choice for shims which do not ship a sibling Node.
+        sibling_node = Path(manager_dir) / "node"
+        if sibling_node.is_file() and os.access(sibling_node, os.X_OK):
+            preferred_node_dir = manager_dir
+        elif node_bin:
+            preferred_node_dir = str(node_bin)
+        else:
+            preferred_node_dir = ""
+        environment["PATH"] = os.pathsep.join(
+            dict.fromkeys(item for item in (preferred_node_dir, manager_dir, path) if item))
+        return resolved
+    return None
 
 
 def _safe_output_summary(value: Any) -> str:
@@ -289,15 +384,31 @@ class PackageManagerExecutor:
         argv = self._argv(manager, requested_specs, dependency_kind)
         environment = _safe_environment()
         isolated_cache: Any = None
+        before = _artifact_state(root)
+        resolved_executable = _resolve_package_manager(manager, environment)
+        if resolved_executable is None:
+            evidence = {"operation_type": PACKAGE_MANAGER_OPERATION, "package_manager": manager,
+                        "package_manager_resolution": resolved, "packages_requested": requested_specs,
+                        "packages_authorized": authorized_specs, "workspace_root": str(root), "cwd": str(root),
+                        "process_started": False, "exit_code": None, "timeout": False, "cancelled": False,
+                        "stdout_summary": "", "stderr_summary": "package-manager executable is unavailable",
+                        "resolved_executable": None, "argv": argv,
+                        "environment_policy": {"mode": "ALLOWLIST", "keys": sorted(environment)},
+                        "artifacts_before": before, "status": "FAIL",
+                        "dependency_requirements_satisfied": False}
+            evidence["failure_fingerprint"] = _failure_fingerprint(
+                manager, requested_specs, None, "PACKAGE_MANAGER_UNAVAILABLE", evidence["stderr_summary"])
+            raise PackageManagerError("package-manager executable is unavailable",
+                                      failure_class="PACKAGE_MANAGER_UNAVAILABLE", evidence=evidence,
+                                      package_manager=manager)
+        argv[0] = resolved_executable
         # npm's user cache can contain stale file-vs-directory collisions (or
-        # have permissions inherited from another process).  Keep this
+        # have permissions inherited from another process). Keep this
         # operation deterministic and isolated without changing the selected
         # project's package-manager configuration or exposing cache values.
         if manager == "npm":
             isolated_cache = tempfile.TemporaryDirectory(prefix="olcr-npm-cache-")
             environment["NPM_CONFIG_CACHE"] = isolated_cache.name
-        resolved_executable = shutil.which(argv[0], path=environment.get("PATH")) or argv[0]
-        before = _artifact_state(root)
         started = time.monotonic()
         process = None
         timeout = False
@@ -307,23 +418,36 @@ class PackageManagerExecutor:
         stdout = ""
         stderr = ""
         exit_code: int | None = None
+        from .generation_control import GenerationCancelled, check_cancelled
         try:
+            check_cancelled()
             process = self._popen(argv, cwd=str(root), env=environment, shell=False,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                   start_new_session=True)
             with self._lock:
                 self._process = process
             try:
-                out, err = process.communicate(timeout=self.timeout_seconds)
+                deadline=time.monotonic()+self.timeout_seconds
+                while True:
+                    check_cancelled()
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0:
+                        raise subprocess.TimeoutExpired(argv,self.timeout_seconds)
+                    try:
+                        out,err=process.communicate(timeout=min(0.25,remaining))
+                        check_cancelled()
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
                 stdout, stderr = str(out or ""), str(err or "")
                 exit_code = process.returncode
-            except subprocess.TimeoutExpired as exc:
-                timeout = True
-                stdout = str(exc.stdout or "")
-                stderr = str(exc.stderr or "")
+            except (subprocess.TimeoutExpired,GenerationCancelled) as exc:
+                timeout = isinstance(exc,subprocess.TimeoutExpired)
+                stdout = str(getattr(exc,'stdout',None) or "")
+                stderr = str(getattr(exc,'stderr',None) or "")
                 self.cancel()
                 try:
-                    out, err = process.communicate(timeout=5)
+                    out, err = process.communicate(timeout=5 if timeout else 0.5)
                 except subprocess.TimeoutExpired:
                     # A package manager may leave a child alive after
                     # SIGTERM.  Escalate the process group where possible,
@@ -331,7 +455,7 @@ class PackageManagerExecutor:
                     # leak into later phases.
                     try:
                         if hasattr(os, "killpg") and getattr(process, "pid", None):
-                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                            os.killpg(process.pid, signal.SIGKILL)
                         else:
                             process.kill()
                     except (OSError, ProcessLookupError):
@@ -340,6 +464,8 @@ class PackageManagerExecutor:
                 stdout += str(out or "")
                 stderr += str(err or "")
                 exit_code = process.returncode
+                if isinstance(exc,GenerationCancelled):
+                    raise
             with self._lock:
                 cancelled = self._cancel_requested
         except FileNotFoundError as exc:

@@ -60,3 +60,41 @@ class SubtaskProgressTests(unittest.TestCase):
         api._initialize_subtask_progress("legacy",legacy)
         self.assertIsNone(api.db.coding_task("legacy")["subtask_progress"])
 
+    def test_retry_preserves_completed_prefix_and_actual_failure(self):
+        report={'status':'PASS','errors':[],'test_fail':[],'build_executed':'NOT_RUN','build_pass':'NOT_RUN'}
+        api._set_subtask_state('task','p1','DONE',report=report,decision='PASS')
+        self.plan['phases'][0]['status']='pass'
+        failure={'errors':['verification command failed'],'typed_execution_summary':{'operations':[
+            {'tool':'verification_command','output':{'test_runs':[{'failures':[{'name':'history contains latest draws'}]}]}}]}}
+        api._set_subtask_state('task','p2','FAILED',attempt=3,report=failure)
+        for _ in range(3):
+            api._initialize_subtask_progress('task',self.plan,preserve=True)
+            api._set_subtask_state('task','p2','RUNNING',attempt=4)
+        entries=api.db.coding_task('task')['subtask_progress']
+        self.assertEqual(['DONE','RUNNING','WAITING'],[entry['status'] for entry in entries])
+        self.assertEqual('PASS',entries[0]['verification_status'])
+        self.assertEqual('history contains latest draws',entries[1]['failure_summary'])
+        self.assertEqual(4,entries[1]['attempt'])
+
+    def test_retry_restores_erased_completion_only_from_controller_evidence(self):
+        self.plan['phases'][0]['status']='pass'
+        self.plan['phases'][1]['status']='pass'
+        api.db.add_coding_phase_report('task','p1',2,{
+            'status':'PASS','build_pass':'NOT_RUN','manager_decision':{'decision':'PASS'}},'PASS',time.time())
+        api._initialize_subtask_progress('task',self.plan,preserve=True)
+        entries=api.db.coding_task('task')['subtask_progress']
+        self.assertEqual(['DONE','WAITING','WAITING'],[entry['status'] for entry in entries])
+        self.assertEqual('PASS',entries[0]['verification_status'])
+        self.assertEqual(2,entries[0]['attempt'])
+
+    def test_replan_explicit_prefix_resets_unfinished_graph_state(self):
+        api._set_subtask_state('task','p1','DONE',report={'status':'PASS'},decision='PASS')
+        api._set_subtask_state('task','p2','RUNNING',attempt=3)
+        api._initialize_subtask_progress('task',self.plan,preserve=True,completed_phase_ids={'p1'})
+        self.assertEqual(['DONE','WAITING','WAITING'],[entry['status'] for entry in api.db.coding_task('task')['subtask_progress']])
+
+    def test_invalidated_phase_does_not_keep_a_stale_done_graph_row(self):
+        api._set_subtask_state('task','p1','DONE',report={'status':'PASS'},decision='PASS')
+        api._initialize_subtask_progress('task',self.plan,preserve=True)
+        self.assertEqual('WAITING',api.db.coding_task('task')['subtask_progress'][0]['status'])
+

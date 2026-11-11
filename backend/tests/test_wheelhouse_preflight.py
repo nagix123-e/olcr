@@ -29,8 +29,8 @@ class WheelhousePreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             requirements = self._requirements(root)
-            (root / "scipy-1.14.1-cp310-cp310-macosx_12_0_arm64.whl").touch()
-            (root / "numpy-2.2.6-cp310-cp310-macosx_12_0_arm64.whl").touch()
+            (root / "scipy-1.14.1-cp312-cp312-macosx_12_0_arm64.whl").touch()
+            (root / "numpy-2.2.6-cp312-cp312-macosx_12_0_arm64.whl").touch()
             result = PREPARE.wheelhouse_preflight(root, requirements)
             self.assertEqual("PASS", result["SCIPY_WHEELHOUSE_PREFLIGHT"])
             self.assertEqual("PASS", result["SCIPY_TRANSITIVE_WHEELS_PRESENT"])
@@ -59,8 +59,8 @@ class WheelhousePreflightTests(unittest.TestCase):
 
             def download(command, check):
                 self.assertTrue(check)
-                (root / "scipy-1.14.1-cp310-cp310-macosx_12_0_arm64.whl").touch()
-                (root / "numpy-2.2.6-cp310-cp310-macosx_12_0_arm64.whl").touch()
+                (root / "scipy-1.14.1-cp312-cp312-macosx_12_0_arm64.whl").touch()
+                (root / "numpy-2.2.6-cp312-cp312-macosx_12_0_arm64.whl").touch()
 
             with patch.object(PREPARE, "REQUIREMENTS", requirements), patch.object(PREPARE.subprocess, "run", side_effect=download) as run:
                 result = PREPARE.prepare(root, python_executable="python")

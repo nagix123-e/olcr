@@ -66,6 +66,18 @@ class ExecutionResponseOwnershipTests(unittest.TestCase):
         self.assertNotIn("private reasoning", api._sanitize_user_visible_assistant_text(
             "<think>private reasoning</think>visible answer"))
 
+    def test_unprocessed_tool_control_is_never_rendered_as_assistant_prose(self):
+        for raw in (
+            '<tool_call><function=bash><parameter=command>find .</parameter></function></tool_call>',
+            '<search><query>rank skills</query></search>',
+        ):
+            with self.subTest(raw=raw):
+                visible = api._sanitize_user_visible_assistant_text(raw)
+                self.assertNotIn("<tool_call>", visible)
+                self.assertNotIn("<function=bash>", visible)
+                self.assertNotIn("<search>", visible)
+                self.assertIn("表示を抑止", visible)
+
     def test_failed_execution_report_does_not_copy_model_prose(self):
         task = Task("implementation")
         task.transition(TaskState.ROUTING)

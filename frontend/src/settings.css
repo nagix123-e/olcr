@@ -1,0 +1,63 @@
+/* Settings share the app's existing surfaces, typography and accent. */
+.chat-settings{max-width:920px;margin:0 auto;font-size:13px;line-height:1.6}
+.chat-settings>h2{font-size:20px;margin:18px 0 6px}
+.chat-settings>p{color:var(--olcr-text-secondary);margin:0 0 24px}
+.chat-settings .panel{padding:24px 0}
+.chat-settings .panel h2,.chat-settings .screen-capture-heading h3{font-size:15px;line-height:1.5;margin:0 0 12px;font-weight:600}
+.chat-settings .panel p,.chat-settings .panel small{font-size:12px;line-height:1.6}
+.chat-settings .setting-hint{font-size:12px;color:var(--olcr-text-secondary);margin:6px 0 0;line-height:1.6}
+.chat-settings .general-settings .language-setting{border-bottom:0;padding:8px 0;font-weight:500;flex-wrap:wrap}
+.chat-settings .general-settings .setting-hint{margin-top:4px}
+.chat-settings .read-aloud-setting{margin-top:20px;padding-top:16px;border-top:1px solid var(--olcr-border)}
+.chat-settings .capability-setting{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:32px;font-size:13px;font-weight:600;cursor:pointer}
+.chat-settings input[role=switch]{appearance:none;position:relative;flex:0 0 38px;width:38px;height:22px;min-height:22px;margin:0;border:1px solid var(--olcr-border-strong);border-radius:999px;background:var(--olcr-border);cursor:pointer}
+.chat-settings input[role=switch]::before{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--olcr-surface);box-shadow:0 1px 3px #0002}
+.chat-settings input[role=switch]:checked{background:var(--olcr-accent);border-color:#82c926}
+.chat-settings input[role=switch]:checked::before{transform:translateX(16px);background:#20231f}
+.chat-settings input[role=switch]:hover{border-color:var(--olcr-text-secondary)}
+.chat-settings input[role=switch]:disabled{opacity:.5;cursor:wait}
+.chat-settings .capability-item+.capability-item{margin-top:20px;padding-top:20px;border-top:1px solid var(--olcr-border)}
+.chat-settings .runtime-component-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.chat-settings .model{font-size:13px;gap:6px;margin:16px 0}
+.chat-settings .model select{max-width:420px}
+.chat-settings .screen-capture-panel{margin:0;padding:24px 0;border:0;border-top:1px solid var(--olcr-border);border-radius:0;background:var(--olcr-surface)}
+.chat-settings .screen-capture-heading{align-items:flex-start;flex-wrap:wrap;gap:12px}
+.chat-settings .screen-capture-heading p,.chat-settings .screen-capture-permission{font-size:12px;line-height:1.6;color:var(--olcr-text-secondary)}
+.chat-settings .screen-capture-heading h3{margin-bottom:6px}
+.settings-disclosure{margin-top:16px;border:1px solid var(--olcr-border);border-radius:var(--radius-md);background:var(--olcr-surface)}
+.settings-disclosure>summary{padding:12px;min-height:44px;cursor:pointer;font-size:13px;font-weight:600;overflow-wrap:anywhere;border-radius:inherit}
+.settings-disclosure>summary::marker{color:var(--olcr-text-secondary)}
+.settings-disclosure>summary:hover{background:#f5faef}
+.settings-disclosure[open]>summary{border-bottom:1px solid var(--olcr-border);border-radius:var(--radius-md) var(--radius-md) 0 0}
+.settings-count{display:inline-block;margin-left:10px;font-size:12px;font-weight:400;color:var(--olcr-text-secondary);font-variant-numeric:tabular-nums}
+.settings-disclosure-content{padding:0 12px}
+.chat-settings .tool-status-row{padding:12px 0;align-items:start;gap:16px}
+.chat-settings .tool-status-row+.tool-status-row{border-top:1px solid var(--olcr-border)}
+.chat-settings .tool-status-row small{display:block;overflow-wrap:anywhere}
+.chat-settings .tool-availability{font-size:12px;color:var(--olcr-text-secondary);text-align:right;overflow-wrap:anywhere}
+.chat-settings .tool-status-row{grid-template-columns:minmax(0,1fr) minmax(0,auto)}
+.chat-settings .tool-configure{border:1px solid var(--olcr-border-strong);border-radius:999px;padding:5px 11px;background:var(--olcr-surface);color:var(--olcr-text-primary);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.chat-settings .tool-configure:hover{border-color:var(--olcr-accent)}
+.chat-settings .credential-setup-modal .voice-model-consent{width:min(620px,100%);max-height:min(88vh,820px);overflow:auto}
+.chat-settings .credential-setup-modal-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.chat-settings .credential-setup-modal-heading h2{margin:0}
+.chat-settings .credential-setup-modal-heading button{width:32px;height:32px;border:1px solid var(--olcr-border);border-radius:50%;background:var(--olcr-surface);font-size:20px;line-height:1}
+.chat-settings .credential-setup-modal .credential-setup{width:100%;margin:12px 0 0;padding:0;border:0;background:transparent}
+.models-panel .brain-setting-section>.settings-disclosure{margin-top:0}
+.models-panel .brain-provider-row{flex-wrap:wrap;min-width:0}
+.models-panel .brain-provider-row>div{min-width:0;flex:1 1 220px;overflow-wrap:anywhere}
+.models-panel .brain-provider-row:last-child{border-bottom:0}
+.models-panel .settings-disclosure .model-provider-form{margin:12px}
+.chat-settings :is(button,input,select,summary):focus-visible,.models-panel summary:focus-visible{outline:2px solid var(--olcr-text-primary);outline-offset:3px}
+.chat-settings button:active:not(:disabled){transform:scale(.96)}
+.chat-settings button:disabled{cursor:not-allowed;opacity:.55}
+@media(max-width:600px){
+ .chat-settings .language-setting select{width:100%;min-width:0;max-width:100%}
+ .chat-settings .screen-capture-actions{align-items:flex-start;flex-wrap:wrap}
+ .chat-settings .screen-capture-actions button{white-space:normal;text-align:left}
+ .chat-settings .tool-status-row{grid-template-columns:minmax(0,1fr)}
+ .chat-settings .tool-availability{text-align:left}
+}
+@media(prefers-reduced-motion:reduce){.chat-settings button:active:not(:disabled){transform:none}}
+/* Keep the secondary diagnostics action smaller than the close control. */
+.shell.settings-open .panel-heading .settings-diagnostics-link{font-size:12px;line-height:1.5;min-height:32px}

@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv*/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -27,13 +28,22 @@ frontend/dist/
 *.db-wal
 
 # Local model/cache material (never source-control downloaded weights)
+models/
+.olcr/graphify/
 .cache/huggingface/
+.cache/laya/
 hf-cache/
 *.safetensors
 *.bin
 *.pt
 *.pth
+models/laya/
 
 # Generated distributable artifacts and staging trees
 release/
 mcp-runtime/
+
+# Native build output and locally generated source indexes
+/desktop/src-tauri/target/
+/desktop/src-tauri/binaries/olcr-macos-speech
+**/graphify-out/

@@ -8,15 +8,23 @@ from fastapi.testclient import TestClient
 import olcr_api.app as api
 from olcr_api.db import Database
 from olcr_api.coding_tasks import (classify_execution_mode, execution_mode_diagnostics,
-    compact_normal_plan, workspace_mutation_count, zero_mutation_retry_instruction)
+    compact_normal_plan, patch_preimage_retry_instruction, workspace_mutation_count,
+    required_verification_contract, verification_requested_by_user,
+    zero_mutation_retry_instruction)
 
 GOAL = (Path(__file__).parent / 'fixtures/olcr_static_website.txt').read_text()
 
 
 def make_plan():
-    return {'phases': [dict(id=f'p{i}', goal=goal, done=[f'{goal} observable'], verify=['browser check'],
-                           dependencies=[] if i == 1 else [f'p{i-1}'], status='pending', risks=[])
-                       for i, goal in enumerate(['create index.html', 'create links.html', 'add styles.css', 'browser verification'], 1)]}
+    goals = ['create index.html', 'create links.html', 'add styles.css', 'browser verification']
+    plan = {'phases': [dict(id=f'p{i}', goal=goal, done=[f'{goal} observable'], verify=['browser check'],
+                            dependencies=[] if i == 1 else [f'p{i-1}'], status='pending', risks=[])
+                       for i, goal in enumerate(goals, 1)]}
+    plan['file_manifest'] = [
+        {'path': path, 'action': 'create', 'owner_phase': phase_id}
+        for path, phase_id in [('index.html', 'p1'), ('links.html', 'p2'), ('styles.css', 'p3')]
+    ]
+    return plan
 
 
 class ClassificationTests(unittest.TestCase):
@@ -38,6 +46,10 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual('NORMAL', classify_execution_mode(GOAL))
         self.assertEqual([], execution_mode_diagnostics(GOAL)['POSITIVE_SIGNALS'])
         self.assertEqual(2, len(compact_normal_plan(make_plan(), GOAL)['phases']))
+
+    def test_explicit_browser_checks_after_exclusions_remain_in_scope(self):
+        self.assertIn('browser', required_verification_contract(GOAL))
+        self.assertTrue(verification_requested_by_user(GOAL))
 
     def test_fullstack_stays_heavy_and_positive_override_survives(self):
         for goal in ['Create a Task Tracker: React + TypeScript\nFastAPI\nSQLite',
@@ -62,9 +74,47 @@ class RetryTests(unittest.TestCase):
 
     def test_zero_mutation_patch_failure_gets_specific_correction(self):
         self.report['typed_execution_summary']['error'] = 'patch precondition failed; source changed or fragment is ambiguous'
-        self.assertIn('for missing files use a write operation', zero_mutation_retry_instruction(self.phase, self.report))
+        instruction = zero_mutation_retry_instruction(self.phase, self.report)
+        self.assertIn(patch_preimage_retry_instruction(), instruction)
+        self.assertIn('For a missing file, use one complete write', instruction)
+        self.assertIn('Never emit an empty expected_old_fragment', instruction)
         self.report['typed_execution_summary']['error'] = 'model output invalid'
         self.assertNotIn('patch precondition', zero_mutation_retry_instruction(self.phase, self.report))
+
+    def test_contentless_write_failure_gets_field_specific_retry_instruction(self):
+        self.report['typed_execution_summary'].update({
+            'failure_class': 'OPERATION_SCHEMA_SEMANTIC_ERROR',
+            'error': 'write operation requires content',
+        })
+        instruction = zero_mutation_retry_instruction(self.phase, self.report)
+        self.assertIn('op=write without its required content field', instruction)
+        self.assertIn('content containing the entire file', instruction)
+        self.assertIn('Do not combine op=write with expected_old_fragment or replacement_fragment', instruction)
+
+    def test_structural_syntax_failure_gets_file_and_parser_specific_retry_instruction(self):
+        self.report['typed_execution_summary'].update({
+            'failure_class': 'WRITE_CONTENT_INVALID',
+            'error': 'structural validation failed: [stdin]:130 SyntaxError: Invalid or unexpected token',
+            'worktree_state': 'ROLLED_BACK',
+            'operations': [{
+                'tool': 'operation_application_failure',
+                'status': 'failure',
+                'output': {
+                    'failure': 'structural validation failed: [stdin]:130 SyntaxError: Invalid or unexpected token',
+                    'operation_diagnostic': {
+                        'reason_subtype': 'STRUCTURAL_VALIDATION_FAILED',
+                        'relative_target_path': 'src/logic.js',
+                    },
+                },
+            }],
+        })
+
+        instruction = zero_mutation_retry_instruction(self.phase, self.report)
+
+        self.assertIn('src/logic.js', instruction)
+        self.assertIn('[stdin]:130 SyntaxError', instruction)
+        self.assertIn('syntactically valid', instruction)
+        self.assertNotIn('too short', instruction)
 
     def test_real_mutation_does_not_get_zero_write_instruction(self):
         for tool in ['workspace_write', 'workspace_write_normalized', 'workspace_patch', 'workspace_delete']:
