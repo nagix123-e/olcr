@@ -188,15 +188,15 @@
 - Produces: `VercelReleaseAdapter` and `CloudflarePagesReleaseAdapter` implementing `ReleaseAdapter`. Use Task 3's `ReleaseCommandRunner` and provider-specific credential profiles.
 - Inputs include exact project/site, environment, domain target and deployment channel. Preview deploymentとproduction alias promotionを別操作として表す。
 
-- [ ] **Step 1: target/environment gates testsを書く**
+- [x] **Step 1: target/environment gates testsを書く**
   `test_vercel_requires_resolved_project_and_environment`、`test_cloudflare_requires_account_project_and_environment`、`test_preview_does_not_promote_to_production`を追加する。
-- [ ] **Step 2: remote state and retry testsを書く**
+- [x] **Step 2: remote state and retry testsを書く**
   `test_deploy_timeout_inspects_existing_deployment_before_retry`、`test_deployment_ready_state_requires_provider_readback`を追加する。
-- [ ] **Step 3: Vercel adapterを実装する**
+- [x] **Step 3: Vercel adapterを実装する**
   official Vercel evidenceを使いauth/status, deploy, production promotion, read-backを分離する。現行projectのlink metadata以外からaccount/projectを推測しない。
-- [ ] **Step 4: Cloudflare Pages adapterを実装する**
+- [x] **Step 4: Cloudflare Pages adapterを実装する**
   official Cloudflare evidenceを使いproject/environmentとdirect/CI upload modeを明示してdeployし、deployment status/URLを読み戻す。
-- [ ] **Step 5: web deployment adapter testsを実行する**
+- [x] **Step 5: web deployment adapter testsを実行する**
   Run: `python -m pytest backend/tests/test_web_release_adapters.py -q`  
   Expected: PASS。fake runner/API clientを使いproductionへdeployしない。
 

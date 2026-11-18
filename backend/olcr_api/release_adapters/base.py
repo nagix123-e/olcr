@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, runtime_checkable
 from urllib.error import HTTPError
@@ -19,7 +19,7 @@ from ..coding_tasks import ReleasePreflight
 from ..release_workflow import ReleaseRequest, ReleaseResult
 
 
-_COMMAND_ALLOWLIST = frozenset({"git", "gh", "xcrun", "codesign", "ditto", "npm", "twine"})
+_COMMAND_ALLOWLIST = frozenset({"git", "gh", "xcrun", "codesign", "ditto", "npm", "twine", "vercel", "wrangler"})
 _COMMAND_TIMEOUT_MAX = 300
 _OUTPUT_MAX_BYTES = 1024 * 1024
 _COMMAND_ENV_ALLOWLIST = frozenset({
@@ -30,6 +30,8 @@ _PROFILE_CREDENTIAL_ENV = {
     "apple_notary": frozenset(),
     "npm": frozenset({"NODE_AUTH_TOKEN"}),
     "pypi": frozenset({"TWINE_USERNAME", "TWINE_PASSWORD"}),
+    "vercel": frozenset({"VERCEL_TOKEN"}),
+    "cloudflare_pages": frozenset({"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}),
 }
 _API_HOST_PROFILES = {
     "github_api": "api.github.com",
@@ -38,6 +40,9 @@ _API_HOST_PROFILES = {
     "npm_registry_api": "registry.npmjs.org",
     "pypi_api": "pypi.org",
     "testpypi_api": "test.pypi.org",
+    "vercel_api": "api.vercel.com",
+    "cloudflare_pages_api": "api.cloudflare.com",
+    "cloudflare_pages_assets": "api.cloudflare.com",
 }
 _API_AUTH_SCHEME = {
     "github_api": "Bearer",
@@ -46,6 +51,9 @@ _API_AUTH_SCHEME = {
     "npm_registry_api": "Bearer",
     "pypi_api": "Bearer",
     "testpypi_api": "Bearer",
+    "vercel_api": "Bearer",
+    "cloudflare_pages_api": "Bearer",
+    "cloudflare_pages_assets": "Bearer",
 }
 _API_HEADERS_PROFILE = {
     "github_api": {
@@ -67,10 +75,29 @@ _API_HEADERS_PROFILE = {
     "testpypi_api": {
         "Accept": "application/json",
     },
+    "vercel_api": {
+        "Accept": "application/json",
+    },
+    "cloudflare_pages_api": {
+        "Accept": "application/json",
+    },
+    "cloudflare_pages_assets": {
+        "Accept": "application/json",
+    },
 }
 _API_TIMEOUT_MAX = 30
 _API_BODY_MAX_BYTES = 256 * 1024
+_API_BODY_ABSOLUTE_MAX_BYTES = 40 * 1024 * 1024
 _API_RESPONSE_MAX_BYTES = 1024 * 1024
+_MULTIPART_CONTENT_TYPE = re.compile(r"^multipart/form-data; boundary=[A-Za-z0-9'()+_,./:=?-]{1,70}$")
+_CLOUDFLARE_DEPLOYMENT_PATH = re.compile(
+    r"^/client/v4/accounts/[0-9a-f]{32}/pages/projects/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?/deployments$"
+)
+_CLOUDFLARE_ASSET_PATHS = frozenset({
+    "/client/v4/pages/assets/check-missing",
+    "/client/v4/pages/assets/upload",
+    "/client/v4/pages/assets/upsert-hashes",
+})
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)(\b[A-Za-z0-9_-]*(?:token|secret|password|credential|api[_ -]?key|authorization)"
     r"[A-Za-z0-9_-]*\b\s*[:=]\s*)[^\s,;]+"
@@ -275,6 +302,8 @@ class ProviderRequest:
     path: str
     body: bytes | str | Mapping[str, object] | None = None
     timeout_seconds: int = 20
+    auth_token: str | None = field(default=None, repr=False, compare=False)
+    content_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -295,7 +324,7 @@ class ProviderApiTransport:
         max_request_bytes: int = _API_BODY_MAX_BYTES,
         max_response_bytes: int = _API_RESPONSE_MAX_BYTES,
     ) -> None:
-        if not 1 <= max_request_bytes <= _API_BODY_MAX_BYTES:
+        if not 1 <= max_request_bytes <= _API_BODY_ABSOLUTE_MAX_BYTES:
             raise ValueError("REQUEST_LIMIT_INVALID")
         if not 1 <= max_response_bytes <= _API_RESPONSE_MAX_BYTES:
             raise ValueError("RESPONSE_LIMIT_INVALID")
@@ -349,9 +378,26 @@ class ProviderApiTransport:
         if (not isinstance(spec.timeout_seconds, int) or isinstance(spec.timeout_seconds, bool)
                 or not 1 <= spec.timeout_seconds <= _API_TIMEOUT_MAX):
             raise ValueError("TIMEOUT_INVALID")
-        body = self._body_bytes(spec.body, self.max_request_bytes)
+        request_limit = _API_BODY_MAX_BYTES
+        if self.max_request_bytes > _API_BODY_MAX_BYTES:
+            cloudflare_large_endpoint = (
+                spec.host_profile == "cloudflare_pages_assets"
+                and method == "POST" and path in _CLOUDFLARE_ASSET_PATHS
+            ) or (
+                spec.host_profile == "cloudflare_pages_api"
+                and method == "POST" and _CLOUDFLARE_DEPLOYMENT_PATH.fullmatch(path) is not None
+            )
+            if cloudflare_large_endpoint:
+                request_limit = self.max_request_bytes
+        body = self._body_bytes(spec.body, request_limit)
         headers = dict(_API_HEADERS_PROFILE[spec.host_profile])
-        token = self.credential_provider(spec.host_profile) if self.credential_provider else None
+        if spec.auth_token is not None:
+            if (spec.host_profile != "cloudflare_pages_assets" or method != "POST"
+                    or path not in _CLOUDFLARE_ASSET_PATHS):
+                raise ValueError("REQUEST_AUTH_OVERRIDE_NOT_ALLOWED")
+            token = spec.auth_token
+        else:
+            token = self.credential_provider(spec.host_profile) if self.credential_provider else None
         secrets: tuple[str, ...] = ()
         if token is not None:
             if not isinstance(token, str) or not token.strip() or any(ord(ch) < 32 for ch in token):
@@ -360,7 +406,18 @@ class ProviderApiTransport:
             headers["Authorization"] = f"{_API_AUTH_SCHEME[spec.host_profile]} {token}"
             secrets = (token,)
         if body is not None:
-            headers["Content-Type"] = "application/json"
+            if spec.content_type is None:
+                headers["Content-Type"] = "application/json"
+            elif (spec.host_profile != "cloudflare_pages_api" or method != "POST"
+                  or _CLOUDFLARE_DEPLOYMENT_PATH.fullmatch(path) is None
+                  or not isinstance(spec.body, bytes)
+                  or not isinstance(spec.content_type, str)
+                  or not _MULTIPART_CONTENT_TYPE.fullmatch(spec.content_type)):
+                raise ValueError("REQUEST_CONTENT_TYPE_NOT_ALLOWED")
+            else:
+                headers["Content-Type"] = spec.content_type
+        elif spec.content_type is not None:
+            raise ValueError("REQUEST_CONTENT_TYPE_NOT_ALLOWED")
         request = Request(f"https://{host}{path}", data=body, headers=headers, method=method)
         if self.opener_factory is None:
             from ..web import _safe_opener

@@ -220,3 +220,69 @@ def test_api_transport_redacts_provider_credentials_and_bounds_response():
     )
     with pytest.raises(ValueError, match="RESPONSE_TOO_LARGE"):
         large.request(ProviderRequest("github_api", "GET", "/repos/acme/widget"))
+
+
+def test_cloudflare_asset_transport_uses_ephemeral_jwt_content_type_and_large_body():
+    jwt = "eyJhbGciOiJIUzI1NiJ9.pages-upload-jwt"
+    payload = {"hashes": ["a" * 32]}
+    opener = FakeOpener()
+    transport = ProviderApiTransport(
+        credential_provider=lambda profile: pytest.fail("asset JWT must not be loaded from credentials"),
+        opener_factory=lambda host, allowed_hosts: opener,
+        max_request_bytes=40 * 1024 * 1024,
+    )
+
+    response = transport.request(ProviderRequest(
+        host_profile="cloudflare_pages_assets",
+        method="POST",
+        path="/client/v4/pages/assets/check-missing",
+        body=payload,
+        auth_token=jwt,
+    ))
+
+    request, _timeout = opener.requests[0]
+    assert response.status == 200
+    assert request.get_header("Authorization") == f"Bearer {jwt}"
+    assert request.get_header("Content-type") == "application/json"
+    assert request.data == b'{"hashes":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}'
+    assert jwt not in response.body
+
+
+def test_api_transport_allows_typed_multipart_only_for_cloudflare_deployment():
+    body = b"--olcr-boundary\r\nContent-Disposition: form-data; name=\"manifest\"\r\n\r\n{}\r\n--olcr-boundary--\r\n"
+    opener = FakeOpener()
+    transport = ProviderApiTransport(
+        credential_provider=lambda profile: "cf-api-token-123456789",
+        opener_factory=lambda host, allowed_hosts: opener,
+    )
+
+    transport.request(ProviderRequest(
+        host_profile="cloudflare_pages_api",
+        method="POST",
+        path="/client/v4/accounts/" + "a" * 32 + "/pages/projects/site/deployments",
+        body=body,
+        content_type="multipart/form-data; boundary=olcr-boundary",
+    ))
+
+    request, _timeout = opener.requests[0]
+    assert request.get_header("Content-type") == "multipart/form-data; boundary=olcr-boundary"
+    with pytest.raises(ValueError):
+        transport.request(ProviderRequest(
+            host_profile="github_api",
+            method="POST",
+            path="/repos/acme/widget/releases",
+            body=body,
+            content_type="multipart/form-data; boundary=olcr-boundary",
+        ))
+    for method, path in (
+        ("POST", "/client/v4/accounts/" + "a" * 32 + "/pages/projects"),
+        ("GET", "/client/v4/accounts/" + "a" * 32 + "/pages/projects/site/deployments"),
+    ):
+        with pytest.raises(ValueError, match="REQUEST_CONTENT_TYPE_NOT_ALLOWED"):
+            transport.request(ProviderRequest(
+                host_profile="cloudflare_pages_api",
+                method=method,
+                path=path,
+                body=body,
+                content_type="multipart/form-data; boundary=olcr-boundary",
+            ))
