@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .provider_research import ProviderEvidence
 
 
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 CONVERSATION_MEMORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversation_memory_summaries(
     id INTEGER PRIMARY KEY,
@@ -98,6 +102,32 @@ CREATE TABLE IF NOT EXISTS coding_phase_reports(id TEXT PRIMARY KEY, coding_task
 CREATE TABLE IF NOT EXISTS interactive_planning_sessions(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, planning_mode TEXT NOT NULL, status TEXT NOT NULL, planning_revision INTEGER NOT NULL, pending_questions_json TEXT NOT NULL, answered_questions_json TEXT NOT NULL, assumptions_json TEXT NOT NULL, decisions_json TEXT NOT NULL, format_state_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 """
+
+CODING_TASK_REFERENCES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS coding_task_references(
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    host TEXT NOT NULL,
+    officiality TEXT NOT NULL CHECK(officiality IN ('VERIFIED','CANDIDATE')),
+    accessed_at REAL NOT NULL,
+    applicability TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    phase_id TEXT,
+    plan_revision INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS coding_task_references_identity_phase
+    ON coding_task_references(task_id,provider_id,url,phase_id) WHERE phase_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS coding_task_references_identity_unphased
+    ON coding_task_references(task_id,provider_id,url) WHERE phase_id IS NULL;
+CREATE INDEX IF NOT EXISTS coding_task_references_task_phase
+    ON coding_task_references(task_id,phase_id,accessed_at DESC);
+"""
+
+SCHEMA += CODING_TASK_REFERENCES_SCHEMA
 
 
 def _table_exists(db: sqlite3.Connection, table: str) -> bool:
@@ -475,6 +505,12 @@ class Database:
                               AND a.role='assistant' LIMIT 1),e.created_at)""")
                     db.execute("UPDATE schema_version SET version=39")
                     rows=[(39,)]
+            if rows and rows[0][0] == 39:
+                # Persist provider evidence separately from page bodies and
+                # advance legacy v39 databases after the additive table exists.
+                db.executescript(CODING_TASK_REFERENCES_SCHEMA)
+                db.execute("UPDATE schema_version SET version=40")
+                rows=[(40,)]
             if rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.executescript(CUSTOM_AGENT_SCHEMA)
             db.executescript('''CREATE TABLE IF NOT EXISTS coding_task_events(
@@ -970,6 +1006,67 @@ class Database:
     def coding_tasks(self, conversation_id: str) -> list[dict[str, Any]]:
         with self.connect() as db: ids=[x[0] for x in db.execute("SELECT id FROM coding_tasks WHERE conversation_id=? ORDER BY updated_at DESC",(conversation_id,))]
         return [x for task_id in ids if (x:=self.coding_task(task_id))]
+    def save_coding_task_reference(self, reference: ProviderEvidence) -> dict[str, object]:
+        """Save bounded source metadata; never persist fetched page bodies or queries."""
+        identity = json.dumps(
+            (reference.task_id, reference.provider_id, reference.url, reference.phase_id),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        reference_id = "pref_" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        values = (
+            reference_id,
+            reference.task_id,
+            reference.provider_id,
+            reference.category,
+            reference.title,
+            reference.url,
+            reference.host,
+            reference.officiality,
+            float(reference.accessed_at),
+            reference.applicability,
+            reference.summary,
+            reference.phase_id,
+            reference.plan_revision,
+        )
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO coding_task_references(
+                       id,task_id,provider_id,category,title,url,host,officiality,
+                       accessed_at,applicability,summary,phase_id,plan_revision
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       category=excluded.category,
+                       title=excluded.title,
+                       host=excluded.host,
+                       officiality=excluded.officiality,
+                       accessed_at=excluded.accessed_at,
+                       applicability=excluded.applicability,
+                       summary=excluded.summary,
+                       plan_revision=excluded.plan_revision""",
+                values,
+            )
+            row = db.execute("SELECT * FROM coding_task_references WHERE id=?", (reference_id,)).fetchone()
+        if row is None:
+            raise RuntimeError("coding task reference could not be read after saving")
+        return dict(row)
+
+    def coding_task_references(self, task_id: str, *, phase_id: str | None = None) -> list[dict[str, object]]:
+        with self.connect() as db:
+            if phase_id is None:
+                rows = db.execute(
+                    """SELECT * FROM coding_task_references WHERE task_id=?
+                       ORDER BY accessed_at DESC,provider_id,category,url,phase_id""",
+                    (task_id,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT * FROM coding_task_references WHERE task_id=? AND phase_id=?
+                       ORDER BY accessed_at DESC,provider_id,category,url""",
+                    (task_id, phase_id),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
     def record_coding_event(self, task_id: str, kind: str, data: dict[str, Any]) -> None:
         with self.connect() as db:
             db.execute('INSERT INTO coding_task_events VALUES(?,?,?,?,?)',
