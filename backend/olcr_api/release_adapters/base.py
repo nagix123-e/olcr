@@ -19,7 +19,7 @@ from ..coding_tasks import ReleasePreflight
 from ..release_workflow import ReleaseRequest, ReleaseResult
 
 
-_COMMAND_ALLOWLIST = frozenset({"git", "gh"})
+_COMMAND_ALLOWLIST = frozenset({"git", "gh", "xcrun", "codesign", "ditto"})
 _COMMAND_TIMEOUT_MAX = 300
 _OUTPUT_MAX_BYTES = 1024 * 1024
 _COMMAND_ENV_ALLOWLIST = frozenset({
@@ -27,12 +27,24 @@ _COMMAND_ENV_ALLOWLIST = frozenset({
 })
 _PROFILE_CREDENTIAL_ENV = {
     "github": frozenset({"GH_TOKEN", "GITHUB_TOKEN"}),
+    "apple_notary": frozenset(),
 }
 _API_HOST_PROFILES = {
     "github_api": "api.github.com",
+    "app_store_connect_api": "api.appstoreconnect.apple.com",
 }
 _API_AUTH_SCHEME = {
     "github_api": "Bearer",
+    "app_store_connect_api": "Bearer",
+}
+_API_HEADERS_PROFILE = {
+    "github_api": {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    },
+    "app_store_connect_api": {
+        "Accept": "application/json",
+    },
 }
 _API_TIMEOUT_MAX = 30
 _API_BODY_MAX_BYTES = 256 * 1024
@@ -316,10 +328,7 @@ class ProviderApiTransport:
                 or not 1 <= spec.timeout_seconds <= _API_TIMEOUT_MAX):
             raise ValueError("TIMEOUT_INVALID")
         body = self._body_bytes(spec.body, self.max_request_bytes)
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        headers = dict(_API_HEADERS_PROFILE[spec.host_profile])
         token = self.credential_provider(spec.host_profile) if self.credential_provider else None
         secrets: tuple[str, ...] = ()
         if token is not None:
