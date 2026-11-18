@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import os
@@ -10,7 +11,7 @@ import hashlib
 from pathlib import Path
 import threading
 import uuid
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from .capability_scope import capability_evidence
 
@@ -864,7 +865,345 @@ def suppress_unrequested_verification(plan: dict[str, Any], *, preserve_phase_id
     return result, sorted(set(changes))
 
 
-def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, Any] | None = None) -> dict[str, Any]:
+@dataclass(frozen=True)
+class ReleaseIntent:
+    """User-authorized publication target, kept separate from generated plans."""
+
+    requested: bool
+    provider_id: str | None
+    app_or_package: str | None
+    version: str | None
+    channel: str | None
+    blockers: list[str]
+
+
+@dataclass(frozen=True)
+class ReleasePreflight:
+    """Structured readiness result for a single explicit release intent."""
+
+    status: Literal["READY", "BLOCKED"]
+    checks: list[dict[str, Any]]
+    blockers: list[str]
+
+
+_RELEASE_REFERENCE_MAX_AGE_SECONDS = 24 * 60 * 60
+_RELEASE_PROVIDER_ALIASES: dict[str, tuple[str, ...]] = {
+    "github": ("github", "github release", "github releases"),
+    "apple_macos": ("apple_macos", "macos", "mac os", "apple notarization", "notarization"),
+    "app_store_connect": ("app_store_connect", "app store connect", "apple app store", "app store", "testflight"),
+    "google_play": ("google_play", "google play", "play console"),
+    "npm": ("npm",),
+    "pypi": ("pypi", "python package index"),
+    "vercel": ("vercel",),
+    "cloudflare_pages": ("cloudflare_pages", "cloudflare pages"),
+}
+_RELEASE_CHANNELS = {
+    "prod": "production", "production": "production", "preview": "preview",
+    "beta": "beta", "alpha": "alpha", "stable": "stable", "latest": "latest",
+    "next": "next", "internal": "internal", "internal testing": "internal",
+    "closed testing": "closed", "open testing": "open", "testflight": "testflight",
+    "staged": "staged",
+}
+
+
+def _release_action_requested(goal: str) -> bool:
+    """Recognize explicit publish/release verbs while excluding build-only asks."""
+    text = str(goal or "")
+    if re.search(r"\b(?:do not|don't|never|avoid)\b.{0,28}\b(?:release|publish|deploy|upload|submit|distribute)\b|"
+                 r"(?:リリース|公開|配布|デプロイ|提出|アップロード)しない(?:で|こと|よう)", text, re.I):
+        return False
+    asks_how = bool(re.search(
+        r"\b(?:how\s+(?:do\s+i|can\s+i|to)|tell\s+me\s+how|explain|describe|document|tutorial|guide|"
+        r"steps?\s+to|instructions?\s+for)\b.{0,64}\b(?:release|publish|deploy|upload|submit|distribute)\b|"
+        r"(?:公開|配布|リリース|デプロイ).{0,28}(?:方法|手順|やり方|教えて|説明して)", text, re.I))
+    direct_request = bool(re.search(
+        r"\b(?:please|can\s+you|could\s+you|i\s+(?:want|need)(?:\s+you)?\s+to|go\s+ahead\s+and|let's)\s+"
+        r"(?:release|publish|deploy|upload|submit|distribute)\b|"
+        r"(?:リリース|公開|配布|デプロイ|提出|アップロード)(?:を)?(?:し(?:てください|て|たい|ます)|してください|する)",
+        text, re.I))
+    if asks_how and not direct_request:
+        return False
+    feature_mention = re.search(
+        r"(?:リリース|公開|配布|デプロイ|提出|アップロード)(?:を)?"
+        r"(?:し(?:て|たい|ます|よう)|してください|する).{0,14}"
+        r"(?:機能|ボタン|画面|UI|ページ|手順|ワークフロー|説明|仕組み|スクリプト|コード)",
+        text, re.I,
+    )
+    if feature_mention:
+        return False
+    if direct_request:
+        return True
+    command = re.search(
+        r"(?:^|[.!?]\s*|\b(?:and|then|now)\s+)(?:please\s+)?"
+        r"(?:release|publish|deploy|upload|submit|distribute)\b",
+        text, re.I,
+    )
+    if command:
+        return True
+    release = re.search(r"\brelease\b", text, re.I)
+    if not release:
+        return False
+    # "release build" and "prepare a release build" describe local artifacts.
+    if re.search(r"\brelease\s+build\b|\b(?:build|prepare|create|make|package)\b.{0,24}\brelease\s+build\b|"
+                 r"リリース(?:向け|用|用の)?\s*(?:build|ビルド|版)を?(?:作|準備)", text, re.I):
+        return False
+    return bool(re.search(r"^\s*(?:please\s+)?release\b|\b(?:want|need)\s+to\s+release\b|"
+                          r"\brelease\s+(?:it|the|this|my|our|app|application|package|project|version|v?\d|to|on|via)\b",
+                          text, re.I))
+
+
+def _release_provider_id(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"[\s-]+", "_", value.strip().casefold())
+    if normalized in _RELEASE_PROVIDER_ALIASES:
+        return normalized
+    for provider_id, aliases in _RELEASE_PROVIDER_ALIASES.items():
+        if value.strip().casefold() in aliases:
+            return provider_id
+    return None
+
+
+def _fact_values(facts: Mapping[str, Any], *keys: str) -> list[str]:
+    """Read only named, public release metadata fields; ignore arbitrary objects."""
+    for key in keys:
+        value = facts.get(key)
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        if isinstance(value, (list, tuple, set)):
+            values = sorted({item.strip() for item in value if isinstance(item, str) and item.strip()})
+            if values:
+                return values
+    return []
+
+
+def _combined_fact_values(facts: Mapping[str, Any], *keys: str) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        value = facts.get(key)
+        if isinstance(value, str) and value.strip():
+            candidates = [value.strip()]
+        elif isinstance(value, (list, tuple, set)):
+            candidates = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        else:
+            candidates = []
+        for candidate in candidates:
+            if candidate not in values:
+                values.append(candidate)
+    return values
+
+
+def _goal_provider_ids(goal: str) -> set[str]:
+    found: set[str] = set()
+    for provider_id, aliases in _RELEASE_PROVIDER_ALIASES.items():
+        for alias in aliases:
+            if re.search(r"(?<![\w])" + re.escape(alias) + r"(?![\w])", goal, re.I):
+                found.add(provider_id)
+                break
+    return found
+
+
+def _explicit_unknown_release_provider(goal: str) -> str | None:
+    """Return a named destination after 'to/via' when it is not a channel."""
+    match = re.search(
+        r"\b(?:to|via)\s+(?:(?:the|a|an)\s+)?"
+        r"([A-Za-z][A-Za-z0-9._-]*(?:\s+(?!(?:and|or|under|channel|track|version|on|via)\b)[A-Za-z][A-Za-z0-9._-]*){0,2})\b",
+        goal, re.I,
+    )
+    if not match:
+        return None
+    destination = match.group(1).strip().casefold()
+    if (destination in _RELEASE_CHANNELS or _release_provider_id(destination)
+            or _goal_provider_ids(destination)):
+        return None
+    return destination
+
+
+def _single_release_value(facts: Mapping[str, Any], keys: tuple[str, ...], goal_pattern: str) -> tuple[str | None, bool]:
+    # Current user wording disambiguates stale project candidates. If the user
+    # does not name the value, only one typed metadata candidate may be used.
+    candidates = sorted(set(re.findall(goal_pattern, str(facts.get("_goal", "")), re.I)))
+    if not candidates:
+        candidates = _fact_values(facts, *keys)
+    if len(candidates) != 1:
+        return None, len(candidates) > 1
+    value = candidates[0].strip()
+    if not value or len(value) > 160 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return None, True
+    if (chr(92) in value or value.startswith(("/", "~/", "./", "../"))
+            or re.search(r"https?://", value, re.I)):
+        return None, True
+    return value, False
+
+
+def detect_release_intent(goal: str, project_facts: Mapping[str, Any] | None = None) -> ReleaseIntent:
+    """Extract a user's explicit publish request without trusting model output.
+
+    Only a publish action in the user's current goal sets ``requested``. Named
+    public metadata supplies target candidates, never publication authority.
+    Missing, unknown or multiply-resolved fields remain blockers rather than
+    being inferred from whichever provider appears first.
+    """
+    raw_goal = str(goal or "")
+    if not _release_action_requested(raw_goal):
+        return ReleaseIntent(False, None, None, None, None, [])
+    facts = project_facts if isinstance(project_facts, Mapping) else {}
+    blockers: list[str] = []
+
+    explicit_providers = _goal_provider_ids(raw_goal)
+    fact_provider_values = _combined_fact_values(facts, "publishing_targets", "provider_id", "release_provider")
+    fact_provider_ids = {_release_provider_id(value) for value in fact_provider_values}
+    unknown_goal_provider = _explicit_unknown_release_provider(raw_goal)
+    if unknown_goal_provider:
+        provider_id = None
+        blockers.append(f"Publication provider '{unknown_goal_provider}' has no release adapter target.")
+    elif explicit_providers:
+        if len(explicit_providers) > 1:
+            provider_id = None
+            blockers.append("Conflicting publication providers are named in the release request.")
+        else:
+            provider_id = next(iter(explicit_providers))
+    elif len(fact_provider_ids) == 1 and None not in fact_provider_ids:
+        provider_id = next(iter(fact_provider_ids))
+    elif len(fact_provider_values) > 1 or None in fact_provider_ids:
+        provider_id = None
+        blockers.append("Publication provider is unknown or ambiguous; resolve one supported provider.")
+    else:
+        provider_id = None
+        blockers.append("Publication provider is not resolved.")
+
+    if provider_id is not None and fact_provider_values:
+        known_fact_ids = {_release_provider_id(value) for value in fact_provider_values}
+        if provider_id not in known_fact_ids and all(item is not None for item in known_fact_ids):
+            # Explicit user selection may choose one of several candidates. A
+            # sole, conflicting canonical provider is a project-target mismatch.
+            if len(known_fact_ids) == 1:
+                blockers.append("Named provider conflicts with the configured publication provider.")
+                provider_id = None
+
+    goal_facts = {**facts, "_goal": raw_goal}
+    app_or_package, target_conflict = _single_release_value(
+        goal_facts,
+        ("app_or_package", "release_target", "package_name", "bundle_id"),
+        r"(?<!\w)(?:package\s+name|app(?:lication)?\s+(?:name|id)|bundle\s+id)\s*(?:is|:|=)?\s+([@A-Za-z0-9][@A-Za-z0-9._/-]{0,119})",
+    )
+    if target_conflict:
+        blockers.append("Application/package target is ambiguous or invalid.")
+    elif app_or_package is None:
+        blockers.append("Application/package target is not resolved.")
+
+    version, version_conflict = _single_release_value(
+        goal_facts,
+        ("release_version", "version"),
+        r"\b(?:version|ver\.?|v)\s*[:=]?\s*(v?\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)",
+    )
+    if version_conflict:
+        blockers.append("Release version is ambiguous or invalid.")
+    elif version is None:
+        blockers.append("Release version is not resolved.")
+    elif not re.fullmatch(r"v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?", version):
+        version = None
+        blockers.append("Release version must be a bounded numeric version identifier.")
+
+    channel_matches = re.findall(
+        r"\b(?:channel|track|under)\s*(?:is|:|=)?\s*(production|prod|preview|beta|alpha|stable|latest|next|internal testing|internal|closed testing|open testing|testflight|staged)\b",
+        raw_goal, re.I,
+    )
+    channels = sorted({_RELEASE_CHANNELS[item.casefold()] for item in channel_matches})
+    if not channels:
+        channels = _combined_fact_values(goal_facts, "release_channel", "channel")
+    if len(channels) > 1:
+        channel, channel_conflict = None, True
+    elif channels:
+        channel_candidate = channels[0].strip().casefold()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9 _.-]{0,31}", channel_candidate):
+            channel, channel_conflict = None, True
+        else:
+            channel, channel_conflict = _RELEASE_CHANNELS.get(channel_candidate, channel_candidate), False
+    else:
+        channel, channel_conflict = None, False
+    if channel_conflict:
+        blockers.append("Release channel is ambiguous.")
+    elif channel is None:
+        blockers.append("Release channel is not resolved.")
+
+    return ReleaseIntent(True, provider_id, app_or_package, version, channel, blockers)
+
+
+def _evidence_value(reference: object, key: str, default: Any = None) -> Any:
+    if isinstance(reference, Mapping):
+        return reference.get(key, default)
+    return getattr(reference, key, default)
+
+
+def build_release_preflight(
+    intent: ReleaseIntent,
+    *,
+    current_references: Sequence[object] = (),
+    external_access_enabled: bool,
+    agreement_accepted_by_user: bool,
+    credentials_configured: bool,
+    local_build_validated: bool,
+    paid_plan_choice_required: bool = False,
+    paid_plan_selected_by_user: bool = False,
+    required_attestations: Sequence[str] = (),
+    completed_attestations: Sequence[str] = (),
+    now: float | None = None,
+) -> ReleasePreflight:
+    """Create a fail-closed release checklist; only user facts clear human gates."""
+    blockers = list(intent.blockers)
+    checks: list[dict[str, Any]] = []
+
+    def check(name: str, passed: bool, message: str) -> None:
+        checks.append({"name": name, "status": "PASS" if passed else "BLOCKED", "message": message})
+        if not passed:
+            blockers.append(message)
+
+    check("explicit_intent", intent.requested, "No explicit release request authorizes publication.")
+    target_resolved = bool(intent.provider_id and intent.app_or_package and intent.version and intent.channel)
+    check("target", target_resolved, "Provider, application/package, version, and channel must all be resolved.")
+    check("external_access", external_access_enabled, "External Access must be enabled to verify current provider requirements.")
+
+    current_time = float(now if now is not None else datetime.now(timezone.utc).timestamp())
+    verified: dict[str, bool] = {"publishing": False, "terms": False}
+    for reference in current_references:
+        if (_evidence_value(reference, "provider_id") != intent.provider_id
+                or _evidence_value(reference, "officiality") != "VERIFIED"):
+            continue
+        category = _evidence_value(reference, "category")
+        accessed_at = _evidence_value(reference, "accessed_at")
+        try:
+            age = current_time - float(accessed_at)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= age <= _RELEASE_REFERENCE_MAX_AGE_SECONDS and category in verified:
+            verified[str(category)] = True
+    missing = [category for category, found in verified.items() if not found]
+    check("current_official_requirements", not missing,
+          ("Current verified provider publishing and terms references are required." if missing else
+           "Current verified provider publishing and terms references are available."))
+    check("agreement", agreement_accepted_by_user,
+          "Provider agreement status needs user confirmation; OLCR never accepts terms automatically.")
+    check("credentials", credentials_configured, "Existing provider credentials are not configured.")
+    check("local_build", local_build_validated, "A validated local release build is required before publishing.")
+    if paid_plan_choice_required and not paid_plan_selected_by_user:
+        check("paid_plan_choice", False, "User action is required to choose or approve the provider price/plan.")
+    else:
+        check("paid_plan_choice", True, "No unapproved paid plan choice is required.")
+    completed = {str(item).strip() for item in completed_attestations if str(item).strip()}
+    missing_attestations = [str(item).strip() for item in required_attestations
+                            if str(item).strip() and str(item).strip() not in completed]
+    if missing_attestations:
+        check("attestations", False, "User action is required for provider attestations: " + ", ".join(missing_attestations))
+    else:
+        check("attestations", True, "No unanswered provider attestations remain.")
+
+    blockers = list(dict.fromkeys(blockers))
+    return ReleasePreflight("BLOCKED" if blockers else "READY", checks, blockers)
+
+
+def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, Any] | None = None,
+                                 project_facts: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Produce the single persisted control-plane interpretation of a request."""
     profile = task_profile(text)
     evidence = attachment_evidence if isinstance(attachment_evidence, Mapping) else {}
@@ -878,6 +1217,14 @@ def canonical_coding_requirements(text: str, attachment_evidence: Mapping[str, A
                        if profile["TASK_PROFILE"] == "FRONTEND_ONLY_MARKETING_SITE" else [])
     dependency_requirements = canonical_dependency_requirements({"required_stack": required_stack})
     return {"required_capabilities": profile["REQUIRED_CAPABILITIES"],
+            "release_intent": {
+                "requested": (release_intent := detect_release_intent(text, project_facts)).requested,
+                "provider_id": release_intent.provider_id,
+                "app_or_package": release_intent.app_or_package,
+                "version": release_intent.version,
+                "channel": release_intent.channel,
+                "blockers": list(release_intent.blockers),
+            },
             "forbidden_capabilities": profile["FORBIDDEN_CAPABILITIES"],
             "task_profile": profile["TASK_PROFILE"],
             "execution_mode": profile["EXECUTION_MODE"],
@@ -945,7 +1292,7 @@ def normalize_coding_requirements(raw_request: str | Mapping[str, Any], context:
         if isinstance(context.get("model_context"), Mapping):
             model_context = context["model_context"]
     attachment_evidence = request_object.get("attachment_evidence") if isinstance(request_object, Mapping) else None
-    result = canonical_coding_requirements(raw, attachment_evidence)
+    result = canonical_coding_requirements(raw, attachment_evidence, typed_context)
     scoped = _current_task_text(raw)
     # The canonical hash remains a function of current-user text only. Typed
     # attachment evidence is persisted separately and must not change the

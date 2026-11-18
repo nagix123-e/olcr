@@ -133,7 +133,7 @@ from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TA
     evaluate_phase, classify_waiting_input, classify_execution_mode,
     compact_normal_plan, execution_mode_diagnostics, resumable_continuation_eligible,
     workspace_mutation_count, zero_mutation_retry_instruction, patch_preimage_retry_instruction, task_profile,
-    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, canonical_dependency_requirements, dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements, animejs_project_version, animejs_version_compatibility,
+    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, detect_release_intent, canonical_dependency_requirements, dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements, animejs_project_version, animejs_version_compatibility,
     normalize_replan_graph, normalize_replanned_phase_ids, graph_validation_diagnostics, reconcile_graph_references,
     ensure_explicit_phase_execution_modes, phase_executor_capability,
     phase_has_observable_deliverable, coding_classification_diagnostics, classify_mutation_mode,
@@ -10040,6 +10040,34 @@ def _run_coding_planning(managed: dict) -> None:
     pending_instructions = task_workspaces.service.take_steering(task_id)
     _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=settings.main_model))
     requirements=_persisted_requirements(managed)
+    # Persisted intent is always recomputed from the current user's goal and
+    # the typed task metadata. A model-generated plan can never authorize a
+    # release by adding its own ``release_intent`` field.
+    goal_intent = detect_release_intent(managed.get("original_goal", ""))
+    stored_intent = requirements.get("release_intent")
+    if goal_intent.requested and isinstance(stored_intent, dict) and stored_intent.get("requested") is True:
+        # The stored fields came from canonical request normalization and may
+        # include project metadata that is intentionally not copied elsewhere.
+        release_intent = {
+            "requested": True,
+            "provider_id": stored_intent.get("provider_id"),
+            "app_or_package": stored_intent.get("app_or_package"),
+            "version": stored_intent.get("version"),
+            "channel": stored_intent.get("channel"),
+            "blockers": [str(item) for item in stored_intent.get("blockers", []) if isinstance(item, str)],
+        }
+    else:
+        release_intent = detect_release_intent(managed.get("original_goal", ""), requirements)
+        release_intent = {
+            "requested": release_intent.requested,
+            "provider_id": release_intent.provider_id,
+            "app_or_package": release_intent.app_or_package,
+            "version": release_intent.version,
+            "channel": release_intent.channel,
+            "blockers": list(release_intent.blockers),
+        }
+    requirements["release_intent"] = release_intent
+    db.update_coding_task(task_id, requirements=requirements)
     definition = managed['original_goal'] + '\n' + '\n'.join(requirements.get('definition_answers') or [])
     policy = task_continuation_policy(definition, requirements)
     depth = planning_policy(managed['original_goal'], requirements, policy['task_size'])
