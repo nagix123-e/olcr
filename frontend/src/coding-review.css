@@ -8,3 +8,22 @@
 .coding-followup-mode {font-size:12px;color:var(--muted,#687166);display:flex;gap:8px;align-items:center;padding:4px 12px;}
 .coding-followup-mode select {max-width:100%;font-size:12px;padding:5px 8px;}
 .coding-workspace-setup .coding-actions {flex-wrap:wrap;}
+
+.provider-research{border:1px solid var(--olcr-border);border-radius:12px;padding:12px;min-width:0}
+.provider-research>summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;font-weight:600}
+.research-status,.provider-officiality{font-size:10px;font-weight:600;border-radius:999px;padding:3px 8px;background:#8882;color:var(--olcr-text-secondary)}
+.research-status.complete,.provider-officiality.verified{background:#d7f1df;color:#174f2a}
+.research-status.partial,.research-status.unavailable,.research-status.disabled,.provider-officiality.candidate{background:#fff0c2;color:#765300}
+.provider-reference-list,.provider-research-blockers{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
+.provider-reference{min-width:0;border:1px solid var(--olcr-border);border-left:4px solid #35834a;border-radius:8px;padding:10px;display:grid;gap:8px;overflow-wrap:anywhere}
+.provider-reference.candidate{border-left-color:#bf8300;background:color-mix(in srgb,#f2bf4a 8%,var(--olcr-surface,#fff))}
+.provider-reference-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.provider-reference dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0}
+.provider-reference dl>div{min-width:0}
+.provider-reference dt{font-size:10px;color:var(--olcr-text-secondary)}
+.provider-reference dd{margin:2px 0 0;font-size:12px}
+.provider-reference-summary,.provider-research-blockers,.provider-research-empty{margin:0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.provider-reference>a{overflow-wrap:anywhere;font-size:12px}
+.provider-research-blockers{padding-left:20px;list-style:disc;color:#765300}
+.provider-staleness{font-size:10px;font-weight:600;border-radius:999px;padding:3px 8px;background:#e6e8eb;color:#4e5863}
+.provider-reference.stale{border-left-color:#79818a;background:color-mix(in srgb,#88919b 8%,var(--olcr-surface,#fff))}

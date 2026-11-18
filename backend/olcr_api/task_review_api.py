@@ -104,8 +104,13 @@ class TaskReviewAPI:
         return {'tasks': [{**row, 'workspace': self.service.metadata(row['id'])} for row in rows]}
 
     def review(self, task_id: str):
+        task = self.call(self.service.task, task_id)
+        requirements = task.get('requirements') if isinstance(task, dict) else {}
+        research = requirements.get('provider_research') if isinstance(requirements, dict) else None
         return {**self.changes(task_id), 'steering': self.call(self.service.steering, task_id),
-                'reports': self.service.db.coding_phase_reports(task_id)}
+                'reports': self.service.db.coding_phase_reports(task_id),
+                'references': self.service.db.coding_task_references(task_id),
+                'provider_research': research}
 
     def revert(self, task_id: str, value: RevertFile):
         return self.call(self.service.revert, task_id, value.path, value.revision)

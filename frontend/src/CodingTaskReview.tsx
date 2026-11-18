@@ -8,8 +8,53 @@ import './coding-review.css';
 type Change={path:string;status:string;diff?:string;source_diff?:string;source_reviewable?:boolean;inherited?:boolean;after_hash?:string|null;phase_ids?:string[];binary?:boolean;reviewable?:boolean;revertible?:boolean;truncated?:boolean;error?:string;externally_modified?:boolean;sensitive?:boolean};
 type Workspace={mode:'direct'|'worktree';root:string;source_root:string;branch:string;removed?:boolean;source_dirty_files?:number;snapshot_complete?:boolean};
 type Steering={id:string;message:string;status:string;received_revision:number;applied_revision:number|null};
-type Review={available:boolean;revision:string;files:Change[];workspace:Workspace|null;steering:Steering[];reports:{id:string;phase_id:string;structured_report:Record<string,unknown>}[]};
+type ProviderReference={provider_id:string;category:string;title:string;url:string;host:string;officiality:'VERIFIED'|'CANDIDATE';accessed_at:number;applicability:string;summary:string;phase_id:string|null;plan_revision:number|null};
+type ProviderResearch={status:string;providers?:string[];blockers?:string[]};
+type Review={available:boolean;revision:string;files:Change[];workspace:Workspace|null;steering:Steering[];reports:{id:string;phase_id:string;structured_report:Record<string,unknown>}[];references?:ProviderReference[];provider_research?:ProviderResearch|null};
 const active=new Set(['QUEUED','PLANNING','RUNNING','FINAL_REPORTING','QWEN_REPLANNING']);
+
+function providerReferences(rows:ProviderReference[]|undefined,currentRevision:number|undefined){
+  const unique=new Map<string,ProviderReference>();
+  for(const row of rows||[]){
+    if(!row||typeof row.provider_id!=='string'||typeof row.url!=='string')continue;
+    const key=`${row.provider_id}\u0000${row.url}`;const previous=unique.get(key);
+    const rank=(value:ProviderReference)=>[currentRevision!=null&&value.plan_revision===currentRevision?1:0,value.officiality==='VERIFIED'?1:0,Number(value.accessed_at)||0];
+    const nextRank=rank(row),previousRank=previous?rank(previous):[-1,-1,-1];
+    if(!previous||nextRank[0]>previousRank[0]||(nextRank[0]===previousRank[0]&&(nextRank[1]>previousRank[1]||(nextRank[1]===previousRank[1]&&nextRank[2]>previousRank[2]))))unique.set(key,row);
+  }
+  return [...unique.values()].sort((a,b)=>a.provider_id.localeCompare(b.provider_id)||a.category.localeCompare(b.category)||a.url.localeCompare(b.url));
+}
+
+function safeProviderUrl(value:string){
+  try{const parsed=new URL(value);if(parsed.protocol==='https:'&&!parsed.username&&!parsed.password&&(!parsed.port||parsed.port==='443'))return parsed.href}catch{}
+  return undefined;
+}
+
+function providerHost(reference:ProviderReference){
+  const safeUrl=safeProviderUrl(reference.url);
+  try{return safeUrl?new URL(safeUrl).hostname:reference.host||''}catch{return reference.host||''}
+}
+
+function providerRetrievedAt(value:number){
+  if(!Number.isFinite(value))return 'unknown';
+  try{return new Date(value*1000).toISOString().replace('T',' ').replace(/\.\d{3}Z$/,' UTC')}catch{return 'unknown'}
+}
+
+function providerStatus(value:string,ja:boolean){
+  const status=value.toUpperCase();
+  const labels:Record<string,[string,string]>={
+    COMPLETE:['確認済み資料を取得','Current references retrieved'],
+    PARTIAL:['一部未確認','Partial · some sources unavailable'],
+    UNAVAILABLE:['資料を取得できませんでした','Unavailable · no current source retrieved'],
+    DISABLED:['調査は無効','Disabled · research was not run'],
+  };
+  return labels[status]?.[ja?0:1]||status|| (ja?'状態不明':'Unknown status');
+}
+
+function providerCategory(value:string,ja:boolean){
+  const labels:Record<string,[string,string]>={technical_spec:['技術仕様','Technical specification'],api:['API資料','API documentation'],terms:['利用規約','Terms'],privacy:['プライバシー','Privacy'],review:['審査資料','Review guidelines'],publishing:['公開・配布','Publishing'],signing:['署名・公証','Signing and notarization']};
+  return labels[value]?.[ja?0:1]||value;
+}
 
 function reviewError(reason:unknown,ja:boolean){
   const raw=reason instanceof Error?reason.message:String(reason);
@@ -59,7 +104,24 @@ export function CodingTaskReview({task,conversationId,ja}:{task:CodingTask;conve
   };
   const selected=review?.files.find(file=>file.path===path),running=active.has(task.status);
   const label=(status:string)=>({ADDED:ja?'追加':'Added',MODIFIED:ja?'変更':'Modified',DELETED:ja?'削除':'Deleted',UNSUPPORTED:ja?'表示不可':'Unsupported',WAITING:ja?'完了後に進めます':'Waiting until completion',QUEUED:ja?'次の工程で受け取ります':'Queued for next boundary',APPLYING:ja?'計画に反映中':'Applying',APPLIED:ja?'反映済み':'Applied',CANCELLED:ja?'取り消し済み':'Cancelled',NEEDS_REVIEW:ja?'反映を確認してください':'Needs review'}[status]||status);
+  const references=providerReferences(review?.references,task.plan_revision),research=review?.provider_research;
   return <section className="coding-review" aria-label={ja?'変更と追加指示':'Changes and instructions'}>
+    {(references.length>0||research)&&<details className="provider-research" open>
+      <summary>{ja?'プロバイダー資料':'Provider references'} · {references.length}{research?.status&&<span className={`research-status ${research.status.toLowerCase()}`} data-status={research.status}>{providerStatus(research.status,ja)}</span>}</summary>
+      {research?.blockers?.length?<ul className="provider-research-blockers">{research.blockers.map((blocker,index)=><li key={`${index}-${blocker}`}>{blocker}</li>)}</ul>:null}
+      {references.length>0?<ul className="provider-reference-list">{references.map(reference=>{
+        const candidate=reference.officiality!=='VERIFIED';const stale=Number.isFinite(task.plan_revision)&&reference.plan_revision!=null&&reference.plan_revision!==task.plan_revision;const host=providerHost(reference);const safeUrl=safeProviderUrl(reference.url);
+        return <li className={`provider-reference ${candidate?'candidate':'verified'} ${stale?'stale':''}`} data-officiality={candidate?'CANDIDATE':'VERIFIED'} key={`${reference.provider_id}:${reference.url}`}>
+          <div className="provider-reference-heading"><strong>{reference.provider_id}</strong><span className={`provider-officiality ${candidate?'candidate':'verified'}`}>{candidate?(ja?'候補・公式性未確認':'Candidate · not verified'):(ja?'公式ドメインを確認':'Official domain verified')}</span>{stale&&<span className="provider-staleness">{ja?'以前の計画で取得':'Retrieved for an earlier plan'}</span>}</div>
+          <dl><div><dt>{ja?'ホスト':'Host'}</dt><dd>{host||'unknown'}</dd></div>
+            <div><dt>{ja?'資料種別':'Document'}</dt><dd>{providerCategory(reference.category,ja)}</dd></div>
+            <div><dt>{ja?'取得日時 (UTC)':'Retrieved (UTC)'}</dt><dd>{providerRetrievedAt(reference.accessed_at)}</dd></div>
+            <div><dt>{ja?'適用対象':'Applies to'}</dt><dd>{reference.applicability||'—'}</dd></div></dl>
+          {reference.summary&&<p className="provider-reference-summary">{reference.summary}</p>}
+          {safeUrl?<a href={safeUrl} target="_blank" rel="noopener noreferrer">{safeUrl}</a>:<span>{reference.url}</span>}
+        </li>;
+      })}</ul>:research?.status&&<p className="provider-research-empty">{research.status==='UNAVAILABLE'?(ja?'現行の資料を取得できませんでした。':'No current provider source was retrieved.'):research.status==='PARTIAL'?(ja?'出典を取得できていない項目があります。':'Some requested sources were not retrieved.'):research.status==='DISABLED'?(ja?'このTaskでは外部資料の調査を行っていません。':'Provider research was not run for this task.'):null}</p>}
+    </details>}
     {review?.workspace&&<div className="task-workspace-summary"><strong>{review.workspace.mode==='worktree'?(ja?'独立した作業場所':'Isolated worktree'):(ja?'現在のWorkspace':'Current workspace')}</strong><small>{review.workspace.branch||review.workspace.root}</small>{Boolean(review.workspace.source_dirty_files)&&<p>{ja?'元のWorkspaceの未コミット変更は、この作業場所には含まれません。':'Uncommitted changes in the source workspace are not included here.'}</p>}
       {review.workspace.mode==='worktree'&&!running&&<button type="button" disabled={busy} onClick={()=>void mutation(review.workspace!.removed?'/worktree/restore':'/worktree/remove')}>{review.workspace.removed?(ja?'作業場所を復元':'Restore worktree'):(ja?'コミット済みの作業場所を片付ける':'Remove clean worktree')}</button>}
     </div>}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -3367,7 +3368,8 @@ def _report_operation_path(operation: Mapping[str, Any]) -> str:
 def deterministic_final_report(task: Mapping[str, Any] | None,
                                plan: Mapping[str, Any] | None,
                                reports: list[Mapping[str, Any]] | None,
-                               *, handoff: Mapping[str, Any] | None = None) -> str:
+                               *, handoff: Mapping[str, Any] | None = None,
+                               references: list[Mapping[str, Any]] | None = None) -> str:
     """Render a Coding Task report from persisted evidence without a model.
 
     This function deliberately treats typed operations and verification fields
@@ -3621,6 +3623,59 @@ def deterministic_final_report(task: Mapping[str, Any] | None,
     if next_items:
         lines.extend(["", "Next"])
         lines.extend(f"- {item}" for item in next_items)
+    requirements = _report_task_value(task, "requirements", {})
+    research = requirements.get("provider_research") if isinstance(requirements, Mapping) else None
+    source_rows = [item for item in (references or []) if isinstance(item, Mapping)]
+    if isinstance(research, Mapping) or source_rows:
+        lines.extend(["", "Provider research"])
+        status = str(research.get("status") or "UNKNOWN") if isinstance(research, Mapping) else "UNKNOWN"
+        lines.append(f"- Research status: {status}")
+        blockers = research.get("blockers") if isinstance(research, Mapping) else []
+        for blocker in blockers[:20] if isinstance(blockers, list) else []:
+            lines.append("- Research blocker: " + str(blocker)[:500])
+        unique_references: dict[tuple[str, str], Mapping[str, Any]] = {}
+        current_revision = _report_task_value(task, "plan_revision")
+        for row in source_rows:
+            provider_id, url = row.get("provider_id"), row.get("url")
+            if not isinstance(provider_id, str) or not isinstance(url, str):
+                continue
+            key = (provider_id, url)
+            previous = unique_references.get(key)
+            if previous is None:
+                unique_references[key] = row
+                continue
+            rank = (1 if row.get("plan_revision") == current_revision else 0,
+                    1 if row.get("officiality") == "VERIFIED" else 0, float(row.get("accessed_at") or 0))
+            previous_rank = (1 if previous.get("plan_revision") == current_revision else 0,
+                             1 if previous.get("officiality") == "VERIFIED" else 0,
+                             float(previous.get("accessed_at") or 0))
+            if rank > previous_rank:
+                unique_references[key] = row
+        if unique_references:
+            for row in sorted(unique_references.values(), key=lambda item: (
+                    str(item.get("provider_id")), str(item.get("category")), str(item.get("url"))))[:50]:
+                try:
+                    accessed = datetime.fromtimestamp(float(row.get("accessed_at")), tz=timezone.utc).date().isoformat()
+                except (TypeError, ValueError, OverflowError, OSError):
+                    accessed = "unknown"
+                stale = (current_revision is not None and row.get("plan_revision") is not None
+                         and row.get("plan_revision") != current_revision)
+                officiality = str(row.get("officiality") or "CANDIDATE")[:16]
+                if stale:
+                    officiality = "PREVIOUS_PLAN/" + officiality
+                lines.append(
+                    f"- {officiality} "
+                    f"{str(row.get('provider_id') or '')[:64]} / {str(row.get('category') or '')[:32]} "
+                    f"({accessed}): {str(row.get('url') or '')[:2048]}"
+                )
+                applicability = str(row.get("applicability") or "")[:200]
+                summary = str(row.get("summary") or "")[:600]
+                if applicability:
+                    lines.append("  - Applies to: " + applicability)
+                if summary:
+                    lines.append("  - Untrusted reference summary: " + summary)
+        elif status in {"PARTIAL", "UNAVAILABLE", "DISABLED"}:
+            lines.append("- No retrieved current official reference was available to verify.")
     return "\n".join(lines).rstrip()
 
 

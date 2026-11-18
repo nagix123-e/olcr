@@ -48,6 +48,32 @@ describe('Coding task review workflow',()=>{
   await screen.findByText('Taskの実行後にこのファイルが編集されています。内容の復元は行えません。');
   expect((screen.getByRole('button',{name:'開始前に戻す'}) as HTMLButtonElement).disabled).toBe(true);
  });
+ it('shows deduplicated provider references with retrieval facts and distinct candidate status',async()=>{
+  const official={provider_id:'github',category:'api',title:'GitHub API documentation',url:'https://docs.github.com/en/rest/releases',host:'docs.github.com',officiality:'VERIFIED',accessed_at:1800000000,applicability:'GitHub API integration',summary:'Untrusted API version reference.',phase_id:null,plan_revision:3};
+  const candidate={provider_id:'example_store',category:'publishing',title:'Example publishing guide',url:'https://docs.example.net/publishing',host:'docs.example.net',officiality:'CANDIDATE',accessed_at:1800001000,applicability:'Possible publishing target',summary:'Candidate source, provenance not verified.',phase_id:null,plan_revision:3};
+  const stale={provider_id:'vercel',category:'publishing',title:'Vercel publishing requirements',url:'https://vercel.com/docs/deployments',host:'vercel.com',officiality:'VERIFIED',accessed_at:1790000000,applicability:'Previous deployment task',summary:'Saved during an earlier plan.',phase_id:'p2',plan_revision:2};
+  request.mockResolvedValue({...data,provider_research:{status:'PARTIAL',providers:['github','example_store'],blockers:['example_store: current official publishing source unavailable.']},references:[
+   official,{...official,phase_id:'p1',officiality:'CANDIDATE',accessed_at:1800002000},candidate,stale,
+  ]});
+  render(<CodingTaskReview task={task} ja/>);
+  expect(await screen.findByText('一部未確認')).toBeTruthy();
+  expect(screen.getByText('example_store: current official publishing source unavailable.')).toBeTruthy();
+  expect(screen.getByText('API資料')).toBeTruthy();
+  expect(screen.getByText('2027-01-15 08:00:00 UTC')).toBeTruthy();
+  expect(screen.getByText('GitHub API integration')).toBeTruthy();
+  expect(screen.getAllByRole('link',{name:'https://docs.github.com/en/rest/releases'})).toHaveLength(1);
+  const verifiedLink=screen.getByRole('link',{name:'https://docs.github.com/en/rest/releases'});
+  expect(verifiedLink.getAttribute('rel')).toBe('noopener noreferrer');
+  expect(verifiedLink.getAttribute('target')).toBe('_blank');
+  const verifiedRow=verifiedLink.closest('li');
+  expect(verifiedRow?.getAttribute('data-officiality')).toBe('VERIFIED');
+  expect(verifiedRow?.classList.contains('verified')).toBe(true);
+  const candidateLabel=screen.getByText('候補・公式性未確認');
+  expect(candidateLabel.closest('li')?.classList.contains('candidate')).toBe(true);
+  expect(candidateLabel.closest('li')?.textContent).toContain('docs.example.net');
+  const staleLabel=screen.getByText('以前の計画で取得');
+  expect(staleLabel.closest('li')?.classList.contains('stale')).toBe(true);
+ });
  it('previews cumulative source changes and retains the confirmed diff across refreshes',async()=>{
   const inherited={...data.files[0],inherited:true,revertible:false,source_reviewable:true,source_diff:'--- source/src/a.ts\n+++ worktree/src/a.ts\n@@ -1 +1 @@\n-original\n+cumulative\n'};
   request.mockResolvedValue({...data,files:[inherited]});
