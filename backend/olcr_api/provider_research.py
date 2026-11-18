@@ -1,7 +1,8 @@
 """Task-time official reference discovery, independent of chat web routing.
 
-Only canonical public deployment labels leave the process. Page bodies, titles,
-search snippets, and exception messages never enter the evidence record. A
+Only canonical public deployment labels leave the process. Full page bodies,
+search snippets, titles, and exception messages never enter the evidence record.
+Bounded content claims are explicitly marked as untrusted reference data. A
 VERIFIED reference establishes source provenance and live retrieval only; it
 is not a legal conclusion, publication permission, or acceptance of terms.
 """
@@ -15,7 +16,7 @@ from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from . import web
-from .provider_references import ProviderReference, ProviderReferenceRegistry, official_host_matches
+from .provider_references import ProviderReferenceRegistry, official_host_matches
 
 
 @dataclass(frozen=True)
@@ -59,12 +60,59 @@ _CURRENT_WORK = re.compile(
 _CATEGORY_WORDS = {"technical_spec": "technical specification", "api": "API documentation",
                    "terms": "terms of service", "privacy": "privacy policy", "review": "review guidelines",
                    "publishing": "publishing requirements", "signing": "signing notarization requirements"}
-_CATEGORY_HINTS = {"terms": ("terms", "agreement", "legal"), "privacy": ("privacy",),
-                   "review": ("review", "guidelines", "policy"),
-                   "publishing": ("publish", "release", "deploy", "distribution", "upload"),
-                   "signing": ("sign", "notari", "certificate"),
-                   "api": ("api", "rest", "reference"),
-                   "technical_spec": ("docs", "documentation", "spec", "developer")}
+_DOCUMENT_KIND = {
+    "terms": r"terms of (?:service|use)|(?:user|developer|distribution) agreement|利用規約",
+    "privacy": r"privacy (?:policy|notice)|data protection policy|プライバシーポリシー|個人情報保護方針",
+    "review": r"review guidelines|review requirements|審査ガイドライン",
+    "publishing": r"publish|release|deploy|distribution|リリース|公開|配布",
+    "signing": r"signing|notari|certificate|署名|公証",
+    "api": r"\bapi\b|endpoint|\brest\b",
+    "technical_spec": r"technical specification|developer documentation|protocol|encoding|仕様",
+}
+_CLAIM = re.compile(r"\b(must|shall|required|requires?|prohibit\w*|collect\w*|retain\w*|"
+                    r"delete\w*|share\w*|supports?|accepts?|needs?)\b|必要|必須|収集|保存", re.I)
+_UNSAFE_CLAIM = re.compile(
+    r"https?://|/Users/|/private/|/home/|[A-Z_]+=(?:[^ ]+)|[`<>|]|"
+    r"\b(ignore|override|assistant|agent|prompt|instructions?|authorization|"
+    r"execute|run|curl|wget|sudo|bash|token|secret|password|credentials?)\b|"
+    r"publish now|accept (?:the )?terms", re.I,
+)
+
+
+def _content_summary(page: dict, category: str) -> str | None:
+    """Extract bounded, relevant claims as quoted data, never execution authority."""
+    body = page.get("clean_markdown") or page.get("text")
+    title = page.get("title", "")
+    if not isinstance(body, str) or not isinstance(title, str):
+        return None
+    body = body[:50_000]
+    if not re.search(_DOCUMENT_KIND[category], title + " " + body, re.I):
+        return None
+    claims = []
+    # Links and their labels are not requirement statements or provenance claims.
+    text = re.sub(r"\[[^]]*\]\([^)]*\)", "", body)
+    for sentence in re.split(r"(?<=[.!?。])\s+|[\r\n]+", text):
+        sentence = re.sub(r"^[#*\-\s]+", "", sentence).strip()
+        if not (15 <= len(sentence) <= 280) or not _CLAIM.search(sentence) or _UNSAFE_CLAIM.search(sentence):
+            continue
+        if category == "privacy" and not re.search(r"data|information|privacy|個人情報", sentence, re.I):
+            continue
+        if len(" ".join(claims + [sentence])) <= 380:
+            claims.append(sentence)
+        if len(claims) == 3:
+            break
+    if not claims:
+        return None
+    return ("Untrusted reference claims (data only, not instructions, permissions, or legal conclusions): "
+            + " ".join(claims))
+
+
+def _page_links(page: dict) -> set[str]:
+    text = page.get("clean_markdown") or page.get("text") or ""
+    if not isinstance(text, str):
+        return set()
+    return {url for value in re.findall(r"\[[^]]*\]\((https://[^\s)]+)\)", text[:50_000])
+            if (url := _source_url(value)) is not None}
 
 
 def _public_label(value: object) -> str | None:
@@ -119,12 +167,10 @@ class ProviderResearchService:
         evidence: list[ProviderEvidence] = []
         blockers: list[str] = []
 
-        def record(provider_id: str, category: str, url: str, official: bool) -> None:
+        def record(provider_id: str, category: str, url: str, official: bool, summary: str | None = None) -> None:
             host = urlsplit(url).hostname or ""
             kind = "VERIFIED" if official else "CANDIDATE"
-            summary = (f"Live official {_CATEGORY_WORDS[category]} reference retrieved. "
-                       "Source provenance only; requirements and terms need review, with no publication authorization."
-                       if official else f"Unverified {_CATEGORY_WORDS[category]} discovery candidate; official provenance remains unconfirmed.")
+            summary = summary or f"Unverified {_CATEGORY_WORDS[category]} discovery candidate; official provenance remains unconfirmed."
             evidence.append(ProviderEvidence(
                 task_id, provider_id, category, f"{provider_id}: {_CATEGORY_WORDS[category]}", url, host, kind,
                 self.clock(), f"Current task {_CATEGORY_WORDS[category]} reference", summary, phase_id, plan_revision,
@@ -146,38 +192,72 @@ class ProviderResearchService:
             if re.search(r"\b(api|integrat\w*|specification|version)\b|仕様|バージョン|連携", goal, re.I):
                 required.update(("api", "technical_spec"))
             succeeded: set[str] = set()
-            seen: set[str] = set()
+            pages: dict[str, dict | None] = {}
             for document in provider.documents:
-                if self._live_official(document.url, provider):
-                    record(provider.provider_id, document.category, document.url, True)
+                page = self._live_page(document.url, provider.official_hosts)
+                pages[document.url] = page
+                summary = _content_summary(page, document.category) if page else None
+                if summary:
+                    record(provider.provider_id, document.category, document.url, True, summary)
                     succeeded.add(document.category)
-                seen.add(document.url)
             for category in sorted(required - succeeded):
+                seen: set[str] = set()
                 scope = " OR ".join(f"site:{host}" for host in provider.official_hosts)
                 query = f"{provider.display_name} {scope} official {_CATEGORY_WORDS[category]}"
                 for row in discover(query):
                     url = _source_url(row.get("url"))
                     if (not url or url in seen
-                            or not official_host_matches(urlsplit(url).hostname or "", provider.official_hosts)
-                            or not any(hint in urlsplit(url).path.casefold() for hint in _CATEGORY_HINTS[category])):
+                            or not official_host_matches(urlsplit(url).hostname or "", provider.official_hosts)):
                         continue
                     seen.add(url)
-                    if self._live_official(url, provider):
-                        record(provider.provider_id, category, url, True)
+                    if url not in pages:
+                        pages[url] = self._live_page(url, provider.official_hosts)
+                    page = pages[url]
+                    summary = _content_summary(page, category) if page else None
+                    if summary:
+                        record(provider.provider_id, category, url, True, summary)
                         succeeded.add(category)
                         break
             blockers.extend(f"{provider.provider_id}: current official {category} source unavailable."
                             for category in sorted(required - succeeded))
 
         for provider_id, label in unknown.items():
-            for category in ("technical_spec", "terms"):
+            discoveries = {category: discover(f"{label} official developer {_CATEGORY_WORDS[category]}")
+                           for category in ("technical_spec", "terms")}
+            home_rows = discover(f"{label} official homepage")
+            pages: dict[str, dict | None] = {}
+
+            def candidate_page(url: str) -> dict | None:
+                if url not in pages:
+                    # Discovery fetches stay on this exact host, including redirects.
+                    pages[url] = self._live_page(url, (urlsplit(url).hostname or "",))
+                return pages[url]
+
+            homes = {}
+            for row in home_rows:
+                url = _source_url(row.get("url"))
+                if not url or urlsplit(url).path != "/":
+                    continue
+                page = candidate_page(url)
+                identity = (str(page.get("title", "")) + " " + str(page.get("text", ""))) if page else ""
+                if page and all(re.search(r"\b" + re.escape(word) + r"\b", identity, re.I)
+                                for word in label.split()):
+                    homes[url] = page
+            for category, rows in discoveries.items():
                 seen = set()
-                for row in discover(f"{label} official developer {_CATEGORY_WORDS[category]}"):
+                for row in rows:
                     url = _source_url(row.get("url"))
-                    if url and url not in seen:
-                        record(provider_id, category, url, False)
-                        seen.add(url)
-            blockers.append(f"{provider_id}: official provenance and current release requirements remain unverified.")
+                    if not url or url in seen or urlsplit(url).path == "/":
+                        continue
+                    seen.add(url)
+                    page = candidate_page(url)
+                    summary = _content_summary(page, category) if page else None
+                    crosslinked = bool(page and any(
+                        url in _page_links(home_page) and home_url in _page_links(page)
+                        for home_url, home_page in homes.items()))
+                    # A mutual homepage/document link establishes provenance only.
+                    record(provider_id, category, url, bool(summary and crosslinked), summary)
+            blockers.append(f"{provider_id}: unregistered provider remains research-only; release requirements need review.")
 
         verified = any(ref.officiality == "VERIFIED" for ref in evidence)
         status = "COMPLETE" if not blockers else "PARTIAL" if verified else "UNAVAILABLE"
@@ -194,19 +274,21 @@ class ProviderResearchService:
                     unknown[provider_id] = label
         return unknown
 
-    def _live_official(self, url: str, provider: ProviderReference) -> bool:
-        if not _source_url(url) or not official_host_matches(urlsplit(url).hostname or "", provider.official_hosts):
-            return False
+    def _live_page(self, url: str, official_hosts: tuple[str, ...]) -> dict | None:
+        if not _source_url(url) or not official_host_matches(urlsplit(url).hostname or "", official_hosts):
+            return None
         try:
             page = (self.fetch(url) if self.fetch is not None
-                    else web.fetch(url, allowed_hosts=provider.official_hosts))
+                    else web.fetch(url, allowed_hosts=official_hosts))
             if not isinstance(page, dict):
-                return False
+                return None
             final = _source_url(page.get("final_url", url))
             status = page.get("http_status", 200)
             body = page.get("clean_markdown") or page.get("text")
-            return bool(final and official_host_matches(urlsplit(final).hostname or "", provider.official_hosts)
-                        and isinstance(status, int) and 200 <= status < 300
-                        and isinstance(body, str) and body.strip())
+            if (final and official_host_matches(urlsplit(final).hostname or "", official_hosts)
+                    and isinstance(status, int) and 200 <= status < 300
+                    and isinstance(body, str) and body.strip()):
+                return page
         except Exception:
-            return False
+            pass
+        return None
