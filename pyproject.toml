@@ -23,7 +23,7 @@ package-dir = {"" = "backend"}
 packages = ["olcr_api", "olcr_cli"]
 
 [tool.setuptools.package-data]
-olcr_api = ["coding_verification_runner.cjs", "node_test_imports.cjs", "help_knowledge/*.md", "help_knowledge/topics.json", "help_knowledge/graphify-out/graph.json"]
+olcr_api = ["coding_verification_runner.cjs", "node_test_imports.cjs", "provider_references.json", "help_knowledge/*.md", "help_knowledge/topics.json", "help_knowledge/graphify-out/graph.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

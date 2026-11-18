@@ -1,0 +1,376 @@
+{
+  "registered_on": "2026-11-18",
+  "providers": [
+    {
+      "provider_id": "github",
+      "display_name": "GitHub Releases",
+      "official_hosts": [
+        "docs.github.com",
+        "github.com"
+      ],
+      "documents": [
+        {
+          "url": "https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "any"
+          ]
+        },
+        {
+          "url": "https://docs.github.com/en/rest/releases",
+          "category": "api",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "any"
+          ]
+        },
+        {
+          "url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "any"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "apple_macos",
+      "display_name": "Apple macOS",
+      "official_hosts": [
+        "developer.apple.com"
+      ],
+      "documents": [
+        {
+          "url": "https://developer.apple.com/app-store/review/guidelines/",
+          "category": "review",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/",
+          "category": "signing",
+          "work_kinds": [
+            "signing"
+          ],
+          "platforms": [
+            "macos"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/macos/distribution",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/support/terms",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "app_store_connect",
+      "display_name": "App Store Connect",
+      "official_hosts": [
+        "developer.apple.com"
+      ],
+      "documents": [
+        {
+          "url": "https://developer.apple.com/app-store/review/guidelines/",
+          "category": "review",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos",
+            "ios"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos",
+            "ios"
+          ]
+        },
+        {
+          "url": "https://developer.apple.com/support/terms",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "macos",
+            "ios"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "google_play",
+      "display_name": "Google Play",
+      "official_hosts": [
+        "support.google.com",
+        "play.google",
+        "googleplay.com"
+      ],
+      "documents": [
+        {
+          "url": "https://play.google/developer-content-policy/",
+          "category": "review",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "android"
+          ]
+        },
+        {
+          "url": "https://play.google/developer-distribution-agreement.html",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "android"
+          ]
+        },
+        {
+          "url": "https://support.google.com/googleplay/android-developer/answer/6112435?hl=en",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "android"
+          ]
+        },
+        {
+          "url": "https://support.google.com/googleplay/android-developer/answer/9859348?hl=en",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "npm",
+      "display_name": "npm",
+      "official_hosts": [
+        "docs.npmjs.com"
+      ],
+      "documents": [
+        {
+          "url": "https://docs.npmjs.com/creating-and-publishing-unscoped-public-packages/",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "nodejs"
+          ]
+        },
+        {
+          "url": "https://docs.npmjs.com/package-scope-access-level-and-visibility/",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "nodejs"
+          ]
+        },
+        {
+          "url": "https://docs.npmjs.com/policies/terms/",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "nodejs"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "pypi",
+      "display_name": "PyPI",
+      "official_hosts": [
+        "docs.pypi.org",
+        "packaging.python.org",
+        "policies.python.org"
+      ],
+      "documents": [
+        {
+          "url": "https://docs.pypi.org/publishing/publishing-to-pypi/",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "python"
+          ]
+        },
+        {
+          "url": "https://docs.pypi.org/trusted-publishers/",
+          "category": "api",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "python"
+          ]
+        },
+        {
+          "url": "https://packaging.python.org/en/latest/tutorials/packaging-projects/",
+          "category": "technical_spec",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "python"
+          ]
+        },
+        {
+          "url": "https://policies.python.org/pypi.org/Terms-of-Service/",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "python"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "vercel",
+      "display_name": "Vercel",
+      "official_hosts": [
+        "vercel.com"
+      ],
+      "documents": [
+        {
+          "url": "https://vercel.com/docs/deployments",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        },
+        {
+          "url": "https://vercel.com/docs/projects/deploy-from-cli",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        },
+        {
+          "url": "https://vercel.com/legal",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        },
+        {
+          "url": "https://vercel.com/legal/terms",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_id": "cloudflare_pages",
+      "display_name": "Cloudflare Pages",
+      "official_hosts": [
+        "developers.cloudflare.com",
+        "cloudflare.com"
+      ],
+      "documents": [
+        {
+          "url": "https://developers.cloudflare.com/pages/get-started/direct-upload/",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        },
+        {
+          "url": "https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/",
+          "category": "publishing",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        },
+        {
+          "url": "https://www.cloudflare.com/policies/terms/",
+          "category": "terms",
+          "work_kinds": [
+            "release"
+          ],
+          "platforms": [
+            "web"
+          ]
+        }
+      ]
+    }
+  ]
+}
