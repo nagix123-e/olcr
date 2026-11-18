@@ -120,17 +120,17 @@
 - Consumes Task 1–3の`ProviderResearchService`、`ResearchPolicy`、`ResearchResult`、`Database.coding_task_references`。
 - Review APIの応答に`references: ProviderEvidence[]`を追加する。`CodingTaskReview`はhost、取得日、資料種別、適用対象を表示し、外部リンクに`rel="noopener noreferrer"`を付ける。
 
-- [ ] **Step 1: planning integrationのpolicyと失敗経路をテストする**
+- [x] **Step 1: planning integrationのpolicyと失敗経路をテストする**
   `test_planning_research_uses_current_external_access_and_web_mode`、`test_research_failure_persists_blocker_without_claiming_current_validation`を追加する。既存Web answer routingの挙動は変更しないことも確認する。
-- [ ] **Step 2: planとphase contextへの限定されたsource injectionをテストする**
+- [x] **Step 2: planとphase contextへの限定されたsource injectionをテストする**
   `test_planning_and_implementation_phase_receive_saved_reference_summaries`を追加し、summary/URL/date/applicabilityだけが渡り、raw fetched bodyが渡らないことを確認する。
-- [ ] **Step 3: _run_coding_planningへ調査を接続する**
+- [x] **Step 3: _run_coding_planningへ調査を接続する**
   goal、公開provider、読み取り専用で得た技術stack factsを使い、plan生成前にserviceを呼ぶ。結果をDBに保存してplanner inputへ短く追加し、研究の事実がrequirements・file scope・release authorizationを拡大しないようにする。
-- [ ] **Step 4: phase実行とfinal reportへ根拠を接続する**
+- [x] **Step 4: phase実行とfinal reportへ根拠を接続する**
   対象phaseに紐付くsaved evidenceのみを実装contextへ追加する。final reportにはDBから取得した参照一覧を決定的に添え、要約生成の有無にかかわらずsource URLと取得日を残す。
-- [ ] **Step 5: task review APIとUIを更新する**
+- [x] **Step 5: task review APIとUIを更新する**
   `/api/coding-tasks/{task_id}/review`を提供する`TaskReviewAPI`の既存レスポンスへreferencesを追加し、`CodingTaskReview`に重複しない出典一覧・取得日時・公式性を表示する。ページ取得不可、candidate、非公式補助資料を視覚的にも区別する。
-- [ ] **Step 6: backend/frontend integration testを実行する**
+- [x] **Step 6: backend/frontend integration testを実行する**
   Run: `python -m pytest backend/tests/test_coding_provider_research_integration.py -q`  
   Run: `npm --prefix frontend test -- CodingTaskReview.test.tsx`  
   Expected: PASS。auto/manual/off、phase link、final report、review UIの出典表示を検証する。
