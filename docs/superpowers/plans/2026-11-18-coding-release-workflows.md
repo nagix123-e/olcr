@@ -70,17 +70,17 @@
 - Consumes: `ReleaseRequest.authorization: ReleaseAuthorization`。DBへ保存するrequestにはcredentialsを含めず、evidenceはreference IDだけで関連付ける。
 - Adds operation table keyed by `operation_id` and unique `task_id/provider_id/idempotency_key`. Store only nonsecret target/version/artifact hashes, timestamps, state, safe error codes, remote id/url and bounded provider result fields.
 
-- [ ] **Step 1: operation lifecycle testsを書く**
+- [x] **Step 1: operation lifecycle testsを書く**
   `test_operation_transitions_record_blocked_ready_publishing_and_final_states`、`test_operation_persists_without_credentials_or_response_secrets`を追加する。
-- [ ] **Step 2: duplicate・timeout state testsを書く**
+- [x] **Step 2: duplicate・timeout state testsを書く**
   `test_same_task_provider_version_reuses_operation_key`、`test_rebuilt_artifact_cannot_replace_existing_version`、`test_uncertain_operation_requires_inspect_before_publish_retry`、`test_inspect_confirms_remote_state_before_marking_published`を追加する。
-- [ ] **Step 3: SQLite operation persistenceを実装する**
+- [x] **Step 3: SQLite operation persistenceを実装する**
   additively add `coding_release_operations` and DB methods `create_release_operation`、`update_release_operation`、`release_operation`. Increment schema version and preserve existing task data.
-- [ ] **Step 4: provider-independent coordinatorを実装する**
+- [x] **Step 4: provider-independent coordinatorを実装する**
   `ReleaseCoordinator.preflight(request: ReleaseRequest) -> ReleasePreflight`、`ReleaseCoordinator.publish(request: ReleaseRequest) -> ReleaseResult`、`ReleaseCoordinator.inspect(operation_id: str) -> ReleaseResult`を定義する。publish前にexplicit intent、External Access、current official evidence、READY、auth preflightを再確認する。
-- [ ] **Step 5: local artifactsとremote stateの相関を実装する**
+- [x] **Step 5: local artifactsとremote stateの相関を実装する**
   workspace配下に限定したartifact path、ファイル存在、サイズ上限、SHA-256を記録し、remote callの前後で同じoperationを更新する。remote resultが曖昧なら`UNCERTAIN`としてpublish再実行を止める。
-- [ ] **Step 6: workflow testsを実行する**
+- [x] **Step 6: workflow testsを実行する**
   Run: `python -m pytest backend/tests/test_coding_release_workflow.py -q`  
   Expected: PASS。fake adapterを使い、network無しでoperation idempotencyとstop状態を検証する。
 
