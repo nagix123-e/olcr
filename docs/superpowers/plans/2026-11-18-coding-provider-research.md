@@ -95,13 +95,13 @@
 - Produces: `Database.coding_task_references(task_id: str, *, phase_id: str | None = None) -> list[dict[str, object]]`。
 - Adds `coding_task_references` table keyed by stable id, with task FK, provider/category/title/url/host/officiality/accessed_at/applicability/summary/phase_id/plan_revision. Do not store fetched page bodies, query secrets, or credentials.
 
-- [ ] **Step 1: 参照保存とSQLite再初期化のテストを書く**
+- [x] **Step 1: 参照保存とSQLite再初期化のテストを書く**
   `test_save_and_list_task_references_preserves_provenance`と`test_initialize_adds_reference_table_to_existing_database`を追加する。タスク・phase reportを保持したままtableが追加されることを確認する。実装baseの現行schema versionをmigration fixtureへ使う。
-- [ ] **Step 2: 再実行安全なinsert/upsert動作をテストする**
+- [x] **Step 2: 再実行安全なinsert/upsert動作をテストする**
   `test_duplicate_task_url_is_idempotent_and_phase_links_are_distinct`で同じtask/provider/URLの再取得を二重表示しないこと、異なるphaseの紐付けは保持することを固定する。
-- [ ] **Step 3: additive schema migrationとDB APIを実装する**
+- [x] **Step 3: additive schema migrationとDB APIを実装する**
   現在のschema migration規約に沿って現行versionを1増やし、起動時の再適用でも壊れないtable/indexを追加する。設計時のdirty checkoutはv40だが、実装base commit `e0bd556`はv39なので、このbranchではv40にする。取得結果の短いsummary・時刻をUTF-8で保存し、既存task rowへの追加カラムは不要とする。
-- [ ] **Step 4: DBテストを実行する**
+- [x] **Step 4: DBテストを実行する**
   Run: `python -m pytest backend/tests/test_coding_task_references.py -q`  
   Expected: PASS。新規DBと既存DBの両方でreferenceの永続化を検証する。
 
