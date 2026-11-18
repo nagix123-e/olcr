@@ -32,10 +32,12 @@ _PROFILE_CREDENTIAL_ENV = {
 _API_HOST_PROFILES = {
     "github_api": "api.github.com",
     "app_store_connect_api": "api.appstoreconnect.apple.com",
+    "google_play_api": "androidpublisher.googleapis.com",
 }
 _API_AUTH_SCHEME = {
     "github_api": "Bearer",
     "app_store_connect_api": "Bearer",
+    "google_play_api": "Bearer",
 }
 _API_HEADERS_PROFILE = {
     "github_api": {
@@ -43,6 +45,9 @@ _API_HEADERS_PROFILE = {
         "X-GitHub-Api-Version": "2022-11-28",
     },
     "app_store_connect_api": {
+        "Accept": "application/json",
+    },
+    "google_play_api": {
         "Accept": "application/json",
     },
 }

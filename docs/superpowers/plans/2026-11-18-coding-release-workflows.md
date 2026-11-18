@@ -144,13 +144,13 @@
 **Interfaces:**
 - Produces: `GooglePlayReleaseAdapter` implementing `ReleaseAdapter`. Accepts typed track, package id, version code, artifact hash and staged rollout percentage; default rollout must be explicit in the release request rather than guessed. Implement requests through Task 3's `ProviderApiTransport`.
 
-- [ ] **Step 1: Play release stop conditions testsを書く**
+- [x] **Step 1: Play release stop conditions testsを書く**
   `test_google_play_requires_package_track_and_version`、`test_google_play_stops_for_agreement_or_required_policy_attestation`、`test_staged_rollout_percentage_is_never_invented`を追加する。
-- [ ] **Step 2: upload/review state testsを書く**
-  `test_uploaded_or_in_review_is_submitted_not_published`、`test_google_play_timeout_reads_edit_and_release_state_before_retry`、`test_auth_probe_never_serializes_service_account_json`を追加する。
-- [ ] **Step 3: typed Google Play adapterを実装する**
-  Official Play publishing interface/clientを使い、edit/upload/track rolloutの各操作を固有operation stateで記録する。審査待ち・段階公開は読み戻したtrack statusどおりに報告する。
-- [ ] **Step 4: adapter testsを実行する**
+- [x] **Step 2: upload/review state testsを書く**
+  `test_uploaded_or_in_review_is_submitted_not_published`、`test_google_play_timeout_reads_edit_and_release_state_before_retry`、`test_auth_probe_never_serializes_service_account_json`に加え、APK nested hash、existing release field preservation、lifecycle states、resumable upload resume and trusted host testsを追加する。
+- [x] **Step 3: typed Google Play adapterを実装する**
+  Official Android Publisher interface/clientを使い、edit/upload/track rolloutの各操作を行う。`edits.commit`は`changesInReviewBehavior=ERROR_IF_IN_REVIEW`を固定し、現行Reviewを自動キャンセルしない。`edits.tracks`のstatusに加え`applications.tracks.releases.list`のexact versionCode lifecycle stateを読み戻し、`RELEASE_LIFECYCLE_STATE_PUBLISHED`以外は公開済みと報告しない。既存releaseのreleaseNotes/countryTargeting/inAppUpdatePriorityを保持し、production trackに既存country targetingがある場合は新versionへの明示的target転送をまだサポートしないため追加を停止する。APKは`binary.sha256`、AABはroot `sha256`を検証する。大容量転送は固定hostのresumable sessionで再開し、session URL host/pathを照合する。
+- [x] **Step 4: adapter testsを実行する**
   Run: `python -m pytest backend/tests/test_google_play_release_adapter.py -q`  
   Expected: PASS。provider client fakeを使用しPlay Consoleへ接続しない。
 
