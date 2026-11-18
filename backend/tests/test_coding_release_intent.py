@@ -53,7 +53,14 @@ class ReleaseIntentTests(unittest.TestCase):
         self.assertFalse(detect_release_intent("npmに公開する手順を教えてください").requested)
         self.assertFalse(detect_release_intent("Add a publish button to the admin UI.").requested)
         self.assertFalse(detect_release_intent("公開する機能を作成してください").requested)
+        self.assertFalse(detect_release_intent(
+            "Release build for npm",
+            {"publishing_targets": ["npm"], "app_or_package": "@acme/widget",
+             "version": "1.2.3", "channel": "stable"},
+        ).requested)
         self.assertTrue(detect_release_intent("Can you publish this package?").requested)
+        self.assertTrue(detect_release_intent("npmに公開してください").requested)
+        self.assertTrue(detect_release_intent("Release it to npm.").requested)
 
     def test_explicit_release_request_authorizes_only_resolved_target(self):
         intent = intent_with_target()

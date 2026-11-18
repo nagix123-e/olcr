@@ -904,6 +904,10 @@ _RELEASE_CHANNELS = {
     "closed testing": "closed", "open testing": "open", "testflight": "testflight",
     "staged": "staged",
 }
+_RELEASE_BUILD_ONLY = (
+    r"\brelease\s+build\b|\b(?:build|prepare|create|make|package)\b.{0,24}\brelease\s+build\b|"
+    r"リリース(?:向け|用|用の)?\s*(?:build|ビルド|版)を?(?:作|準備)"
+)
 
 
 def _release_action_requested(goal: str) -> bool:
@@ -931,6 +935,18 @@ def _release_action_requested(goal: str) -> bool:
     )
     if feature_mention:
         return False
+    release_build = re.search(_RELEASE_BUILD_ONLY, text, re.I)
+    if release_build:
+        remainder = text[release_build.end():]
+        followup_publish = re.search(
+            r"(?:^|[.!?]\s*|\b(?:and|then|now)\s+)(?:please\s+)?"
+            r"(?:release|publish|deploy|upload|submit|distribute)\b|"
+            r"(?:リリース|公開|配布|デプロイ|提出|アップロード)(?:を)?"
+            r"(?:し(?:てください|て|たい|ます)|してください)",
+            remainder, re.I,
+        )
+        if not followup_publish:
+            return False
     if direct_request:
         return True
     command = re.search(
@@ -944,8 +960,7 @@ def _release_action_requested(goal: str) -> bool:
     if not release:
         return False
     # "release build" and "prepare a release build" describe local artifacts.
-    if re.search(r"\brelease\s+build\b|\b(?:build|prepare|create|make|package)\b.{0,24}\brelease\s+build\b|"
-                 r"リリース(?:向け|用|用の)?\s*(?:build|ビルド|版)を?(?:作|準備)", text, re.I):
+    if re.search(_RELEASE_BUILD_ONLY, text, re.I):
         return False
     return bool(re.search(r"^\s*(?:please\s+)?release\b|\b(?:want|need)\s+to\s+release\b|"
                           r"\brelease\s+(?:it|the|this|my|our|app|application|package|project|version|v?\d|to|on|via)\b",
