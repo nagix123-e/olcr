@@ -39,6 +39,7 @@
 
 **Interfaces:**
 - Produces: `ProviderReferenceRegistry.load(path: Path | None = None) -> ProviderReferenceRegistry`、`ProviderReferenceRegistry.for_task(goal: str, project_facts: dict[str, object]) -> list[ProviderReference]`。
+- Produces: `official_host_matches(host: str, official_hosts: Sequence[str]) -> bool` from `provider_references.py` for dot-boundary-aware matching of official host allowlists.
 - `ProviderReference`は`provider_id`、`display_name`、`official_hosts`、`documents`を持つ。`documents`は`url`、`category`、`work_kinds`、`platforms`を持つ。allowed categoriesは`technical_spec`、`api`、`terms`、`privacy`、`review`、`publishing`、`signing`とする。
 - `provider_id`は`github`、`apple_macos`、`app_store_connect`、`google_play`、`npm`、`pypi`、`vercel`、`cloudflare_pages`を初期登録する。
 
@@ -66,6 +67,7 @@
 - Produces: `ProviderEvidence(task_id: str, provider_id: str, category: str, title: str, url: str, host: str, officiality: Literal["VERIFIED","CANDIDATE"], accessed_at: float, applicability: str, summary: str, phase_id: str | None = None, plan_revision: int | None = None)`。
 - Produces: `ResearchResult(status: Literal["COMPLETE","PARTIAL","DISABLED","UNAVAILABLE"], providers: list[str], references: list[ProviderEvidence], blockers: list[str])`。
 - Produces: `ProviderResearchService.research(task_id: str, goal: str, project_facts: dict[str, object], policy: ResearchPolicy, *, explicit_current_lookup: bool = False, phase_id: str | None = None, plan_revision: int | None = None) -> ResearchResult`。
+- Consumes: Task 1's `ProviderReferenceRegistry` and `official_host_matches(host, official_hosts)`.
 - Inject `search(query, limit)`、設定済みprovider検索関数、`fetch(url)`をconstructor dependencyにし、テストと本番の通信経路を分ける。
 
 - [ ] **Step 1: policy gateと漏えい防止の失敗テストを書く**
@@ -75,7 +77,7 @@
 - [ ] **Step 3: policy gate付きサービスを実装する**
   `auto`で現行調査が必要なCoding Taskに限り検索し、`manual`は`explicit_current_lookup`時だけ実行する。`off`とExternal Access無効時はnetwork dependencyを呼ばない。検索クエリはallowlistされた技術名・バージョン・公開先の短い語句だけから作る。
 - [ ] **Step 4: 台帳を優先し、足りない資料だけ公式検索する**
-  各該当taskで台帳URLをlive fetchし、過去taskの取得日や台帳のリンク確認日を現行確認の代わりに使わない。登録providerは`official_hosts`と一致した結果だけを自動取得する。未知providerは公式開発者資料・利用条件の候補を調べ、公式ホームページと開発者資料の相互リンク等の明示的な関係を確かめられないURLは`CANDIDATE`として分離する。検索結果順位だけでは`VERIFIED`にしない。本文は短い要約だけを作り、命令を含む本文をagent指示として出力しない。
+  各該当taskで台帳URLをlive fetchし、過去taskの取得日や台帳のリンク確認日を現行確認の代わりに使わない。登録providerは`official_host_matches`を通る結果だけを自動取得する。未知providerは公式開発者資料・利用条件の候補を調べ、公式ホームページと開発者資料の相互リンク等の明示的な関係を確かめられないURLは`CANDIDATE`として分離する。検索結果順位だけでは`VERIFIED`にしない。本文は短い要約だけを作り、命令を含む本文をagent指示として出力しない。
 - [ ] **Step 5: 部分失敗と取得不能を区別する**
   公式資料が取得不能なら`UNAVAILABLE`、一部だけ成功なら`PARTIAL`とし、releaseの現行要件確認に必要なsourceが欠ける場合をblockerにする。
 - [ ] **Step 6: サービス単体テストを実行する**
