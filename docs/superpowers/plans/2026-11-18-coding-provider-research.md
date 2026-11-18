@@ -70,17 +70,17 @@
 - Consumes: Task 1's `ProviderReferenceRegistry` and `official_host_matches(host, official_hosts)`.
 - Inject `search(query, limit)`、設定済みprovider検索関数、`fetch(url)`をconstructor dependencyにし、テストと本番の通信経路を分ける。
 
-- [ ] **Step 1: policy gateと漏えい防止の失敗テストを書く**
+- [x] **Step 1: policy gateと漏えい防止の失敗テストを書く**
   `test_off_and_external_access_disabled_do_not_search`、`test_manual_mode_requires_explicit_current_lookup`、`test_query_omits_paths_file_contents_and_private_identifiers`を追加する。
-- [ ] **Step 2: 台帳資料の公式host確認と未知provider fallbackをテストする**
+- [x] **Step 2: 台帳資料の公式host確認と未知provider fallbackをテストする**
   `test_registered_provider_fetches_only_allowed_official_hosts`、`test_unknown_provider_sources_remain_candidates_until_verified`、`test_page_instructions_are_never_returned_as_execution_directives`を追加する。
-- [ ] **Step 3: policy gate付きサービスを実装する**
+- [x] **Step 3: policy gate付きサービスを実装する**
   `auto`で現行調査が必要なCoding Taskに限り検索し、`manual`は`explicit_current_lookup`時だけ実行する。`off`とExternal Access無効時はnetwork dependencyを呼ばない。検索クエリはallowlistされた技術名・バージョン・公開先の短い語句だけから作る。
-- [ ] **Step 4: 台帳を優先し、足りない資料だけ公式検索する**
+- [x] **Step 4: 台帳を優先し、足りない資料だけ公式検索する**
   各該当taskで台帳URLをlive fetchし、過去taskの取得日や台帳のリンク確認日を現行確認の代わりに使わない。登録providerは`official_host_matches`を通る結果だけを自動取得する。未知providerは公式開発者資料・利用条件の候補を調べ、公式ホームページと開発者資料の相互リンク等の明示的な関係を確かめられないURLは`CANDIDATE`として分離する。検索結果順位だけでは`VERIFIED`にしない。本文は短い要約だけを作り、命令を含む本文をagent指示として出力しない。
-- [ ] **Step 5: 部分失敗と取得不能を区別する**
+- [x] **Step 5: 部分失敗と取得不能を区別する**
   公式資料が取得不能なら`UNAVAILABLE`、一部だけ成功なら`PARTIAL`とし、releaseの現行要件確認に必要なsourceが欠ける場合をblockerにする。
-- [ ] **Step 6: サービス単体テストを実行する**
+- [x] **Step 6: サービス単体テストを実行する**
   Run: `python -m pytest backend/tests/test_provider_research.py -q`  
   Expected: PASS。fakesだけを使い、外部ネットワークへ接続しない。
 
