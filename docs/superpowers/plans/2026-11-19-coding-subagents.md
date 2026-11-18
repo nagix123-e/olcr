@@ -16,6 +16,7 @@
 - Spawn requires `setting_enabled AND heavy_parallelizable_assessment AND (explicit_user_directive OR explicit_task_approval_for_current_plan_revision)`.
 - A normal Coding Task plan approval, a model output, or an agent output never counts as user authorization.
 - Task size gate for v1: at least three substantive implementation workstreams across at least two components, and at least two dependency-independent groups with disjoint write scopes.
+- Policy interpretation: a qualifying plan must contain at least two distinct pairs of implementation phases whose transitive dependencies do not connect the pair and whose host-assigned file scopes do not overlap. Phase-only analysis, test-only phases, verification-only phases, shared paths, missing ownership, or unsupported dependency graphs fail closed.
 - Every worker inherits the active phase's resolved Coding Task model/provider/runtime. Unified Brain mode resolves to the one unified selection. No model/provider fallback or worker-specific override is allowed.
 - Maximum three workers in a group; no nested spawning in v1. The host keeps a separate bounded worker execution lane; non-agent model calls keep the existing global limit.
 - Workers cannot publish, access release credentials, commit, or execute arbitrary shell/URL operations. They return typed, scope-bound proposals; OLCR validates and applies changes serially.
@@ -87,29 +88,28 @@
 
 **Files:**
 - Create: `backend/olcr_api/coding_subagents.py`
-- Modify: `backend/olcr_api/app.py` (resolve the active phase model before eligibility assessment)
-- Modify: `backend/olcr_api/brain_models.py` only if a public model-binding helper is needed
 - Test: `backend/tests/test_coding_subagent_policy.py`
+- The task-lifecycle call site in `backend/olcr_api/app.py` is owned by Task 6 so the pure policy can be tested without changing scheduling before persistence and approval endpoints exist.
 
 **Interfaces:**
 - Produces: immutable `CodingSubagentRole`, `CodingSubagentModelBinding`, `DelegationAssessment`, and `DelegationAuthorization` data types.
-- Produces: `assess_delegation(plan, workspace_context) -> DelegationAssessment` and `pin_subagent_model(conversation_id, effective_phase_model) -> CodingSubagentModelBinding`.
+- Produces: `assess_delegation(plan, task_id, plan_revision, setting_enabled)`, `pin_subagent_model(effective_phase_model, brain_configuration)`, and revision/model-bound authorization helpers.
 - Consumes: `_coding_phase_model` output, Brain configuration resolution, approved plan revision/hash, and actual user-originated task messages.
 
-- [ ] **Step 1: Write policy tests for the hard gate**
+- [x] **Step 1: Write policy tests for the hard gate**
   Include `test_setting_off_never_eligible`, `test_small_task_rejected_even_when_user_directs_agents`, `test_dependent_workstreams_rejected`, `test_three_independent_scoped_workstreams_are_heavy`, `test_model_plan_text_never_counts_as_user_authorization`, `test_plan_approval_is_not_agent_approval`, `test_directive_must_come_from_user_message`, and `test_replan_invalidates_task_approval`.
-- [ ] **Step 2: Write model-pinning tests**
+- [x] **Step 2: Write model-pinning tests**
   `test_workers_use_phase_coding_model_not_planner_model`, `test_unified_brain_selection_pins_same_model_for_all_roles`, `test_split_mode_pins_the_current_implementation_role_model`, and `test_worker_failure_does_not_fallback_to_another_model`.
-- [ ] **Step 3: Implement the fixed role registry**
-  Define only `repo_explorer`, `implementation_worker`, and `test_reviewer` for v1. Store immutable developer instructions and prompt versions server-side. The child request schema must reject unknown roles, user-supplied role prompts, nested-spawn options, and model overrides.
-- [ ] **Step 4: Implement deterministic assessment and authorization types**
+- [x] **Step 3: Implement the fixed role registry**
+  Define only `repo_explorer`, `implementation_worker`, and `test_reviewer` for v1. Store immutable developer instructions and prompt versions server-side. Task 5 owns the worker request schema that rejects unknown roles, user-supplied role prompts, nested-spawn options, and model overrides.
+- [x] **Step 4: Implement deterministic assessment and authorization types**
   Count only substantive implementation workstreams; prove component separation, dependency independence, and disjoint write scopes. Store authorization source (`USER_DIRECTIVE` or `TASK_APPROVAL`) plus source message/approval event, task ID, plan revision/hash, model binding, role set, and scopes.
-- [ ] **Step 5: Implement a single model-binding resolver for child calls**
+- [x] **Step 5: Implement a single model-binding resolver for child calls**
   Resolve and freeze provider/runtime/model identity before any spawn. Unified mode must resolve to the current single selection. Replan, provider change, or implementation model change makes any pending task authorization stale.
-- [ ] **Step 6: Run policy and model-pinning tests**
+- [x] **Step 6: Run policy and model-pinning tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_policy.py -q`
   Expected: PASS with provider fakes and no worker execution.
-- [ ] **Step 7: Commit role registry and host policy**
+- [x] **Step 7: Commit role registry and host policy**
 
 ### Task 4: Persist worker lifecycle and add a separate user approval transition
 
