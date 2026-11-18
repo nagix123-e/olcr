@@ -43,15 +43,15 @@
 - Produces: `detect_release_intent(goal: str, project_facts: dict[str, object]) -> ReleaseIntent`。語句判定に加え、既存metadataは候補に使うが、候補が複数なら推測で一つに決めない。
 - Consumes official source research plan: current policy and source availability; release readiness requires provider-specific current official references.
 
-- [ ] **Step 1: release intent境界のテストを書く**
+- [x] **Step 1: release intent境界のテストを書く**
   `test_build_only_does_not_authorize_publication`、`test_explicit_release_request_authorizes_only_resolved_target`、`test_unknown_or_conflicting_target_returns_blocker`を追加する。
-- [ ] **Step 2: policy gateのテストを書く**
+- [x] **Step 2: policy gateのテストを書く**
   `test_missing_current_official_requirements_blocks_release`、`test_external_access_off_or_missing_agreement_blocks_dependent_publish`、`test_price_terms_and_attestations_require_user_action`を追加する。
-- [ ] **Step 3: ReleaseIntent extractionを実装する**
+- [x] **Step 3: ReleaseIntent extractionを実装する**
   `canonical_coding_requirements`と既存task creation/planning経路へ`release_intent`を保存する。ユーザーの明示依頼にない公開意図をmodel planから作らない。
-- [ ] **Step 4: release readiness checklistを追加する**
+- [x] **Step 4: release readiness checklistを追加する**
   公開先別の必要資料、target、version、channel、credentials、local build/validation、required human actionsを`ReleasePreflight`へ整理する。利用規約の同意をチェック済みと推定しない。
-- [ ] **Step 5: release intent testsを実行する**
+- [x] **Step 5: release intent testsを実行する**
   Run: `python -m pytest backend/tests/test_coding_release_intent.py -q`  
   Expected: PASS。authorization境界とblocker分類を検証する。
 
