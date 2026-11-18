@@ -45,7 +45,7 @@ Ruling: Task 3 execution moved from the delegated adapter agent to inline work a
 - [x] Task 3: Constrained adapter contract and GitHub Releases vertical slice
 - [x] Task 4: macOS notarization and Apple App Store/TestFlight
 - [x] Task 5: Google Play adapter (review approved; no remaining findings)
-- [ ] Task 6: npm/PyPI adapters
+- [x] Task 6: npm/PyPI adapters (commit `105ec55`; independent review found no P1/P2 issues)
 - [ ] Task 7: Vercel/Cloudflare Pages adapters
 - [ ] Task 8: Adapter selection, task lifecycle, source/report UI
 - [ ] Task 9: Provider support matrix and runbooks
@@ -85,3 +85,5 @@ Ruling: Task 3 execution moved from the delegated adapter agent to inline work a
 - Task 5 review round 2: after the four fixes, reviewer found that a new production version could be added without inheriting an existing release's country targeting. Added a fail-closed check before track update whenever an existing production release has country targeting, because explicit per-new-version targeting is not yet supported. New-version regression failed before the fix and passes afterward; asserts no track `PUT` is sent.
 - Task 5 final review: independent subagent verified all five findings are addressed, including the country-targeting new-version path; no remaining findings in the final scoped review.
 - Task 5 focused verification after fixes: Google Play + shared contract/GitHub/Apple suites: 63 passed; byte-compilation and `git diff --check` passed. No live Google API or upload calls. Task 5 complete; plan steps 1–4 checked.
+- Task 6 implementation: `105ec55` (`Add npm and PyPI release adapters`). npm requires exact package/version/registry/visibility/tag, disables lifecycle scripts, and reads back SRI, tag, and access status. PyPI/TestPyPI requires an explicit target and validated artifacts, uses fixed official endpoints, and reads back exact requested file hashes. `packaging>=23,<27` is a direct runtime dependency. Report: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-6-report.md`.
+- Task 6 verification: the focused package + shared contract/GitHub/Apple/Google Play regression suites passed (94 tests); byte-compilation and `git diff --check` passed. Independent read-only review found no P1/P2 issues. No live registries or uploads were used. `uv lock --offline` could not resolve uncached FastAPI metadata for the Python 3.14/Windows split; `uv.lock` was synchronized to the existing locked `packaging 26.3` entry. Task 6 complete; plan steps 1–5 checked.
