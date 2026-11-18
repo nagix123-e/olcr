@@ -20,7 +20,7 @@ olcr-mobile-host = "olcr_cli.mobile_host:main"
 
 [tool.setuptools]
 package-dir = {"" = "backend"}
-packages = ["olcr_api", "olcr_cli"]
+packages = ["olcr_api", "olcr_cli", "olcr_api.release_adapters"]
 
 [tool.setuptools.package-data]
 olcr_api = ["coding_verification_runner.cjs", "node_test_imports.cjs", "provider_references.json", "help_knowledge/*.md", "help_knowledge/topics.json", "help_knowledge/graphify-out/graph.json"]

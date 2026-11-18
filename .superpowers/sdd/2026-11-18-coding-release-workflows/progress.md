@@ -1,0 +1,72 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-11-18-coding-release-workflows.md
+
+Branch: codex/coding-provider-releases
+Base: 83fde9c (research and source-persistence plan complete)
+Workspace: /private/tmp/olcr-coding-provider-releases-20261118
+
+Ruling: Execute after the research plan on the same isolated feature branch. The research plan is now complete and exposes `ProviderEvidence`, schema v40 source persistence, phase-linked references and External Access-aware settings. Release implementation must build on those interfaces without rewriting or bypassing them. The user checkout remains untouched.
+
+Ruling: This branch starts at schema v40 because the research plan added `coding_task_references`. Task 2 of this release plan will migrate v40→v41 for `coding_release_operations`. Task 8 may add a later migration only if required persisted release lifecycle fields are not already covered; if it changes schema, increment to v42 and preserve v40/v41 data. Cost if wrong: an incorrect version chain can prevent existing databases from starting.
+
+Ruling: Task 3 must add `olcr_api.release_adapters` to the explicit setuptools package list in `pyproject.toml`. The plan omitted this file, but its current `packages = ["olcr_api", "olcr_cli"]` excludes the new subpackage from built distributions, which would make the adapter unavailable after installation. Keep the packaging edit to this one subpackage entry. Cost if wrong: without it, tests pass from source while packaged OLCR cannot import the GitHub adapter.
+
+Ruling: Task 3 execution moved from the delegated adapter agent to inline work after that agent hit its usage limit and the replacement agent stalled. A separate reviewer was assigned after implementation; the focused tests remain the release gate. Cost: the implementation did not receive a fresh per-task review before the code was complete, so the independent review must be recorded before marking Task 3 complete.
+
+## Preflight conflict scan
+
+| Row | Tasks | Shared file or interface | Preflight check and finding | Ruling |
+|---|---|---|---|---|
+| Pair 1 | 1 + 8 | `coding_tasks.py`, `app.py`, `ReleaseIntent` | Task 1 extracts and persists explicit intent; Task 8 creates the release phase only from that authorization. | Clean; Task 8 consumes Task 1, never infers intent from generated plan text. |
+| Pair 2 | 1 + 2 | `ReleaseIntent`, `ReleaseAuthorization`, `ReleasePreflight` | Task 1 defines intent/readiness facts; Task 2 coordinator consumes typed authorization and current references. | Clean; Task 2 remains the final publish gate. |
+| Pair 3 | 1 + 4 | `ReleasePreflight`, human action gates | Task 1 captures terms/agreement/attestation blockers; Task 4 App Store flow must stop on those same human gates. | Clean; adapter checks provider-specific gates again before submit. |
+| Pair 4 | 2 + 3 | `ReleaseRequest`, `ReleaseResult`, DB operation APIs | Task 2 creates common coordinator/operation state; Task 3 provides a concrete adapter and transport. | Clean; adapter methods conform to Task 2 contracts. |
+| Pair 5 | 2 + 4/5/6/7 | `ReleaseAdapter`, `ReleaseRequest`, `ProviderApiTransport` | Provider adapters consume coordinator and either fixed CLI runner or typed API transport. | Clean; no provider may bypass common preflight, state persistence, retry inspection, or secret-redaction contract. |
+| Pair 6 | 2 + 8 | `db.py`, release operation transitions, `app.py` | Task 2 adds durable operation state; Task 8 integrates stop/restart lifecycle and deterministic report/UI. | Clean; Task 8 reuses operation state and only adds an additive migration if a required field is missing. Schema chain ruling above. |
+| Pair 7 | 3 + 4/5/6/7 | `release_adapters/base.py`, command runner, API transport | Task 3 owns the shared protocol/runner/transport; Tasks 4–7 use these contracts. | Clean; Task 3 contract is frozen before provider adapters; later adapter work must not widen arbitrary shell/URL/header inputs. |
+| Pair 8 | 3 + 8 | Adapter registry and provider capability status | Task 3 creates GitHub adapter; Task 8 selects registered publish-capable adapters and reports support state. | Clean; unregistered providers stay research-only; notarization-only `apple_macos` is not a publish adapter. |
+| Pair 9 | 4 + 8 | Apple notarization and App Store adapter registration | Task 4 returns build-stage notarization and App Store publishing; Task 8 must compose them without treating notarization alone as publication. | Clean; only App Store upload/read-back or a separate publishing adapter can establish remote release state. |
+| Pair 10 | 5/6/7 + 8 | Provider adapters, selection and UI result states | Task 8 consumes adapter-native results and distinguishes submitted, uncertain, review-pending and published. | Clean; status presentation derives from persisted operation state and provider read-back. |
+| Pair 11 | 3–8 + 9 | Adapter registration and support matrix/docs | Task 9 tests every registered adapter against docs/status and prevents unknown providers from becoming publish-ready. | Clean; one machine-readable matrix will be the checked source of truth; unsupported providers remain `RESEARCH_ONLY` or `REQUIRES_HUMAN_STEP`. |
+| Self 1 | 1 | Explicit release intent tests vs code | Tests distinguish build-only, explicit publish, ambiguous target, current-source and human-action gates. | Clean |
+| Self 2 | 2 | Operation lifecycle tests vs persistence/coordinator | Tests include blocked/ready/publishing/final transitions, idempotency, timeout inspection, artifact hashes and secret exclusion. | Clean |
+| Self 3 | 3 | Adapter contract tests vs shared boundaries | Tests prove shell is disabled, executable/argv/env are constrained, host/method are typed, output is redacted and GitHub release states are read back. | Clean |
+| Self 4 | 4 | macOS stages/App Store tests | Tests distinguish notarization from publication, verify timeout inspection and stop for agreement/attestation/manual identity facts. | Clean |
+| Self 5 | 5 | Google Play adapter tests | Exact package/track/version/rollout required; fake provider only; review state remains SUBMITTED. | Clean |
+| Self 6 | 6 | npm/PyPI adapter tests | Exact package/registry/visibility/channel required; safe credential profile; existing digest checks and remote read-back. | Clean |
+| Self 7 | 7 | Vercel/Cloudflare adapter tests | Exact project/environment/channel required; preview remains separate from production promotion; fake provider only. | Clean |
+| Self 8 | 8 | Integration and UI tests | Explicit intent and failure paths cover build/publish boundary, timeout recovery, human handoff, review state and deterministic reporting. | Clean |
+| Self 9 | 9 | Support matrix/docs consistency | Registered adapter status agrees with docs; unknown providers cannot be marked publish-ready. | Clean |
+
+## Baseline and execution
+
+- [x] Existing clean-base backend suite known red before implementation: 2,946 passed, 297 failed, 32 skipped. Do not rerun the full suite; use only task-specific focused tests and record any environment limitation.
+- [x] Task 1: Explicit release intent and preflight requirements (commits `11c0429`, `88bed53`, `565bea7`; review approved)
+- [x] Task 2: Durable release operation state and duplicate prevention (commits `0397cef`, `5be62dd`; review approved)
+- [ ] Task 3: Constrained adapter contract and GitHub Releases vertical slice
+- [ ] Task 4: macOS notarization and Apple App Store/TestFlight
+- [ ] Task 5: Google Play adapter
+- [ ] Task 6: npm/PyPI adapters
+- [ ] Task 7: Vercel/Cloudflare Pages adapters
+- [ ] Task 8: Adapter selection, task lifecycle, source/report UI
+- [ ] Task 9: Provider support matrix and runbooks
+
+- Task 1 base: `83fde9c`. Brief: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-1-brief.md`.
+- Task 1 implementation: `11c0429` (`feat: capture explicit coding release intent`); focused tests 10 passed, py_compile and diff-check passed. Report: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-1-report.md`.
+- Task 1 initial review package: `.superpowers/sdd/2026-11-18-coding-release-workflows/review-83fde9c..11c0429.diff` (finding fixed in rounds below).
+- Task 1 initial review: spec compliance failed on one critical release-intent boundary. `detect_release_intent("Release build for npm", complete_target_metadata)` returned `requested=True` because the leading `Release` command returned before the build-only exclusion. Fixed by round 1. Reviewer ran only this targeted reproduction; suite evidence remained the implementer's 10 passing tests.
+- Task 1 fix round 1: commit `88bed53` moved build-only exclusion before direct release matching and added full-metadata regression; 10 focused tests passed. Re-review found a new Important regression: explicit `公開する` after a build-only phrase was not recognized.
+- Task 1 fix round 2: commit `565bea7` adds the Japanese `する` publish form and regression for `リリースビルドを作成してからnpmに公開する`. Focused tests 10 passed. Scoped re-review marked the finding addressed and found no new breakage.
+- Task 1 fix-loop tally: round 1 addressed original finding / 1 new open; round 2 addressed that finding / 0 open (`11c0429..88bed53`, `88bed53..565bea7`). Task 1 complete; plan steps 1–5 checked.
+- Task 1 fix round 1: commit `88bed53` (`fix: keep release-build requests local`) moves release-build exclusion before explicit release phrase matching and adds the complete-metadata regression. RED was 1 failed / 9 passed; final focused suite 10 passed, diff-check and py_compile passed. Re-review addressed the initial bug and found the Japanese `する` false negative below.
+- Task 1 fix round 1 review: the original build-only finding is addressed, but the fix introduced an Important false negative: `リリースビルドを作成してからnpmに公開する` is an explicit later publish request, yet build-only precedence returns `requested=False`. Fix round 2 should distinguish build-only requests from requests that contain a separate explicit publication action, and add this regression while keeping `Release build for npm` false. Reviewer ran only that focused reproduction.
+- Task 1 fix round 2 review: `backend/olcr_api/coding_tasks.py:944–945` recognizes the Japanese `する` publish form; the new explicit follow-up test passes while the complete-metadata build-only case remains false. No new breakage; Task 1 review approved.
+- Task 1 fix-loop tally: round 1 addressed 1 finding / 1 new open; round 2 addressed 1 / 0 open (`11c0429..88bed53`, `88bed53..565bea7`). Task 1 complete; plan steps 1–5 checked.
+- Task 2 base: `87c861c`. Brief: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-2-brief.md`. Reuse `coding_tasks.ReleasePreflight`; do not duplicate the contract. Additive schema version is v41.
+- Task 2 implementation: `0397cef` (`Add durable coding release operations`), focused workflow tests 13 passed, diff-check passed. Report: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-2-report.md`. Restart inspection accepts a trusted request resolver and blocks closed without one.
+- Task 2 review package: `.superpowers/sdd/2026-11-18-coding-release-workflows/review-87c861c..0397cef.diff`; review pending.
+- Task 2 initial review: Important credential-persistence gap. `create_release_operation` truncates but does not validate `app_or_package`; `token=SECRET` can be written before an adapter blocks. Fix round 1 must reject credential-like or invalid target identifiers before any operation persistence and add a test proving the value is not stored. Review also confirmed v40→v41 preservation, atomic state/idempotency, artifact confinement, fail-closed restart inspection and remote read-back; Task 8 resolver integration remains for its owning task.
+- Task 2 fix round 1: commit `5be62dd` adds target validation at coordinator and DB boundaries. RED: 2 failed / 3 passed / 13 deselected; focused suite: 18 passed. Tests cover no adapter call/no persisted row/no log echo for `token=SECRET`, direct DB rejection, and valid package/bundle/repository target formats. Re-review package `.superpowers/sdd/2026-11-18-coding-release-workflows/review-0397cef..5be62dd.diff`; review pending.
+- Task 2 fix round 1 review: target validation and persistence boundary are addressed; no new breakage. Task 2 approved. Fix-loop tally: round 1 addressed 1 / 0 open (`0397cef..5be62dd`). Plan steps 1–6 checked.
+- Task 3 base: `d9e35dd`. Brief: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-3-brief.md`. The shared coordinator and v41 operation API are approved; adapter implementations must conform without weakening their safety contracts.
+- Task 3 implementation: uncommitted at this point. Added shared command/API boundaries and `GitHubReleaseAdapter`, including reuse of `GitHubReview.repo()` and `GitWorkspace`, common release policy gates, one-remote target binding, exact Boolean authorization, `--verify-tag`, full-SHA build/tag binding, symlink-safe capped artifact hashing/staging, bounded in-memory command output, configured API credentials, and release/asset/tag read-back. Report: `.superpowers/sdd/2026-11-18-coding-release-workflows/task-3-report.md`.
+- Task 3 verification: focused adapter tests 30 passed; adapter package byte-compilation and `git diff --check` passed. Initial red was collection failure because `github.py` was missing; a later authorization regression was RED 3/3 before strict Boolean checks. Independent reviews raised API auth/output buffering, tag-to-commit binding, artifact symlink/cap, and tag-movement/read-back concerns; all fixes and regressions are recorded in the report. Final reviewer confirmed the 404-path and pre-create tag checks; no remaining Task 3 findings. No live provider calls.

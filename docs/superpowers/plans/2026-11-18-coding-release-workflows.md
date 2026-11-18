@@ -98,16 +98,17 @@
 - Produces: `ReleaseCommandRunner.run(spec: CommandSpec) -> CommandResult`。`CommandSpec`はadapter固定executable、argv tuple、workspace cwd、timeout、allowlisted environment profileを持つ。`shell=False`、秘密を含むstdout/stderr redaction、stdin不使用。
 - Produces: `ProviderApiTransport.request(spec: ProviderRequest) -> ProviderResponse` for typed HTTPS API adapters. `ProviderRequest`はprovider host profile、method、path、bounded bodyを持つ。認証は既存credential providerから注入し、任意URL/headerを受け付けない。
 - Consumes: existing GitHub CLI integration in `github_review.py` and path/network helpers in `git_workspace.py`; do not alter reviewed Git/PR workflows.
+- Consumes: `ReleaseRequest.metadata["build_commit"]`, a full SHA captured by the validated local build. It must match current workspace HEAD and the remote tag target; repeat the tag check during missing-release recovery and final read-back.
 
-- [ ] **Step 1: adapter contractとtransport境界のテストを書く**
+- [x] **Step 1: adapter contractとtransport境界のテストを書く**
   `test_adapter_protocol_requires_preflight_publish_and_inspect`、`test_runner_never_uses_shell_and_filters_environment`、`test_api_transport_restricts_method_and_official_host`、`test_runner_redacts_credentials_from_errors`を追加する。
-- [ ] **Step 2: GitHub preflightのテストを書く**
+- [x] **Step 2: GitHub preflightのテストを書く**
   `test_github_preflight_requires_single_github_remote_valid_tag_and_workspace_artifacts`、`test_existing_release_is_inspected_before_create`、`test_missing_gh_auth_blocks_without_reading_token`を追加する。
-- [ ] **Step 3: shared adapter protocol、safe runner、typed API transportを実装する**
+- [x] **Step 3: shared adapter protocol、safe runner、typed API transportを実装する**
   任意コマンド文字列やURLではなくCommandSpec/ProviderRequestを受け取る。env allowlistとprovider host profileを固定し、実行バイナリを検証し、stdout/stderrとprovider responseを上限化・redactする。
-- [ ] **Step 4: GitHub Releasesのpreflight/publish/inspectを実装する**
-  既存のremote解決・External Access gateを再利用し、GitHub remote、release tag、version、build artifactを照合する。release作成前後にremote stateを確認し、既存releaseがあれば同じartifact hash・tagを照合して二重作成しない。
-- [ ] **Step 5: GitHub adapter testsを実行する**
+- [x] **Step 4: GitHub Releasesのpreflight/publish/inspectを実装する**
+  既存のremote解決・External Access gateを再利用し、GitHub remote、release tag、version、build artifactを照合する。lightweight/annotated tagをcommitまで解決し、validated build commitと現在のworkspace HEADの一致を要求する。release作成前、NOT_FOUND回復時、releaseとasset read-back前後にtag targetを再確認し、既存releaseがあれば同じartifact hash・tagを照合して二重作成しない。
+- [x] **Step 5: GitHub adapter testsを実行する**
   Run: `python -m pytest backend/tests/test_release_adapter_contract.py backend/tests/test_github_release_adapter.py -q`  
   Expected: PASS。実GitHub/gh loginなしでfake runnerを使う。
 
@@ -220,7 +221,7 @@
 - [ ] **Step 2: interruption and manual handoff testsを書く**
   `test_restart_resumes_by_inspecting_existing_operation`、`test_required_human_agreement_pauses_before_publish`、`test_review_pending_is_reported_as_submitted`を追加する。
 - [ ] **Step 3: orchestrator integrationを実装する**
-  Planning creates a release phase only for explicit intent. Release phase depends on successful source collection, local build and project verification; only then coordinator preflights and invokes registered adapter. Keep file scope and Git review boundaries unchanged.
+  Planning creates a release phase only for explicit intent. Release phase depends on successful source collection, local build and project verification; only then coordinator preflights and invokes registered adapter. Capture the validated build's full `build_commit` and pass it in release metadata. Keep file scope and Git review boundaries unchanged.
 - [ ] **Step 4: stop/restart/replan handlingを接続する**
   Save operation transitions and blockers with existing task events/resume state. On restart or timeout call `inspect` before any repeat publish call. Never infer success from a CLI exit status without provider read-back.
 - [ ] **Step 5: provider/result stateをreport and UIへ出す**
