@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from .provider_research import ProviderEvidence
 
 
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 CONVERSATION_MEMORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversation_memory_summaries(
     id INTEGER PRIMARY KEY,
@@ -128,6 +128,71 @@ CREATE INDEX IF NOT EXISTS coding_task_references_task_phase
 """
 
 SCHEMA += CODING_TASK_REFERENCES_SCHEMA
+
+CODING_RELEASE_OPERATIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS coding_release_operations(
+    operation_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    target TEXT NOT NULL,
+    version TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    artifact_hashes_json TEXT NOT NULL,
+    reference_ids_json TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL CHECK(state IN ('BLOCKED','READY','PUBLISHING','PUBLISHED','SUBMITTED','UNCERTAIN','FAILED')),
+    state_history_json TEXT NOT NULL DEFAULT '[]',
+    provider_state TEXT NOT NULL DEFAULT '',
+    remote_url TEXT,
+    remote_id TEXT,
+    safe_error_code TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    started_at REAL,
+    confirmed_at REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    UNIQUE(task_id,provider_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS coding_release_operations_task
+    ON coding_release_operations(task_id,created_at DESC);
+"""
+
+SCHEMA += CODING_RELEASE_OPERATIONS_SCHEMA
+
+
+class ReleaseOperationConflict(ValueError):
+    """An idempotency identity already exists for different release inputs."""
+
+
+_RELEASE_OPERATION_STATES = {
+    "BLOCKED", "READY", "PUBLISHING", "PUBLISHED", "SUBMITTED", "UNCERTAIN", "FAILED",
+}
+_RELEASE_OPERATION_TRANSITIONS = {
+    "BLOCKED": {"BLOCKED", "READY"},
+    "READY": {"READY", "BLOCKED", "PUBLISHING"},
+    "PUBLISHING": {"READY", "PUBLISHED", "SUBMITTED", "UNCERTAIN", "FAILED", "BLOCKED"},
+    "UNCERTAIN": {"UNCERTAIN", "READY", "PUBLISHED", "SUBMITTED", "FAILED", "BLOCKED"},
+    "SUBMITTED": {"SUBMITTED", "PUBLISHED", "UNCERTAIN", "FAILED", "BLOCKED"},
+    "FAILED": {"FAILED", "READY", "BLOCKED"},
+    "PUBLISHED": {"PUBLISHED"},
+}
+
+
+def _decode_release_operation(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    value = dict(row)
+    for column, key, default in (
+        ("artifact_hashes_json", "artifact_hashes", "[]"),
+        ("reference_ids_json", "reference_ids", "[]"),
+        ("state_history_json", "state_history", "[]"),
+    ):
+        raw = value.pop(column, default)
+        try:
+            value[key] = json.loads(raw or default)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            value[key] = []
+    return value
 
 
 def _table_exists(db: sqlite3.Connection, table: str) -> bool:
@@ -511,6 +576,11 @@ class Database:
                 db.executescript(CODING_TASK_REFERENCES_SCHEMA)
                 db.execute("UPDATE schema_version SET version=40")
                 rows=[(40,)]
+            if rows and rows[0][0] == 40:
+                # Release operations persist only bounded, nonsecret state.
+                db.executescript(CODING_RELEASE_OPERATIONS_SCHEMA)
+                db.execute("UPDATE schema_version SET version=41")
+                rows=[(41,)]
             if rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.executescript(CUSTOM_AGENT_SCHEMA)
             db.executescript('''CREATE TABLE IF NOT EXISTS coding_task_events(
@@ -1066,6 +1136,188 @@ class Database:
                     (task_id, phase_id),
                 ).fetchall()
         return [dict(row) for row in rows]
+
+    def create_release_operation(
+        self,
+        *,
+        operation_id: str,
+        task_id: str,
+        provider_id: str,
+        idempotency_key: str,
+        target: str,
+        version: str,
+        channel: str,
+        artifact_hashes: list[str],
+        reference_ids: list[str],
+        state: str,
+        now: float,
+    ) -> tuple[dict[str, Any], bool]:
+        """Insert one credential-free release operation, or return its existing identity."""
+        if state not in {"BLOCKED", "READY"}:
+            raise ValueError("new release operations must begin BLOCKED or READY")
+        if not operation_id or len(operation_id) > 128:
+            raise ValueError("invalid release operation id")
+        if not task_id or not provider_id or len(provider_id) > 80:
+            raise ValueError("release operation task and provider are required")
+        if not idempotency_key or len(idempotency_key) > 128:
+            raise ValueError("invalid release idempotency key")
+        if any(not re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in artifact_hashes):
+            raise ValueError("artifact hashes must be SHA-256 hex digests")
+        if any(not isinstance(value, str) or not value.startswith("pref_") or len(value) > 80
+               for value in reference_ids):
+            raise ValueError("invalid provider evidence reference id")
+        values = (
+            operation_id, task_id, provider_id, idempotency_key, str(target)[:180],
+            str(version)[:80], str(channel)[:80], json.dumps(sorted(set(artifact_hashes))),
+            json.dumps(sorted(set(reference_ids))), state,
+            json.dumps([{"state": state, "at": float(now)}]), float(now), float(now),
+        )
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                """SELECT * FROM coding_release_operations
+                   WHERE task_id=? AND provider_id=? AND idempotency_key=?""",
+                (task_id, provider_id, idempotency_key),
+            ).fetchone()
+            if existing:
+                row = dict(existing)
+                if (row["target"] != str(target)[:180]
+                        or row["version"] != str(version)[:80]
+                        or row["channel"] != str(channel)[:80]
+                        or json.loads(row["artifact_hashes_json"] or "[]") != sorted(set(artifact_hashes))):
+                    raise ReleaseOperationConflict(
+                        "release identity already exists for a different target or artifact"
+                    )
+                old_refs = json.loads(row["reference_ids_json"] or "[]")
+                merged_refs = sorted(set(old_refs) | set(reference_ids))
+                if merged_refs != old_refs:
+                    db.execute(
+                        "UPDATE coding_release_operations SET reference_ids_json=?,updated_at=? WHERE operation_id=?",
+                        (json.dumps(merged_refs), float(now), row["operation_id"]),
+                    )
+                    existing = db.execute(
+                        "SELECT * FROM coding_release_operations WHERE operation_id=?",
+                        (row["operation_id"],),
+                    ).fetchone()
+                decoded = _decode_release_operation(existing)
+                if decoded is None:
+                    raise RuntimeError("release operation could not be read after lookup")
+                return decoded, False
+            db.execute(
+                """INSERT INTO coding_release_operations(
+                       operation_id,task_id,provider_id,idempotency_key,target,version,channel,
+                       artifact_hashes_json,reference_ids_json,state,state_history_json,created_at,updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                values,
+            )
+            row = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+        decoded = _decode_release_operation(row)
+        if decoded is None:
+            raise RuntimeError("release operation could not be read after insert")
+        return decoded, True
+
+    def update_release_operation(
+        self,
+        operation_id: str,
+        *,
+        state: str,
+        now: float,
+        provider_state: str | None = None,
+        remote_url: str | None = None,
+        remote_id: str | None = None,
+        safe_error_code: str | None = None,
+        summary: str | None = None,
+        inspection_confirmed: bool = False,
+        inspection_confirmed_absent: bool = False,
+    ) -> dict[str, Any] | None:
+        """Record a bounded state transition; uncertainty cannot be retried uninspected."""
+        if state not in _RELEASE_OPERATION_STATES:
+            raise ValueError("unknown release operation state")
+        if safe_error_code is not None and not re.fullmatch(r"[A-Z0-9_]{1,80}", safe_error_code):
+            raise ValueError("release error codes must be safe identifiers")
+        safe_values = {
+            "provider_state": (str(provider_state)[:120] if provider_state is not None else None),
+            "remote_url": (str(remote_url)[:2048] if remote_url is not None else None),
+            "remote_id": (str(remote_id)[:200] if remote_id is not None else None),
+            "safe_error_code": safe_error_code,
+            "summary": (str(summary)[:500] if summary is not None else None),
+        }
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            previous = str(row["state"])
+            if state not in _RELEASE_OPERATION_TRANSITIONS.get(previous, set()):
+                raise ValueError(f"invalid release state transition: {previous} -> {state}")
+            if previous in {"UNCERTAIN", "PUBLISHING"} and state == "READY" and not inspection_confirmed_absent:
+                raise ValueError("ambiguous operations require a confirming absence inspection before retry")
+            if state == "PUBLISHED":
+                if not inspection_confirmed:
+                    raise ValueError("PUBLISHED requires provider read-back confirmation")
+                if not (safe_values["remote_id"] or row["remote_id"]
+                        or safe_values["remote_url"] or row["remote_url"]):
+                    raise ValueError("PUBLISHED requires a provider remote id or URL")
+            history = json.loads(row["state_history_json"] or "[]")
+            if state != previous:
+                history.append({"state": state, "at": float(now)})
+                history = history[-64:]
+            assignments = ["state=?", "state_history_json=?", "updated_at=?"]
+            params: list[Any] = [state, json.dumps(history, ensure_ascii=False), float(now)]
+            if state == "PUBLISHING" and row["started_at"] is None:
+                assignments.append("started_at=?")
+                params.append(float(now))
+            if state == "PUBLISHED" and inspection_confirmed and row["confirmed_at"] is None:
+                assignments.append("confirmed_at=?")
+                params.append(float(now))
+            for key, value in safe_values.items():
+                if value is not None:
+                    assignments.append(f"{key}=?")
+                    params.append(value)
+            params.append(operation_id)
+            db.execute(
+                "UPDATE coding_release_operations SET " + ",".join(assignments) + " WHERE operation_id=?",
+                params,
+            )
+            updated = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+        return _decode_release_operation(updated)
+
+    def release_operation(self, operation_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+        return _decode_release_operation(row)
+
+    def claim_release_operation(self, operation_id: str, *, now: float) -> dict[str, Any] | None:
+        """Atomically claim a READY operation so concurrent callers cannot publish twice."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+            if row is None or row["state"] != "READY":
+                return None
+            history = json.loads(row["state_history_json"] or "[]")
+            history.append({"state": "PUBLISHING", "at": float(now)})
+            history = history[-64:]
+            db.execute(
+                """UPDATE coding_release_operations
+                   SET state='PUBLISHING',state_history_json=?,started_at=COALESCE(started_at,?),updated_at=?
+                   WHERE operation_id=? AND state='READY'""",
+                (json.dumps(history, ensure_ascii=False), float(now), float(now), operation_id),
+            )
+            claimed = db.execute(
+                "SELECT * FROM coding_release_operations WHERE operation_id=? AND state='PUBLISHING'",
+                (operation_id,),
+            ).fetchone()
+        return _decode_release_operation(claimed)
 
     def record_coding_event(self, task_id: str, kind: str, data: dict[str, Any]) -> None:
         with self.connect() as db:
