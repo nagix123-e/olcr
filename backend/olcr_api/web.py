@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from collections.abc import Sequence
 from html.parser import HTMLParser
 import codecs
 import http.client
@@ -192,10 +193,10 @@ class _PinnedHTTPSHandler(HTTPSHandler):
         return self.do_open(connection,req,context=self._context,
                             check_hostname=getattr(self,"_check_hostname",None))
 
-def _safe_opener(*handlers):
+def _safe_opener(*handlers, allowed_hosts: Sequence[str] | None = None):
     # Direct connections keep the socket destination equal to the validated DNS result.
     # Environment proxies cannot provide that guarantee for the final destination.
-    return build_opener(ProxyHandler({}),_SafeRedirects(),_PinnedHTTPHandler(),_PinnedHTTPSHandler(),*handlers)
+    return build_opener(ProxyHandler({}),_SafeRedirects(allowed_hosts=allowed_hosts),_PinnedHTTPHandler(),_PinnedHTTPSHandler(),*handlers)
 
 def _decode_content(data: bytes, content_encoding: str | None) -> bytes:
     """Decode standard HTTP content codings without exceeding the body budget."""
@@ -273,13 +274,28 @@ def _decode_response_text(data: bytes, content_type: str | None = None) -> tuple
         return data.decode("utf-8", errors="replace"), "utf-8"
 
 class _SafeRedirects(HTTPRedirectHandler):
+    def __init__(self, *, allowed_hosts: Sequence[str] | None = None):
+        super().__init__()
+        self.allowed_hosts = tuple(allowed_hosts) if allowed_hosts is not None else None
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_official_fetch_url(newurl, self.allowed_hosts)
         validate_url(newurl)
         return super().redirect_request(req,fp,code,msg,headers,newurl)
-def fetch(url:str)->dict:
+def _check_official_fetch_url(url: str, allowed_hosts: Sequence[str] | None) -> None:
+    if allowed_hosts is None:
+        return
+    from .provider_references import official_host_matches
+    parsed = urlparse(url)
+    if (parsed.scheme != 'https' or not official_host_matches(parsed.hostname or '', allowed_hosts)
+            or parsed.username is not None or parsed.password is not None or parsed.port not in (None, 443)):
+        raise ValueError('OFFICIAL_HOST_REQUIRED')
+
+def fetch(url:str, *, allowed_hosts: Sequence[str] | None = None)->dict:
+    _check_official_fetch_url(url, allowed_hosts)
     print('WEB_REQUEST_START', file=sys.stderr, flush=True); validate_url(url); print('WEB_AUTHORIZATION_VALIDATED=YES WEB_NETWORK_POLICY=PASS', file=sys.stderr, flush=True)
     req=Request(url,headers={'User-Agent':'OLCR/0.4.7'}); print('WEB_HTTP_START', file=sys.stderr, flush=True)
-    with _safe_opener().open(req,timeout=10) as r:
+    opener = _safe_opener() if allowed_hosts is None else _safe_opener(allowed_hosts=allowed_hosts)
+    with opener.open(req,timeout=10) as r:
         data=r.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES: raise ValueError('RESPONSE_TOO_LARGE')
         data=_decode_content(data,r.headers.get('Content-Encoding'))
