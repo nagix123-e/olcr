@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from .coding_tasks import ReleaseIntent, ReleasePreflight, build_release_preflight
-from .db import Database, ReleaseOperationConflict
+from .db import Database, ReleaseOperationConflict, is_valid_release_target
 from .provider_research import ProviderEvidence
 
 
@@ -200,7 +200,7 @@ class ReleaseCoordinator:
         resolved = bool(
             request.authorization.target_resolved
             and request.provider_id.strip()
-            and request.app_or_package.strip()
+            and is_valid_release_target(request.app_or_package)
             and request.version.strip()
             and request.channel.strip()
         )
@@ -425,6 +425,8 @@ class ReleaseCoordinator:
     def publish(self, request: ReleaseRequest) -> ReleaseResult:
         if not request.task_id.strip() or not request.provider_id.strip():
             return _blocked("Release task and provider are required.", provider_state="INVALID_TARGET")
+        if not is_valid_release_target(request.app_or_package):
+            return _blocked("Release target identifier is invalid.", provider_state="INVALID_TARGET")
         hashes, artifact_error = _artifact_hashes(request, max_bytes=self.max_artifact_bytes)
         if artifact_error:
             return _blocked(artifact_error, provider_state="ARTIFACT_INVALID")

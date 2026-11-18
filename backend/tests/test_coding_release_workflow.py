@@ -385,6 +385,56 @@ def test_artifact_outside_workspace_blocks_before_adapter_publish(tmp_path):
     assert "publish" not in adapter.calls
 
 
+def test_secret_like_target_is_blocked_without_storage_or_echo(tmp_path, capsys, caplog):
+    database = _database(tmp_path)
+    request = replace(
+        _request(database, tmp_path / "workspace"), app_or_package="token=SECRET"
+    )
+    adapter = FakeAdapter()
+
+    result = ReleaseCoordinator(database, adapter, clock=lambda: NOW).publish(request)
+
+    assert result.status == "BLOCKED"
+    assert "token=SECRET" not in repr(result)
+    captured = capsys.readouterr()
+    assert "token=SECRET" not in captured.out + captured.err + caplog.text
+    assert adapter.calls == []
+    with database.connect() as db:
+        count = db.execute("SELECT COUNT(*) FROM coding_release_operations").fetchone()[0]
+    assert count == 0
+
+
+def test_release_database_rejects_secret_like_target_at_persistence_boundary(tmp_path):
+    database = _database(tmp_path)
+
+    with pytest.raises(ValueError, match="invalid release target"):
+        database.create_release_operation(
+            operation_id="relop_invalid_target",
+            task_id="task-1",
+            provider_id="npm",
+            idempotency_key="b" * 64,
+            target="token=SECRET",
+            version="1.2.3",
+            channel="latest",
+            artifact_hashes=["a" * 64],
+            reference_ids=[],
+            state="BLOCKED",
+            now=NOW,
+        )
+
+    assert database.release_operation("relop_invalid_target") is None
+
+
+@pytest.mark.parametrize("target", ["@scope/package", "com.example.App", "owner/repo"])
+def test_normal_provider_target_identifiers_remain_valid(tmp_path, target):
+    database = _database(tmp_path)
+    request = replace(_request(database, tmp_path / "workspace"), app_or_package=target)
+
+    preflight = ReleaseCoordinator(database, FakeAdapter(), clock=lambda: NOW).preflight(request)
+
+    assert preflight.status == "READY"
+
+
 def test_v40_migration_preserves_tasks_and_saved_provider_references(tmp_path):
     database = _database(tmp_path)
     references = _evidence(database)

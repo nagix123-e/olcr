@@ -164,6 +164,26 @@ class ReleaseOperationConflict(ValueError):
     """An idempotency identity already exists for different release inputs."""
 
 
+_RELEASE_TARGET_PATTERN = re.compile(r"^[\w@][\w.@+/-]*(?: [\w.@+/-]+)*$", re.UNICODE)
+_RELEASE_TARGET_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)(?:^|[\s,;])[\w-]*(?:token|secret|password|credential|api[_-]?key|"
+    r"authorization|private[_-]?key)[\w-]*\s*[:=]\s*\S+"
+)
+
+
+def is_valid_release_target(target: object) -> bool:
+    """Allow provider identifiers, never credential-like assignments or free-form URLs."""
+    if not isinstance(target, str) or not target or len(target) > 180 or target != target.strip():
+        return False
+    if not _RELEASE_TARGET_PATTERN.fullmatch(target):
+        return False
+    if _RELEASE_TARGET_SECRET_ASSIGNMENT.search(target) or re.match(r"(?i)^bearer\s+", target):
+        return False
+    if target.count("/") > 1 or any(part in {"", ".", ".."} for part in target.split("/")):
+        return False
+    return True
+
+
 _RELEASE_OPERATION_STATES = {
     "BLOCKED", "READY", "PUBLISHING", "PUBLISHED", "SUBMITTED", "UNCERTAIN", "FAILED",
 }
@@ -1161,6 +1181,8 @@ class Database:
             raise ValueError("release operation task and provider are required")
         if not idempotency_key or len(idempotency_key) > 128:
             raise ValueError("invalid release idempotency key")
+        if not is_valid_release_target(target):
+            raise ValueError("invalid release target")
         if any(not re.fullmatch(r"[a-f0-9]{64}", str(value)) for value in artifact_hashes):
             raise ValueError("artifact hashes must be SHA-256 hex digests")
         if any(not isinstance(value, str) or not value.startswith("pref_") or len(value) > 80
