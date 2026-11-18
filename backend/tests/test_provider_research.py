@@ -378,3 +378,29 @@ def test_mutual_links_do_not_verify_unknown_irrelevant_documents(registry):
     result = research(service(registry, network), goal="Release software", project_facts={"publishing_targets": ["Nebula Cloud"]})
     assert result.status == "UNAVAILABLE"
     assert all(ref.officiality == "CANDIDATE" for ref in result.references)
+
+
+@pytest.mark.parametrize("extract_html", [True, False])
+def test_link_to_separate_policy_does_not_make_announcement_a_privacy_policy(registry, extract_html):
+    from olcr_api.web import _Text
+
+    announcement = "https://docs.github.com/blog/privacy-feature-announcement"
+    html = ("<html><head><title>Privacy feature announcement</title></head><body><main>"
+            "<p>This new feature collects personal data to suggest privacy controls.</p>"
+            '<p>Read our <a href="https://docs.github.com/separate-policy">privacy policy</a>.</p>'
+            "</main></body></html>")
+    if extract_html:
+        parser = _Text(announcement)
+        parser.feed(html)
+        page = parser.result()  # Real fetch's HTML-to-Markdown content boundary.
+    else:
+        page = {"title": "Privacy feature announcement", "text":
+                "This new feature collects personal data to suggest privacy controls. "
+                'Read our <a href="https://docs.github.com/separate-policy">privacy policy</a>.'}
+    page["final_url"] = announcement
+    network = FakeNetwork(pages={PUBLISH: VALID_PUBLISH, TERMS: VALID_TERMS, announcement: page},
+                          results=[{"url": announcement}])
+    result = research(service(registry, network))
+    assert result.status == "PARTIAL"
+    assert not any(ref.category == "privacy" for ref in result.references)
+    assert any("privacy" in blocker for blocker in result.blockers)

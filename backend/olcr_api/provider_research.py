@@ -86,11 +86,12 @@ def _content_summary(page: dict, category: str) -> str | None:
     if not isinstance(body, str) or not isinstance(title, str):
         return None
     body = body[:50_000]
-    if not re.search(_DOCUMENT_KIND[category], title + " " + body, re.I):
+    # A link identifies another document, not this page's kind or requirements.
+    text = re.sub(r"<a\b[^>]*>.*?</a\s*>", "", body, flags=re.I | re.S)
+    text = re.sub(r"\[[^]]*\]\([^)]*\)", "", text)
+    if not re.search(_DOCUMENT_KIND[category], title + " " + text, re.I):
         return None
     claims = []
-    # Links and their labels are not requirement statements or provenance claims.
-    text = re.sub(r"\[[^]]*\]\([^)]*\)", "", body)
     for sentence in re.split(r"(?<=[.!?。])\s+|[\r\n]+", text):
         sentence = re.sub(r"^[#*\-\s]+", "", sentence).strip()
         if not (15 <= len(sentence) <= 280) or not _CLAIM.search(sentence) or _UNSAFE_CLAIM.search(sentence):
