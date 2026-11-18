@@ -942,7 +942,7 @@ def _release_action_requested(goal: str) -> bool:
             r"(?:^|[.!?]\s*|\b(?:and|then|now)\s+)(?:please\s+)?"
             r"(?:release|publish|deploy|upload|submit|distribute)\b|"
             r"(?:リリース|公開|配布|デプロイ|提出|アップロード)(?:を)?"
-            r"(?:し(?:てください|て|たい|ます)|してください)",
+            r"(?:し(?:てください|て|たい|ます)|してください|する)",
             remainder, re.I,
         )
         if not followup_publish:

@@ -58,6 +58,14 @@ class ReleaseIntentTests(unittest.TestCase):
             {"publishing_targets": ["npm"], "app_or_package": "@acme/widget",
              "version": "1.2.3", "channel": "stable"},
         ).requested)
+        build_then_publish = detect_release_intent(
+            "リリースビルドを作成してからnpmに公開する",
+            {"publishing_targets": ["npm"], "app_or_package": "@acme/widget",
+             "version": "1.2.3", "channel": "stable"},
+        )
+        self.assertTrue(build_then_publish.requested)
+        self.assertEqual("npm", build_then_publish.provider_id)
+        self.assertEqual([], build_then_publish.blockers)
         self.assertTrue(detect_release_intent("Can you publish this package?").requested)
         self.assertTrue(detect_release_intent("npmに公開してください").requested)
         self.assertTrue(detect_release_intent("Release it to npm.").requested)
