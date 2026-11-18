@@ -165,15 +165,15 @@
 - Produces: `NpmPublishAdapter` and `PyPIPublishAdapter` implementing `ReleaseAdapter`. Use Task 3's `ReleaseCommandRunner` and provider-specific credential profiles.
 - Publish inputs include exact package name, version, registry, visibility, distribution tag or PyPI target; do not infer public visibility, prerelease channel, or registry from credentials.
 
-- [ ] **Step 1: package metadata/authorization testsを書く**
+- [x] **Step 1: package metadata/authorization testsを書く**
   `test_npm_requires_name_version_registry_and_visibility`、`test_pypi_requires_valid_distribution_and_configured_auth`、`test_preexisting_version_checks_artifact_digest_before_publish`を追加する。
-- [ ] **Step 2: registry timeout and error testsを書く**
+- [x] **Step 2: registry timeout and error testsを書く**
   `test_npm_timeout_inspects_registry_before_retry`、`test_pypi_publish_secret_is_redacted_from_result`、`test_existing_different_artifact_version_is_blocked`を追加する。
-- [ ] **Step 3: npm adapterを実装する**
+- [x] **Step 3: npm adapterを実装する**
   official npm evidenceに沿ってpackage validation、auth probe、publish、registry read-backを型付きoperationで行う。scope/access/distribution-tagはReleaseRequestから受け取る。
-- [ ] **Step 4: PyPI adapterを実装する**
+- [x] **Step 4: PyPI adapterを実装する**
   official PyPI evidenceに沿ってbuild metadata validation、auth/Trusted Publishing preflight、upload、index read-backを行う。Trusted PublishingのOIDC条件を満たさなければ既存設定済み認証のみを使い、secretを要求・保存しない。
-- [ ] **Step 5: package adapter testsを実行する**
+- [x] **Step 5: package adapter testsを実行する**
   Run: `python -m pytest backend/tests/test_package_release_adapters.py -q`  
   Expected: PASS。provider CLI/APIをfakeし、live registryへuploadしない。
 

@@ -19,7 +19,7 @@ from ..coding_tasks import ReleasePreflight
 from ..release_workflow import ReleaseRequest, ReleaseResult
 
 
-_COMMAND_ALLOWLIST = frozenset({"git", "gh", "xcrun", "codesign", "ditto"})
+_COMMAND_ALLOWLIST = frozenset({"git", "gh", "xcrun", "codesign", "ditto", "npm", "twine"})
 _COMMAND_TIMEOUT_MAX = 300
 _OUTPUT_MAX_BYTES = 1024 * 1024
 _COMMAND_ENV_ALLOWLIST = frozenset({
@@ -28,16 +28,24 @@ _COMMAND_ENV_ALLOWLIST = frozenset({
 _PROFILE_CREDENTIAL_ENV = {
     "github": frozenset({"GH_TOKEN", "GITHUB_TOKEN"}),
     "apple_notary": frozenset(),
+    "npm": frozenset({"NODE_AUTH_TOKEN"}),
+    "pypi": frozenset({"TWINE_USERNAME", "TWINE_PASSWORD"}),
 }
 _API_HOST_PROFILES = {
     "github_api": "api.github.com",
     "app_store_connect_api": "api.appstoreconnect.apple.com",
     "google_play_api": "androidpublisher.googleapis.com",
+    "npm_registry_api": "registry.npmjs.org",
+    "pypi_api": "pypi.org",
+    "testpypi_api": "test.pypi.org",
 }
 _API_AUTH_SCHEME = {
     "github_api": "Bearer",
     "app_store_connect_api": "Bearer",
     "google_play_api": "Bearer",
+    "npm_registry_api": "Bearer",
+    "pypi_api": "Bearer",
+    "testpypi_api": "Bearer",
 }
 _API_HEADERS_PROFILE = {
     "github_api": {
@@ -48,6 +56,15 @@ _API_HEADERS_PROFILE = {
         "Accept": "application/json",
     },
     "google_play_api": {
+        "Accept": "application/json",
+    },
+    "npm_registry_api": {
+        "Accept": "application/json",
+    },
+    "pypi_api": {
+        "Accept": "application/json",
+    },
+    "testpypi_api": {
         "Accept": "application/json",
     },
 }
