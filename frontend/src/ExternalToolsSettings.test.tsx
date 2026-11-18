@@ -78,3 +78,45 @@ it('uses shared global switches for YaRN and compression without changing contex
   expect(screen.getByRole('switch', {name: 'YaRN'})).toBeChecked();
   expect(screen.getByRole('switch', {name: 'Automatic context compression'})).not.toBeChecked();
 });
+
+it('requires local-model warning acknowledgement before enabling coding subagents', async () => {
+  const api = vi.fn().mockResolvedValue({external_access_enabled: false, tools: []});
+  const save = vi.fn().mockResolvedValue({});
+  render(<ExternalToolsSettings api={api} settings={{coding_subagents_enabled: false,
+    coding_subagents_warning_version: '2026-11-v1', brain_model: 'api:provider:model'}} save={save}/>);
+  await screen.findByText('API and tool status');
+  fireEvent.click(screen.getByRole('switch', {name: 'Coding subagents'}));
+  const dialog = screen.getByRole('dialog', {name: 'Enable coding subagents?'});
+  expect(dialog).toHaveTextContent(/local models are not recommended/i);
+  expect(dialog).toHaveTextContent(/following fixed roles and combining results/i);
+  expect(dialog).toHaveTextContent(/latency/i);
+  expect(dialog).toHaveTextContent(/memory and compute/i);
+  expect(screen.getByRole('button', {name: 'Enable coding subagents'})).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', {name: 'I understand this warning'}));
+  expect(screen.getByRole('button', {name: 'Enable coding subagents'})).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', {name: 'Enable coding subagents'}));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({coding_subagents_enabled: true,
+    coding_subagents_warning_ack_revision: '2026-11-v1'}));
+});
+
+it('keeps coding subagents off when the warning is cancelled', async () => {
+  const api = vi.fn().mockResolvedValue({external_access_enabled: false, tools: []});
+  const save = vi.fn().mockResolvedValue({});
+  render(<ExternalToolsSettings api={api} settings={{coding_subagents_enabled: false}} save={save}/>);
+  await screen.findByText('API and tool status');
+  const toggle = screen.getByRole('switch', {name: 'Coding subagents'});
+  fireEvent.click(toggle);
+  expect(screen.getByRole('dialog', {name: 'Enable coding subagents?'})).toBeVisible();
+  fireEvent.click(screen.getByRole('button', {name: 'Cancel'}));
+  expect(toggle).not.toBeChecked();
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('shows the local-model warning even when the selected model is remote', async () => {
+  const api = vi.fn().mockResolvedValue({external_access_enabled: false, tools: []});
+  render(<ExternalToolsSettings api={api} settings={{coding_subagents_enabled: false,
+    coding_subagents_warning_version: '2026-11-v1', brain_model: 'api:remote:coder'}} save={vi.fn()}/>);
+  await screen.findByText('API and tool status');
+  fireEvent.click(screen.getByRole('switch', {name: 'Coding subagents'}));
+  expect(screen.getByRole('dialog', {name: 'Enable coding subagents?'})).toHaveTextContent(/local models are not recommended/i);
+});

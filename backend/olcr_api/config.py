@@ -12,6 +12,7 @@ DEFAULT_ROUTER_MODEL = "laya-choice"
 DEFAULT_LAYA_MODEL_REVISION = "052592a15d198d9ad47da779604259b10b47b7aa"
 DEFAULT_LAYA_ENGLISH_MODEL_REVISION = "1c5edc17a7acd8701df6fc341c0d179f1c62c982"
 MODEL_REQUEST_TIMEOUT_SECONDS = 750
+CODING_SUBAGENTS_WARNING_VERSION = "2026-11-v1"
 MODEL_NAME_FIELDS = frozenset({"main_model", "vision_model", "router_model", "embedding_model", "semantic_judge_model",
                                "planner_model", "short_coding_model", "long_implementation_model",
                                "gui_vision_model", "general_image_model"})
@@ -76,6 +77,10 @@ class Settings:
     # Managed coding orchestration is the default chat route. An explicit
     # environment or persisted preference can still turn it off.
     task_manager_enabled: bool = True
+    # Subagents are an independent, explicitly acknowledged Coding Task capability.
+    # There is intentionally no environment-variable opt-in.
+    coding_subagents_enabled: bool = False
+    coding_subagents_warning_ack_revision: str = ""
     db_path: str = ""
 
     @classmethod
@@ -124,9 +129,16 @@ class Settings:
         if not self.ollama_endpoint.startswith(("http://127.0.0.1", "http://localhost", "https://127.0.0.1", "https://localhost")):
             raise ValueError("Ollama endpoint must be local")
         for name in ('yarn_enabled', 'context_auto_compress', 'convert_enabled',
-                     'conversation_memory_enabled', 'conversation_memory_cross_project_enabled'):
+                     'conversation_memory_enabled', 'conversation_memory_cross_project_enabled',
+                     'coding_subagents_enabled'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be boolean")
+        if (not isinstance(self.coding_subagents_warning_ack_revision, str)
+                or len(self.coding_subagents_warning_ack_revision) > 80):
+            raise ValueError("coding_subagents_warning_ack_revision is invalid")
+        if (self.coding_subagents_enabled
+                and self.coding_subagents_warning_ack_revision != CODING_SUBAGENTS_WARNING_VERSION):
+            raise ValueError("coding subagents require acknowledgement of the current warning")
         for name in ('yarn_target_tokens', 'local_context_tokens'):
             value = getattr(self, name)
             if type(value) is not int or not 2048 <= value <= 2097152:
@@ -218,6 +230,17 @@ class Settings:
         # A legacy empty model setting means "unset". It must never erase an
         # explicit environment value or the packaged default.
         merged.update({key: value for key, value in values.items() if key in allowed and (key not in MODEL_NAME_FIELDS or bool(str(value).strip()))})
+        # Legacy or manually edited profiles must fail closed. The warning
+        # acknowledgement is revision-bound, so revised copy requires a new
+        # acknowledgement before the capability can remain enabled.
+        if type(merged.get("coding_subagents_enabled")) is not bool:
+            merged["coding_subagents_enabled"] = False
+        revision = merged.get("coding_subagents_warning_ack_revision")
+        if not isinstance(revision, str) or len(revision) > 80:
+            merged["coding_subagents_warning_ack_revision"] = ""
+        if (merged["coding_subagents_enabled"]
+                and merged["coding_subagents_warning_ack_revision"] != CODING_SUBAGENTS_WARNING_VERSION):
+            merged["coding_subagents_enabled"] = False
         merged["allowed_roots"]=tuple(merged["allowed_roots"])
         merged["computer_use_allowed_bundle_ids"] = tuple(merged.get("computer_use_allowed_bundle_ids") or ())
         return Settings(**merged).validated()

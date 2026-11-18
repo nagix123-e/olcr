@@ -38,9 +38,9 @@ from urllib import request as urllib_request
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, StrictBool, StrictInt
+from pydantic import BaseModel, Field, StrictBool, StrictInt, StrictStr
 
-from .config import (DEFAULT_MAIN_MODEL, DEFAULT_ROUTER_MODEL, DEFAULT_LAYA_MODEL_REVISION,
+from .config import (CODING_SUBAGENTS_WARNING_VERSION, DEFAULT_MAIN_MODEL, DEFAULT_ROUTER_MODEL, DEFAULT_LAYA_MODEL_REVISION,
                      DEFAULT_LAYA_ENGLISH_MODEL_REVISION, Settings)
 from .artifacts import ArtifactStore
 from .stackoverflow_debug import StackOverflowDebug
@@ -411,6 +411,7 @@ class SettingsInput(BaseModel):
     external_access_enabled: bool = True
     coding_stackoverflow_enabled: bool = True
     task_manager_enabled: bool = True
+    coding_subagents_enabled: StrictBool | None = None
 
 class ProjectInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -501,6 +502,8 @@ class CapabilitySettingsPatch(BaseModel):
     external_access_enabled: Optional[bool] = None
     coding_stackoverflow_enabled: Optional[bool] = None
     task_manager_enabled: Optional[bool] = None
+    coding_subagents_enabled: StrictBool | None = None
+    coding_subagents_warning_ack_revision: StrictStr | None = Field(default=None, max_length=80)
     web_scraping_enabled: Optional[bool] = None
     local_e2e_enabled: Optional[bool] = None
     computer_use_enabled: Optional[bool] = None
@@ -17654,6 +17657,18 @@ def patch_capability_settings(value: CapabilitySettingsPatch):
     updates = value.model_dump(exclude_unset=True, exclude_none=True)
     if not updates:
         raise HTTPException(422, "CAPABILITY_SETTINGS_PATCH_EMPTY")
+    warning_ack = updates.pop("coding_subagents_warning_ack_revision", None)
+    if "coding_subagents_enabled" in updates:
+        if updates["coding_subagents_enabled"] and warning_ack != CODING_SUBAGENTS_WARNING_VERSION:
+            raise HTTPException(422, "CODING_SUBAGENTS_WARNING_ACK_REQUIRED")
+        if not updates["coding_subagents_enabled"] and warning_ack is not None:
+            raise HTTPException(422, "CODING_SUBAGENTS_WARNING_ACK_UNEXPECTED")
+        if updates["coding_subagents_enabled"]:
+            updates["coding_subagents_warning_ack_revision"] = warning_ack
+    elif warning_ack is not None:
+        raise HTTPException(422, "CODING_SUBAGENTS_WARNING_ACK_WITHOUT_ENABLE")
+    if not updates:
+        raise HTTPException(422, "CAPABILITY_SETTINGS_PATCH_EMPTY")
     if updates.get('convert_enabled') is True:
         with conversion_service.lock:
             if conversion_service.remover and conversion_service.remover.is_alive():
@@ -17671,7 +17686,8 @@ def patch_capability_settings(value: CapabilitySettingsPatch):
             rebuild(candidate)
         if 'convert_enabled' in updates:
             conversion_service.configure(candidate.convert_enabled, prepare=candidate.convert_enabled)
-        return settings.public_dict()
+        return {**settings.public_dict(),
+                "coding_subagents_warning_version": CODING_SUBAGENTS_WARNING_VERSION}
 
 
 @app.get('/api/file-conversion/runtime')
@@ -21931,7 +21947,9 @@ def approve_permission_request(approval_id: str, value: PermissionApprovalInput)
     return {'approved': value.approve}
 
 @app.get("/api/settings")
-def get_settings(): return settings.public_dict()
+def get_settings():
+    return {**settings.public_dict(),
+            "coding_subagents_warning_version": CODING_SUBAGENTS_WARNING_VERSION}
 
 @app.get("/api/audio/model/status")
 def audio_model_status(language: str = Query(...)):
@@ -22945,11 +22963,20 @@ def web_search(value: SearchInput):
 @app.put("/api/settings")
 def put_settings(value:SettingsInput):
     with _settings_update_lock:
-        try: candidate=settings.with_overrides(value.model_dump(exclude_none=True))
+        if (value.coding_subagents_enabled is not None
+                and value.coding_subagents_enabled
+                and not settings.coding_subagents_enabled):
+            raise HTTPException(422, "CODING_SUBAGENTS_MUST_USE_CAPABILITY_SETTINGS")
+        updates = value.model_dump(exclude_none=True)
+        # Full settings forms can be stale because this capability is saved
+        # through its own acknowledged control. Never let a generic save flip it.
+        updates.pop("coding_subagents_enabled", None)
+        try: candidate=settings.with_overrides(updates)
         except ValueError as exc: raise HTTPException(422,str(exc)) from exc
-        for key,item in value.model_dump(exclude_none=True).items(): db.save_setting(key,item,time.time())
+        for key,item in updates.items(): db.save_setting(key,item,time.time())
         rebuild(candidate)
-        return settings.public_dict()
+        return {**settings.public_dict(),
+                "coding_subagents_warning_version": CODING_SUBAGENTS_WARNING_VERSION}
 
 
 class BrainConfigurationInput(BaseModel):

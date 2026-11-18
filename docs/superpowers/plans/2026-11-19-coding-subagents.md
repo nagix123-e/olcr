@@ -69,19 +69,19 @@
 - Produces: `Settings.coding_subagents_enabled: bool = False`; a dedicated API capability response reports enabled state and warning version.
 - Consumes: existing `task_manager_enabled` setting without deriving, copying, or toggling it.
 
-- [ ] **Step 1: Write failing backend tests for OFF-by-default and setting independence**
+- [x] **Step 1: Write failing backend tests for OFF-by-default and setting independence**
   `test_coding_subagents_default_off`, `test_coding_subagents_setting_is_independent_of_task_manager`, `test_model_or_task_manager_update_cannot_enable_subagents`.
-- [ ] **Step 2: Write failing UI tests for enable confirmation**
+- [x] **Step 2: Write failing UI tests for enable confirmation**
   `test_enabling_coding_subagents_requires_local_model_warning_acknowledgement`, `test_cancel_warning_keeps_setting_off`, and `test_warning_is_shown_even_when_current_model_is_remote`.
-- [ ] **Step 3: Implement the server setting and strict API validation**
+- [x] **Step 3: Implement the server setting and strict API validation**
   Missing, malformed, or unknown settings must resolve to false. Only the explicit Settings control can update this flag; model plans, chat parsing, and `task_manager_enabled` updates cannot.
-- [ ] **Step 4: Implement a required enable-confirmation dialog**
+- [x] **Step 4: Implement a required enable-confirmation dialog**
   The Japanese and English copy must state “local models are not recommended” and mention role-following/synthesis quality, latency, and memory/compute load. Require a visible acknowledgement before persisting true; persist a warning revision so future copy changes can be shown again.
-- [ ] **Step 5: Run the focused setting tests**
+- [x] **Step 5: Run the focused setting tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_settings.py -q`
   Run: `npm --prefix frontend test -- ExternalToolsSettings.test.tsx`
   Expected: PASS; no coding task or agent call is required to test settings.
-- [ ] **Step 6: Commit settings and warning behavior**
+- [x] **Step 6: Commit settings and warning behavior**
 
 ### Task 3: Define fixed roles, model pinning, heaviness assessment, and authorization facts
 

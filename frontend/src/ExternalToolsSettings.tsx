@@ -17,6 +17,10 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState('');
   const [credentialSetup,setCredentialSetup]=useState<CredentialSetupBlock|null>(null);
+  const [codingSubagentsWarningOpen, setCodingSubagentsWarningOpen] = useState(false);
+  const [codingSubagentsWarningAcknowledged, setCodingSubagentsWarningAcknowledged] = useState(false);
+  const codingSubagentsWarningVersion = typeof settings?.coding_subagents_warning_version === 'string'
+    ? settings.coding_subagents_warning_version : '2026-11-v1';
   const load = async () => {
     const bridge = native();
     if (bridge) {
@@ -32,18 +36,19 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
   };
   useEffect(() => { void load(); }, []);
   const [busy, setBusy] = useState(false);
-  const update = async (next: Record<string, boolean>) => {
-    if (!settings || busy) return;
+  const update = async (next: Record<string, boolean | string>): Promise<boolean> => {
+    if (!settings || busy) return false;
     setBusy(true);
     setError('');
-    try { await save(next); if ('external_access_enabled' in next) await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    try { await save(next); if ('external_access_enabled' in next) await load(); return true; }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return false; }
     finally { setBusy(false); }
   };
   const features = [
     {key: 'yarn_enabled', title: 'YaRN', description: ja ? 'MLX版Ornith・Bonsaiのコンテキスト長を延長します。延長先は「モデル」のコンテキスト設定で調整できます。Ollamaを使う場合はオフにしてください。' : 'Extend context for Ornith and Bonsai in MLX. Adjust the target in Models → Local model context. Turn this off when using Ollama.'},
     {key: 'context_auto_compress', title: ja ? 'コンテキスト自動圧縮' : 'Automatic context compression', description: ja ? 'ローカルモデルへ送る過去の文脈を自動で短縮します。元の会話は保持します。コンテキスト長は「モデル」のコンテキスト設定で調整できます。' : 'Automatically shorten older context sent to local models while keeping original conversations. Adjust the context window in Models → Local model context.'},
     {key: 'task_manager_enabled', title: ja ? 'コーディング オーケストレーター' : 'Coding Orchestrator', description: ja ? 'OFFの場合、コーディング依頼は通常のBrain会話で処理されます。' : 'When OFF, coding requests use the normal Brain conversation.'},
+    {key: 'coding_subagents_enabled', title: ja ? 'コーディングサブエージェント' : 'Coding subagents', description: ja ? 'コーディング オーケストレーターとは独立した設定です。ONにしても、個別タスクの条件とユーザー承認なしにエージェントは起動しません。' : 'Independent from Coding Orchestrator. Turning this on never starts agents without task-specific eligibility and user authorization.'},
     {key: 'web_scraping_enabled', title: ja ? 'ウェブスクレイピング' : 'Web scraping', description: ja ? 'ONの場合、チャットでURLのスクレイピングを依頼すると会話内で管理ブラウザーを開きます。公開HTTP(S)宛てかどうかの安全確認は引き続き適用されます。' : 'When ON, an explicit URL-scraping request in chat opens the existing managed browser in the conversation. Safe public-HTTP(S) destination checks still apply.'},
     {key: 'computer_use_enabled', title: ja ? 'コンピューター操作' : 'Computer Use', description: ja ? 'ONの場合、チャットで操作するアプリ名を指定します。OLCRは起動中のアプリを特定してセッションを紐付けます。画面収録とアクセシビリティの許可はmacOSで管理されます。' : 'When ON, name the app to control in a chat message. OLCR resolves the running app and binds the session to that process; macOS Screen Recording and Accessibility permissions remain controlled by macOS.'},
     {key: 'local_e2e_enabled', title: ja ? 'ローカルプロジェクトE2E' : 'Local project E2E', description: ja ? 'ONの場合、許可されたプロジェクトのチャットでE2Eの開始を依頼します。OLCRは`.olcr/e2e.json`または対応する`dev`／`start`／`serve`スクリプトを使います。ループバックのホストとポートを指定するコマンドや、既存のループバックURLにも接続できます。操作・状態確認・停止はチャットから行います。' : 'When ON, ask in the selected allowed project’s chat to start E2E. OLCR reuses `.olcr/e2e.json` or a supported `dev`/`start`/`serve` script; you can also give chat a one-off command that binds a loopback host and port, or attach to an existing loopback URL. Use chat for actions, status, and stop.'},
@@ -52,6 +57,7 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
     yarn_enabled: '長い会話や資料を一度に扱うための拡張です。実際に追加する資料の量は、モデル設定のRAG上限でも調整します。',
     context_auto_compress: '長い会話でモデルの上限に近づくと、送信する古い文脈を短縮します。短縮前の内容は会話履歴で確認できます。',
     task_manager_enabled: '実装依頼を計画と作業に分け、進捗や追加指示を管理します。通常の質問や相談は引き続きチャットから行えます。',
+    coding_subagents_enabled: 'この設定はコーディング オーケストレーターのON/OFFとは独立しています。有効にしても自動起動はせず、重く並列化できるタスクでユーザー指示または個別の承認がある場合だけ使います。',
     web_scraping_enabled: '指定したページの文章や表を抽出する機能です。ウェブ検索のプロバイダーや検索モードとは別に設定します。',
     computer_use_enabled: '指定したアプリの画面を確認し、クリックや入力などの操作を行う機能です。OSの操作権限も必要です。',
     local_e2e_enabled: 'このMacで動くWebアプリをブラウザーで操作し、一連の動作を確認します。対象は許可されたプロジェクトです。',
@@ -59,6 +65,7 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
     yarn_enabled: 'Extend the window for long conversations or references. The RAG allowance separately controls how much retrieved material is added.',
     context_auto_compress: 'Shorten older context sent to a local model as its window fills. The original remains available in conversation history.',
     task_manager_enabled: 'Organize implementation requests into a plan and tasks, with progress and follow-up instructions managed in chat.',
+    coding_subagents_enabled: 'Independent from Coding Orchestrator. Enabling only makes delegation available; it runs only for a heavy, parallelizable task after a direct user instruction or separate task approval.',
     web_scraping_enabled: 'Extract text or tables from a specific page. This is configured separately from web search providers and search mode.',
     computer_use_enabled: 'Observe a named app and interact through clicks and typing. macOS permissions are also required.',
     local_e2e_enabled: 'Exercise a local web app in a browser to check a complete flow within an authorized project.',
@@ -94,10 +101,43 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
         <div className="setting-row capability-setting">
           <span className="setting-label-with-help"><label htmlFor={`${id}-${feature.key}`}>{feature.title}</label><SettingHelp label={feature.title}>{help[feature.key]}</SettingHelp></span>
           <input id={`${id}-${feature.key}`} type="checkbox" role="switch" checked={settings?.[feature.key] === true} disabled={!settings || busy}
-            aria-describedby={`hint-${feature.key}`} onChange={event => void update({[feature.key]: event.target.checked})}/>
+            aria-describedby={`hint-${feature.key}`} onChange={event => {
+              const enabled = event.target.checked;
+              if (feature.key === 'coding_subagents_enabled' && enabled) {
+                setCodingSubagentsWarningAcknowledged(false);
+                setCodingSubagentsWarningOpen(true);
+              } else {
+                void update({[feature.key]: enabled});
+              }
+            }}/>
         </div>
         <p className="setting-hint" id={`hint-${feature.key}`}>{feature.description}</p>
       </div>)}
     </section>
+    {codingSubagentsWarningOpen && <DialogFrame
+      title={ja ? 'コーディングサブエージェントを有効にしますか？' : 'Enable coding subagents?'}
+      onClose={() => {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}}
+      confirmDiscard={false}>
+      <p className="setting-hint">{ja
+        ? 'ローカルモデルは複数エージェントによるコーディングには推奨されません。固定ロールへの追従や結果の統合が不安定になる場合があり、複数の作業文脈によって遅延やメモリ・計算資源の負荷も増えることがあります。この設定を有効にしても、個別タスクの条件とユーザー承認なしにエージェントは起動しません。'
+        : 'Local models are not recommended for multi-agent coding. Following fixed roles and combining results may be less reliable, while multiple work contexts can increase latency and pressure on memory and compute resources. Enabling this setting does not start agents without task-specific eligibility and user authorization.'}</p>
+      <label className="setting-row capability-setting">
+        <input type="checkbox" checked={codingSubagentsWarningAcknowledged}
+          onChange={event => setCodingSubagentsWarningAcknowledged(event.target.checked)}/>
+        <span>{ja ? 'この警告を確認しました' : 'I understand this warning'}</span>
+      </label>
+      <div className="settings-actions">
+        <button type="button" onClick={() => {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}}>
+          {ja ? 'キャンセル' : 'Cancel'}
+        </button>
+        <button type="button" disabled={!codingSubagentsWarningAcknowledged || busy} onClick={async () => {
+          const saved = await update({coding_subagents_enabled: true,
+            coding_subagents_warning_ack_revision: codingSubagentsWarningVersion});
+          if (saved) {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}
+        }}>
+          {ja ? 'サブエージェントを有効にする' : 'Enable coding subagents'}
+        </button>
+      </div>
+    </DialogFrame>}
   </>;
 }
