@@ -39,11 +39,11 @@
 
 **Interfaces:**
 - Produces: `ProviderReferenceRegistry.load(path: Path | None = None) -> ProviderReferenceRegistry`、`ProviderReferenceRegistry.for_task(goal: str, project_facts: dict[str, object]) -> list[ProviderReference]`。
-- `ProviderReference`は`provider_id`、`display_name`、`official_hosts`、`documents`を持つ。`documents`は`url`、`category`、`work_kinds`、`platforms`を持つ。
+- `ProviderReference`は`provider_id`、`display_name`、`official_hosts`、`documents`を持つ。`documents`は`url`、`category`、`work_kinds`、`platforms`を持つ。allowed categoriesは`technical_spec`、`api`、`terms`、`privacy`、`review`、`publishing`、`signing`とする。
 - `provider_id`は`github`、`apple_macos`、`app_store_connect`、`google_play`、`npm`、`pypi`、`vercel`、`cloudflare_pages`を初期登録する。
 
 - [ ] **Step 1: 既存URL候補と分類の期待値をテストする**
-  `test_catalog_has_all_initial_providers_and_official_documents`で設計書の8プロバイダーと仕様/API/規約/プライバシー/審査/公開資料URLを検証し、すべてHTTPSであることを確認する。
+  `test_catalog_has_all_initial_providers_and_official_documents`で設計書にURLが指定された8プロバイダーの技術/API/利用条件/審査/公開資料を検証し、すべてHTTPSであることを確認する。Privacyはallowed categoryとし、設計書に初期URLがないproviderへURLを捏造せず、必要なtaskで公式検索する。
 - [ ] **Step 2: 台帳の形式・不正値検査をテストする**
   `test_catalog_rejects_unknown_categories_and_non_https_urls`、`test_catalog_rejects_duplicate_provider_ids`を追加する。
 - [ ] **Step 3: JSON台帳と型付きloaderを実装する**
