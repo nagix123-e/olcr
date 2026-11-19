@@ -10,12 +10,14 @@ from olcr_api.coding_subagent_executor import (
 from olcr_api.generation_control import GenerationCancelled, check_cancelled
 
 
-def binding(runtime="brain-provider:openai", model="api:openai:gpt-coder"):
+def binding(runtime="brain-provider:openai", model="api:openai:gpt-coder", fallbacks=()):
     return {
         "requested_model": "role:long_implementation", "model_id": model,
         "provider_id": "openai", "runtime_id": runtime, "model_revision": None,
         "brain_mode": "split", "selected_slot": "coder",
-        "implementation_role": "long_implementation", "fallback_policy": "NONE",
+        "implementation_role": "long_implementation",
+        "fallback_models": list(fallbacks),
+        "fallback_policy": "CONFIGURED" if fallbacks else "NONE",
     }
 
 
@@ -55,6 +57,21 @@ class CodingSubagentExecutorTests(unittest.TestCase):
         self.assertTrue(all(call[1]["max_tokens"] == 4096 for call in calls))
         self.assertEqual({"input_tokens": 20, "output_tokens": 10, "latency_ms": 4.5},
                          results[0].usage)
+
+    def test_enabled_worker_uses_only_the_fallback_sequence_in_its_binding(self):
+        calls = []
+        pinned = binding(fallbacks=("api:google:backup-coder", "mlx:secondary-coder"))
+
+        def generate(messages, model, **kwargs):
+            calls.append((model, kwargs))
+            return response()
+
+        CodingSubagentExecutor(generate).run_group([
+            request("worker-1", model_binding=pinned)])
+        self.assertEqual("role:long_implementation", calls[0][0])
+        self.assertTrue(calls[0][1]["_fallback_allowed"])
+        self.assertEqual(pinned["fallback_models"],
+                         calls[0][1]["_coding_subagent_binding"]["fallback_models"])
 
     def test_group_rejects_model_drift_and_more_than_three_workers(self):
         calls = []

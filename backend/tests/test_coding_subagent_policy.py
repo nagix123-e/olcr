@@ -1,6 +1,8 @@
 import unittest
+from dataclasses import replace
 
 from olcr_api.coding_subagents import (
+    CodingSubagentModelBinding,
     CodingSubagentRole,
     DelegationApprovalEvidence,
     UserDirectiveEvidence,
@@ -205,7 +207,24 @@ class CodingSubagentPolicyTests(unittest.TestCase):
         self.assertEqual("mlx:ternary-bonsai", short.model_id)
         self.assertNotEqual(long, short)
 
-    def test_worker_failure_does_not_fallback_to_another_model(self):
+    def test_subagent_binding_snapshots_configured_fallbacks_in_order(self):
+        configuration = split_configuration()
+        configuration["fallback_models"] = ["api:google:backup-coder", "mlx:secondary-coder"]
+        binding = pin_subagent_model("role:long_implementation", configuration)
+        self.assertEqual(("api:google:backup-coder", "mlx:secondary-coder"),
+                         binding.fallback_models)
+        self.assertEqual("CONFIGURED", binding.fallback_policy)
+
+    def test_model_binding_rejects_string_and_primary_model_as_fallbacks(self):
+        binding = pin_subagent_model("role:long_implementation", split_configuration())
+        with self.assertRaisesRegex(ValueError, "fallback sequence"):
+            replace(binding, fallback_models="api:google:backup-coder",
+                    fallback_policy="CONFIGURED")
+        with self.assertRaisesRegex(ValueError, "fallback sequence"):
+            replace(binding, fallback_models=(binding.model_id,),
+                    fallback_policy="CONFIGURED")
+
+    def test_invalid_primary_model_does_not_resolve_a_fallback_instead(self):
         with self.assertRaisesRegex(ValueError, "cannot be resolved"):
             pin_subagent_model("role:long_implementation", {"mode": "split", "selections": {}})
         with self.assertRaisesRegex(ValueError, "unsupported model identity"):

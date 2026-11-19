@@ -17,7 +17,7 @@ MODEL_BINDING = {
     "requested_model": "role:long_implementation", "model_id": "api:openai:gpt-coder",
     "provider_id": "openai", "runtime_id": "brain-provider:openai", "model_revision": None,
     "brain_mode": "split", "selected_slot": "coder",
-    "implementation_role": "long_implementation", "fallback_policy": "NONE",
+    "implementation_role": "long_implementation", "fallback_models": [], "fallback_policy": "NONE",
 }
 
 

@@ -67,7 +67,7 @@ from .brain_models import BrainModels, brain_scope
 from .coding_subagent_executor import CodingSubagentExecutor
 from .coding_subagent_runtime import CodingSubagentCoordinator
 from .coding_subagents import (CodingSubagentModelBinding, UserDirectiveEvidence,
-                               is_direct_user_delegation)
+                               is_direct_user_delegation, model_binding_payload)
 from .response_language import response_language_scope, response_language
 from .model_provider import RoleAwareModelProvider
 from .model_registry import ModelRegistry
@@ -663,9 +663,19 @@ def _generate_coding_subagent(messages, model: str, **kwargs):
         pinned["selections"][slot] = model_id
     elif slot != "explicit":
         raise ValueError("CODING_SUBAGENT_MODEL_SLOT_INVALID")
-    # Child workers never inherit the user's failover sequence. A pinned model
-    # failure is surfaced to the parent, which continues with its own call.
-    pinned["fallback_models"] = []
+    # Child workers use only the failover sequence bound to this approval.
+    fallback_models = binding.get("fallback_models")
+    if (not isinstance(fallback_models, list) or len(fallback_models) > 16
+            or any(not isinstance(candidate, str) or not candidate
+                   or len(candidate) > 256 or candidate != candidate.strip()
+                   or re.search(r"\s|[\x00-\x1f]", candidate)
+                   or not candidate.startswith(("api:", "mlx:", "ollama:"))
+                   for candidate in fallback_models)
+            or len(set(fallback_models)) != len(fallback_models)
+            or model_id in fallback_models
+            or binding.get("fallback_policy") != ("CONFIGURED" if fallback_models else "NONE")):
+        raise ValueError("CODING_SUBAGENT_FALLBACK_BINDING_INVALID")
+    pinned["fallback_models"] = list(fallback_models)
     with brain_scope(pinned), response_language_scope(task.get("response_language") or "ja"):
         with _coding_task_traffic_scope(task_id):
             return runtime.model.generate(messages, model, **kwargs)
@@ -2778,7 +2788,7 @@ def decide_coding_subagent_proposal(task_id: str, proposal_id: str,
         effective_model = _coding_phase_model(
             phase, task_goal=str(task.get("original_goal") or ""),
             task_size=str((task.get("requirements") or {}).get("task_size") or ""))
-        current_binding = asdict(pin_subagent_model(
+        current_binding = model_binding_payload(pin_subagent_model(
             effective_model, brain_models.configuration(task.get("conversation_id"))))
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(409, "CODING_SUBAGENT_MODEL_UNAVAILABLE") from exc

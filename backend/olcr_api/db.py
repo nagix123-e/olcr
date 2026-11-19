@@ -209,7 +209,7 @@ SCHEMA += CODING_SUBAGENTS_SCHEMA
 
 _SUBAGENT_MODEL_BINDING_KEYS = frozenset({
     "requested_model", "model_id", "provider_id", "runtime_id", "model_revision",
-    "brain_mode", "selected_slot", "implementation_role", "fallback_policy",
+    "brain_mode", "selected_slot", "implementation_role", "fallback_models", "fallback_policy",
 })
 _SUBAGENT_GROUP_TRANSITIONS = {
     "AWAITING_USER_APPROVAL": {"CANCELLED", "INTERRUPTED"},
@@ -244,8 +244,17 @@ def _subagent_model_binding(value: Mapping[str, Any]) -> dict[str, Any]:
     revision = result["model_revision"]
     if revision is not None and (not isinstance(revision, str) or len(revision) > 256):
         raise ValueError("invalid subagent model binding")
-    if result["fallback_policy"] != "NONE":
-        raise ValueError("subagent model fallback is forbidden")
+    fallbacks = result["fallback_models"]
+    if (not isinstance(fallbacks, list) or len(fallbacks) > 16
+            or any(not isinstance(model, str) or not model or len(model) > 256
+                   or model != model.strip() or re.search(r"\s|[\x00-\x1f]", model)
+                   or not model.startswith(("api:", "mlx:", "ollama:")) for model in fallbacks)
+            or len(set(fallbacks)) != len(fallbacks)
+            or result["model_id"] in fallbacks):
+        raise ValueError("invalid configured subagent fallback sequence")
+    expected_policy = "CONFIGURED" if fallbacks else "NONE"
+    if result["fallback_policy"] != expected_policy:
+        raise ValueError("invalid subagent fallback policy")
     return result
 
 

@@ -86,7 +86,25 @@ class CodingSubagentModelBinding:
     brain_mode: str
     selected_slot: str
     implementation_role: str
+    fallback_models: tuple[str, ...] = ()
     fallback_policy: str = "NONE"
+
+    def __post_init__(self):
+        if not isinstance(self.fallback_models, (tuple, list)):
+            raise ValueError("invalid configured fallback sequence")
+        fallbacks = tuple(self.fallback_models)
+        if (len(fallbacks) > 16 or any(not isinstance(model, str) or not model
+                or len(model) > 256 or model != model.strip()
+                or re.search(r"\s|[\x00-\x1f]", model)
+                or not model.startswith(("api:", "mlx:", "ollama:"))
+                for model in fallbacks)
+                or len(set(fallbacks)) != len(fallbacks)
+                or self.model_id in fallbacks):
+            raise ValueError("invalid configured fallback sequence")
+        expected_policy = "CONFIGURED" if fallbacks else "NONE"
+        if self.fallback_policy != expected_policy:
+            raise ValueError("coding subagent fallback policy does not match its sequence")
+        object.__setattr__(self, "fallback_models", fallbacks)
 
 
 @dataclass(frozen=True)
@@ -454,7 +472,7 @@ def _model_id_from_phase_model(requested_model: str, configuration: Mapping[str,
 
 def pin_subagent_model(effective_phase_model: str,
                        brain_configuration: Mapping[str, Any]) -> CodingSubagentModelBinding:
-    """Resolve and freeze the implementation phase selection without fallbacks."""
+    """Resolve and freeze the implementation model and configured failover sequence."""
     model_id, provider_id, runtime_id = _model_id_from_phase_model(effective_phase_model, brain_configuration)
     mode = str(brain_configuration.get("mode"))
     implementation_role = (effective_phase_model.removeprefix("role:")
@@ -465,6 +483,16 @@ def pin_subagent_model(effective_phase_model: str,
         slot = "brain"
     else:
         slot = _BRAIN_ROLE_SLOTS[implementation_role]
+    raw_fallbacks = brain_configuration.get("fallback_models", [])
+    if not isinstance(raw_fallbacks, list) or len(raw_fallbacks) > 16:
+        raise ValueError("configured coding fallback sequence is invalid")
+    fallback_models = []
+    for candidate in raw_fallbacks:
+        if not isinstance(candidate, str) or candidate.startswith("role:"):
+            raise ValueError("configured coding fallback model is invalid")
+        fallback_id, _, _ = _model_id_from_phase_model(candidate, brain_configuration)
+        if fallback_id != model_id and fallback_id not in fallback_models:
+            fallback_models.append(fallback_id)
     return CodingSubagentModelBinding(
         requested_model=effective_phase_model,
         model_id=model_id,
@@ -474,7 +502,16 @@ def pin_subagent_model(effective_phase_model: str,
         brain_mode=mode,
         selected_slot=slot,
         implementation_role=implementation_role,
+        fallback_models=tuple(fallback_models),
+        fallback_policy="CONFIGURED" if fallback_models else "NONE",
     )
+
+
+def model_binding_payload(binding: CodingSubagentModelBinding) -> dict[str, Any]:
+    """Serialize the immutable model/fallback snapshot into JSON-safe primitives."""
+    result = asdict(binding)
+    result["fallback_models"] = list(binding.fallback_models)
+    return result
 
 
 def is_direct_user_delegation(evidence: UserDirectiveEvidence | None) -> bool:
@@ -521,7 +558,7 @@ def delegation_proposal_hash(assessment: DelegationAssessment,
         raise ValueError("selected workstreams are not independent")
     return _digest({
         "assessment_hash": assessment.assessment_hash,
-        "model_binding": asdict(model_binding),
+        "model_binding": model_binding_payload(model_binding),
         "role_ids": roles,
         "role_prompts": {role_id: ROLE_REGISTRY[role_id].prompt_version for role_id in roles},
         "workstreams": [asdict(item) for item in canonical],

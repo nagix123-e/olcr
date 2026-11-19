@@ -191,10 +191,18 @@ class CodingSubagentExecutor:
         binding = dict(requests[0].model_binding)
         if set(binding) != {"requested_model", "model_id", "provider_id", "runtime_id",
                             "model_revision", "brain_mode", "selected_slot",
-                            "implementation_role", "fallback_policy"}:
+                            "implementation_role", "fallback_models", "fallback_policy"}:
             raise ValueError("invalid pinned coding model")
-        if binding.get("fallback_policy") != "NONE":
-            raise ValueError("worker model fallback is forbidden")
+        fallbacks = binding.get("fallback_models")
+        if (not isinstance(fallbacks, list) or len(fallbacks) > 16
+                or any(not isinstance(model, str) or not model or len(model) > 256
+                       or model != model.strip() or re.search(r"\s|[\x00-\x1f]", model)
+                       or not model.startswith(("api:", "mlx:", "ollama:"))
+                       for model in fallbacks)
+                or len(set(fallbacks)) != len(fallbacks)
+                or binding.get("model_id") in fallbacks
+                or binding.get("fallback_policy") != ("CONFIGURED" if fallbacks else "NONE")):
+            raise ValueError("invalid configured worker fallback sequence")
         worker_ids: set[str] = set()
         for request in requests:
             if (request.task_id != task_id or request.plan_revision != revision
@@ -248,7 +256,7 @@ class CodingSubagentExecutor:
                 response = self.generate(
                     self._messages(request), binding["requested_model"], stream=False,
                     think=False, format=_output_schema(), max_tokens=MAX_WORKER_OUTPUT_TOKENS,
-                    _fallback_allowed=False, force_no_thinking=True,
+                    _fallback_allowed=bool(binding.get("fallback_models")), force_no_thinking=True,
                     _coding_subagent_binding=dict(binding),
                     _coding_subagent_task_id=request.task_id,
                 )

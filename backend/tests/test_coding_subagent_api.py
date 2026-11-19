@@ -12,7 +12,7 @@ with patch.dict(os.environ, {"OLCR_DB_PATH": str(Path(_import_profile.name) / "i
     import olcr_api.app as api
 
 from olcr_api.coding_subagents import (assess_delegation, delegation_proposal_hash,
-    pin_subagent_model, workstreams_for_assignments)
+    model_binding_payload, pin_subagent_model, workstreams_for_assignments)
 from olcr_api.config import CODING_SUBAGENTS_WARNING_VERSION, Settings
 from olcr_api.db import Database
 
@@ -77,7 +77,8 @@ class CodingSubagentApiTests(unittest.TestCase):
         self.client = TestClient(api.app)
         self.assessment = assess_delegation(self.plan, task_id="task-1", plan_revision=4,
                                             setting_enabled=True)
-        self.binding = asdict(pin_subagent_model("role:long_implementation", self.configuration))
+        self.binding = model_binding_payload(pin_subagent_model(
+            "role:long_implementation", self.configuration))
         self.workers = [
             {"worker_id": "worker-1", "phase_id": "api", "role_id": "repo_explorer",
              "prompt_version": "2026-11-v1", "assigned_paths": ["backend/api.py"]},
@@ -152,6 +153,13 @@ class CodingSubagentApiTests(unittest.TestCase):
         self.assertEqual("AWAITING_USER_APPROVAL",
                          self.db.get_coding_subagent_proposal("proposal-1", "task-1")["status"])
 
+    def test_configured_fallback_change_invalidates_approval(self):
+        changed = {**self.configuration, "fallback_models": ["api:google:backup-coder"]}
+        with patch.object(api.brain_models, "configuration", return_value=changed):
+            response = self.post_decision()
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("CODING_SUBAGENT_MODEL_CHANGED", response.json()["detail"])
+
     def test_stale_plan_cannot_be_approved(self):
         self.db.update_coding_task("task-1", plan_revision=5)
         response = self.post_decision()
@@ -194,6 +202,28 @@ class CodingSubagentApiTests(unittest.TestCase):
         self.assertFalse(kwargs["_fallback_allowed"])
         self.assertNotIn("_coding_subagent_binding", kwargs)
         self.assertNotIn("_coding_subagent_task_id", kwargs)
+
+    def test_worker_runtime_adapter_restores_only_approval_snapshot_fallbacks(self):
+        from olcr_api.brain_models import active_configuration
+        fallback_binding = {**self.binding, "fallback_models": ["api:google:backup-coder"],
+                            "fallback_policy": "CONFIGURED"}
+        with patch.object(api.runtime.model, "generate",
+                side_effect=lambda *args, **kwargs: active_configuration()) as generate:
+            active = api._generate_coding_subagent([], "role:long_implementation",
+                stream=False, _fallback_allowed=True, _coding_subagent_binding=fallback_binding,
+                _coding_subagent_task_id="task-1")
+        self.assertEqual(["api:google:backup-coder"], active["fallback_models"])
+        self.assertTrue(generate.call_args.kwargs["_fallback_allowed"])
+
+    def test_worker_runtime_adapter_rejects_inconsistent_fallback_snapshot(self):
+        fallback_binding = {**self.binding, "fallback_models": ["api:google:backup-coder"],
+                            "fallback_policy": "NONE"}
+        with patch.object(api.runtime.model, "generate") as generate:
+            with self.assertRaisesRegex(ValueError, "FALLBACK_BINDING_INVALID"):
+                api._generate_coding_subagent([], "role:long_implementation",
+                    stream=False, _coding_subagent_binding=fallback_binding,
+                    _coding_subagent_task_id="task-1")
+        generate.assert_not_called()
 
     def test_archiving_a_running_task_drains_subagent_mutations_after_cancellation(self):
         self.db.update_coding_task("task-1", status="RUNNING")

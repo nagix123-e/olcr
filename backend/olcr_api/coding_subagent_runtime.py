@@ -13,7 +13,7 @@ from .coding_subagent_executor import (
 from .coding_subagents import (
     CodingSubagentModelBinding, UserDirectiveEvidence,
     assess_delegation, authorize_delegation, delegation_proposal_hash,
-    pin_subagent_model, select_independent_workstreams,
+    model_binding_payload, pin_subagent_model, select_independent_workstreams,
 )
 from .task_workspace import WorkspaceError
 
@@ -137,7 +137,7 @@ class CodingSubagentCoordinator:
         if len(selected) < 2:
             return CodingSubagentCoordination("SKIPPED", "NO_INDEPENDENT_WORKER_GROUP")
         try:
-            binding = asdict(pin_subagent_model(effective_model, brain_configuration))
+            binding = model_binding_payload(pin_subagent_model(effective_model, brain_configuration))
         except (KeyError, TypeError, ValueError):
             return CodingSubagentCoordination("SKIPPED", "CODING_MODEL_UNAVAILABLE")
         timestamp = time.time() if now is None else float(now)

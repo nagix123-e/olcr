@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from olcr_api.coding_subagents import (assess_delegation, delegation_proposal_hash,
-    pin_subagent_model, workstreams_for_assignments)
+    model_binding_payload, pin_subagent_model, workstreams_for_assignments)
 from olcr_api.db import Database
 
 
@@ -63,7 +63,7 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
              "prompt_version": "2026-11-v1", "assigned_paths": ["database/agents.sql"]},
         ]
         selected = workstreams_for_assignments(self.assessment, workers)
-        current_binding = binding if isinstance(binding, dict) else asdict(binding or self.binding)
+        current_binding = binding if isinstance(binding, dict) else model_binding_payload(binding or self.binding)
         proposal_hash = delegation_proposal_hash(self.assessment,
             self.binding,
             ("repo_explorer", "implementation_worker", "test_reviewer"), selected)
@@ -90,7 +90,7 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
             plan_revision=4,
             plan_hash=self.assessment.plan_hash,
             proposal_hash=(proposal or self.create_proposal())["proposal_hash"],
-            model_binding=asdict(binding or self.binding),
+            model_binding=model_binding_payload(binding or self.binding),
             now=20.0,
             setting_enabled=True,
         )
@@ -183,7 +183,7 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
                 "worker-1", expected_status="CANCELLED", new_status="QUEUED", now=30.0)
 
     def test_secret_model_fields_and_unbounded_usage_are_rejected(self):
-        model_with_secret = {**asdict(self.binding), "api_key": "secret-do-not-store"}
+        model_with_secret = {**model_binding_payload(self.binding), "api_key": "secret-do-not-store"}
         with self.assertRaisesRegex(ValueError, "model binding"):
             self.create_proposal(binding=model_with_secret)
 

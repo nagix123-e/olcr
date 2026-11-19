@@ -17,7 +17,7 @@
 - A normal Coding Task plan approval, a model output, or an agent output never counts as user authorization.
 - Task size gate for v1: at least three substantive implementation workstreams across at least two components, and at least two dependency-independent groups with disjoint write scopes.
 - Policy interpretation: a qualifying plan must contain at least two distinct pairs of implementation phases whose transitive dependencies do not connect the pair and whose host-assigned file scopes do not overlap. Phase-only analysis, test-only phases, verification-only phases, shared paths, missing ownership, or unsupported dependency graphs fail closed.
-- Every worker inherits the active phase's resolved Coding Task model/provider/runtime. Unified Brain mode resolves to the one unified selection. No model/provider fallback or worker-specific override is allowed.
+- Every worker starts with the active phase's resolved Coding Task model/provider/runtime. Unified Brain mode resolves to the one unified selection. Snapshot the configured fallback sequence into the task approval; only that sequence may be used after primary failure. Workers cannot add or edit fallback choices.
 - Maximum three workers in a group; no nested spawning in v1. The host keeps a separate bounded worker execution lane; non-agent model calls keep the existing global limit.
 - Workers cannot publish, access release credentials, commit, or execute arbitrary shell/URL operations. They return typed, scope-bound proposals; OLCR validates and applies changes serially.
 - Turning the setting on requires a modal acknowledgement of the local-model warning. The warning must explicitly advise against local models and explain coordination/latency/resource risks.
@@ -99,7 +99,7 @@
 - [x] **Step 1: Write policy tests for the hard gate**
   Include `test_setting_off_never_eligible`, `test_small_task_rejected_even_when_user_directs_agents`, `test_dependent_workstreams_rejected`, `test_three_independent_scoped_workstreams_are_heavy`, `test_model_plan_text_never_counts_as_user_authorization`, `test_plan_approval_is_not_agent_approval`, `test_directive_must_come_from_user_message`, and `test_replan_invalidates_task_approval`.
 - [x] **Step 2: Write model-pinning tests**
-  `test_workers_use_phase_coding_model_not_planner_model`, `test_unified_brain_selection_pins_same_model_for_all_roles`, `test_split_mode_pins_the_current_implementation_role_model`, and `test_worker_failure_does_not_fallback_to_another_model`.
+  `test_workers_use_phase_coding_model_not_planner_model`, `test_unified_brain_selection_pins_same_model_for_all_roles`, `test_split_mode_pins_the_current_implementation_role_model`, and `test_subagent_binding_snapshots_configured_fallbacks_in_order`.
 - [x] **Step 3: Implement the fixed role registry**
   Define only `repo_explorer`, `implementation_worker`, and `test_reviewer` for v1. Store immutable developer instructions and prompt versions server-side. Task 5 owns the worker request schema that rejects unknown roles, user-supplied role prompts, nested-spawn options, and model overrides.
 - [x] **Step 4: Implement deterministic assessment and authorization types**
@@ -154,7 +154,7 @@
 - Consumes: registered immutable roles, approved authorization, current Coding Task model binding, and existing typed workspace mutation pipeline.
 
 - [x] **Step 1: Write fake-executor tests for bounded orchestration**
-  Cover maximum three workers, per-runtime concurrency, local model serialized capacity, remote worker capacity, cancellation while queued/running, timeout, partial result aggregation, no nested spawn, and fallback to the same parent model.
+  Cover maximum three workers, per-runtime concurrency, local model serialized capacity, remote worker capacity, cancellation while queued/running, timeout, partial result aggregation, no nested spawn, and use of only the snapshotted configured fallback sequence.
 - [x] **Step 2: Write workspace-scope and conflict tests**
   `test_worker_proposal_outside_assigned_paths_is_rejected`, `test_stale_preimage_is_rejected`, `test_overlapping_worker_proposals_are_serialized_or_blocked`, `test_worker_cannot_invoke_release_publish`, and `test_worker_never_commits_changes`.
 - [x] **Step 3: Implement provider/runtime-bound execution**
