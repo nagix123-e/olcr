@@ -189,7 +189,28 @@ def _digest(value: Any) -> str:
 
 
 def _plan_hash(plan: Mapping[str, Any]) -> str:
-    return _digest(plan)
+    stable = {key: value for key, value in plan.items() if key != "tasks"}
+    phases = stable.get("phases")
+    if isinstance(phases, list):
+        stable["phases"] = [
+            {key: value for key, value in phase.items() if key != "status"}
+            if isinstance(phase, Mapping) else phase
+            for phase in phases
+        ]
+    return _digest(stable)
+
+
+def plan_content_hash(plan: Mapping[str, Any]) -> str:
+    """Hash the delegation-relevant plan while excluding runtime status cursors."""
+    return _plan_hash(plan)
+
+
+def _subagent_scopes_for_assessment(assessment: DelegationAssessment) -> list[dict[str, Any]]:
+    """Return canonical host-derived per-phase file scopes for authorization records."""
+    return [
+        {"phase_id": stream.phase_id, "assigned_paths": list(stream.assigned_paths)}
+        for stream in assessment.workstreams
+    ]
 
 
 def _normalized_plan_path(raw: Any) -> str | None:

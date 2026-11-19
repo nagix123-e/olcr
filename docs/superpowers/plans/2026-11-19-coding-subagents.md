@@ -124,15 +124,15 @@
 - Produces: typed approval API actions for `APPROVE_DELEGATION` and `DECLINE_DELEGATION`; approval is one-shot and bound to the assessment hash.
 - Consumes: existing task events, user-facing plan approval, cancellation, and resume APIs without conflating their authorization semantics.
 
-- [ ] **Step 1: Write failing persistence and approval tests**
+- [x] **Step 1: Write failing persistence and approval tests**
   Cover valid state transitions, duplicate spawn/idempotency, stale approval rejection, task-plan approval separation, replan invalidation, restart state, no secret persistence, and no agent creation on a stale or declined approval.
-- [ ] **Step 2: Implement additive SQLite records and transition validation**
+- [x] **Step 2: Implement additive SQLite records and transition validation**
   Keep each worker's lifecycle outside `subtask_progress`, which assumes one running phase. Persist states `PROPOSED`, `AWAITING_USER_APPROVAL`, `AUTHORIZED`, `QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `TIMED_OUT`, and `INTERRUPTED` with a strict transition map.
-- [ ] **Step 3: Add host endpoints and event records**
+- [x] **Step 3: Add host endpoints and event records**
   Approve/decline endpoints must validate task owner, current plan revision/hash, model binding, setting state, heavy assessment, and pending proposal. Only an actual user action changes authorization to approved. A prompt saying “approve” in model output has no effect.
-- [ ] **Step 4: Implement recovery and cancellation semantics**
+- [x] **Step 4: Implement recovery and cancellation semantics**
   Parent pause/cancel cancels queued and active children. On process restart, unfinished workers become interrupted and are inspected/recovered without replaying accepted file mutations. Changing the global setting off blocks new workers and cancels active worker generations before continuing the parent in single-agent mode.
-- [ ] **Step 5: Run persistence/API tests**
+- [x] **Step 5: Run persistence/API tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_workflow.py backend/tests/test_coding_subagent_api.py -q`
   Expected: PASS with no external providers.
 - [ ] **Step 6: Commit persistence and authorization lifecycle**

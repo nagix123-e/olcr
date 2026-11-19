@@ -10,6 +10,7 @@ from olcr_api.coding_subagents import (
     delegation_proposal_hash,
     is_direct_user_delegation,
     pin_subagent_model,
+    plan_content_hash,
     role_for_id,
 )
 
@@ -64,6 +65,13 @@ class CodingSubagentPolicyTests(unittest.TestCase):
                                    setting_enabled=True)
         self.assertFalse(result.eligible)
         self.assertEqual("NO_INDEPENDENT_SCOPES", result.reason)
+
+    def test_runtime_phase_status_does_not_change_delegation_plan_hash(self):
+        plan = heavy_plan()
+        before = plan_content_hash(plan)
+        plan["phases"][0]["status"] = "running"
+        plan["tasks"] = [{"task_id": "api-task", "retry_state": {"attempt": 2}}]
+        self.assertEqual(before, plan_content_hash(plan))
 
     def test_three_independent_scoped_workstreams_are_heavy(self):
         result = assess_delegation(heavy_plan(), task_id="task-1", plan_revision=4,

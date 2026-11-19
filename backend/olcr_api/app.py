@@ -11,6 +11,7 @@ import asyncio
 import atexit
 import csv
 import copy
+from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import inspect
@@ -428,6 +429,12 @@ class CodingTaskUpdate(BaseModel):
     archived: Optional[bool] = None
     resume: bool = False
 
+class CodingSubagentDecisionInput(BaseModel):
+    action: Literal["APPROVE_DELEGATION", "DECLINE_DELEGATION"]
+    plan_revision: StrictInt = Field(ge=0)
+    plan_hash: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+    proposal_hash: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+
 class CodingConsoleUpdate(BaseModel):
     hidden: bool
 
@@ -578,6 +585,7 @@ skills = SkillManager(_skill_project_root,
                       skills_cli_root=Path.home() / ".agents" / "skills")
 context_migration = db.migrate_legacy_conversation_project_contexts()
 db.recover_interrupted_coding_tasks()
+db.interrupt_unfinished_coding_subagents(time.time())
 task_workspaces.service.recover_steering()
 _runtime_setting_names=frozenset(Settings.__dataclass_fields__)
 def _load_persisted_runtime_settings():
@@ -2513,6 +2521,7 @@ def update_coding_task(task_id: str, value: CodingTaskUpdate):
         if task['status'] not in {'RUNNING','PLANNING','FINAL_REPORTING','QWEN_REPLANNING'}:
             db.dequeue_coding_task(task_id)
         result=db.update_coding_task(task_id,pause_requested=True,archived=updates.get("archived",task.get("archived")),recovery_action="RECOVERY_REVIEW",recovery_reason="PAUSED")
+        db.cancel_coding_subagents_for_task(task_id, time.time(), reason="PARENT_PAUSED")
         cancel_coding_generation(task_id)
         if result and result['status'] == 'RESUMABLE':
             _record_coding_stop(task_id, 'PAUSED', True)
@@ -2520,6 +2529,9 @@ def update_coding_task(task_id: str, value: CodingTaskUpdate):
     if value.archived is True and task["status"] == "QUEUED":
         db.dequeue_coding_task(task_id)
     result=db.update_coding_task(task_id,**updates)
+    if updates.get("pause_requested") is True:
+        db.cancel_coding_subagents_for_task(task_id, time.time(), reason="PARENT_PAUSED")
+        cancel_coding_generation(task_id)
     if value.pause_requested is False: _coding_scheduler_wake.set()
     return result
 
@@ -2538,7 +2550,85 @@ def get_coding_task(task_id: str):
     task=db.coding_task(task_id)
     if not task: raise HTTPException(404,"coding task not found")
     task["queue_position"]=db.coding_task_queue_position(task_id)
+    task["subagent_proposals"]=[_public_coding_subagent_proposal(item)
+                                  for item in db.coding_subagent_proposals(task_id)]
     return task
+
+
+def _public_coding_subagent_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded lifecycle evidence; never expose authorization internals or raw output."""
+    return {
+        key: proposal.get(key) for key in (
+            "id", "task_id", "phase_id", "plan_revision", "plan_hash", "assessment_hash",
+            "proposal_hash", "model_binding", "role_ids", "status", "created_at", "updated_at",
+        )
+    } | {
+        "workers": [{key: worker.get(key) for key in (
+            "id", "phase_id", "role_id", "prompt_version", "assigned_paths", "status",
+            "safe_summary", "usage", "error_category", "created_at", "updated_at",
+            "queued_at", "started_at", "finished_at",
+        )} for worker in proposal.get("workers", [])]
+    }
+
+
+@app.post("/api/coding-tasks/{task_id}/subagent-proposals/{proposal_id}/decision")
+def decide_coding_subagent_proposal(task_id: str, proposal_id: str,
+                                    value: CodingSubagentDecisionInput):
+    if not settings.coding_subagents_enabled:
+        raise HTTPException(409, "CODING_SUBAGENTS_DISABLED")
+    task = db.coding_task(task_id)
+    if not task:
+        raise HTTPException(404, "coding task not found")
+    proposal = db.get_coding_subagent_proposal(proposal_id, task_id)
+    if not proposal:
+        raise HTTPException(404, "coding subagent proposal not found")
+    if (value.plan_revision != proposal["plan_revision"]
+            or value.plan_hash != proposal["plan_hash"]
+            or value.proposal_hash != proposal["proposal_hash"]):
+        raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_STALE")
+    if value.action == "DECLINE_DELEGATION":
+        try:
+            declined = db.decline_coding_subagent_proposal(
+                proposal_id, task_id=task_id, plan_revision=value.plan_revision,
+                plan_hash=value.plan_hash, proposal_hash=value.proposal_hash,
+                now=time.time(), setting_enabled=settings.coding_subagents_enabled)
+        except ValueError as exc:
+            raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_STALE") from exc
+        return _public_coding_subagent_proposal(declined)
+
+    if proposal.get("status") != "AWAITING_USER_APPROVAL":
+        raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_ALREADY_CONSUMED")
+    plan = task.get("active_plan") if isinstance(task.get("active_plan"), dict) else task.get("plan")
+    phases = plan.get("phases") if isinstance(plan, dict) else None
+    phase = next((item for item in phases or []
+                  if isinstance(item, dict) and str(item.get("id")) == proposal.get("phase_id")), None)
+    if phase is None:
+        raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_STALE")
+    from .coding_subagents import assess_delegation, pin_subagent_model
+    assessment = assess_delegation(plan, task_id=task_id, plan_revision=value.plan_revision,
+                                   setting_enabled=settings.coding_subagents_enabled)
+    if (not assessment.eligible or assessment.plan_hash != value.plan_hash
+            or assessment.assessment_hash != proposal.get("assessment_hash")):
+        raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_STALE")
+    try:
+        effective_model = _coding_phase_model(
+            phase, task_goal=str(task.get("original_goal") or ""),
+            task_size=str((task.get("requirements") or {}).get("task_size") or ""))
+        current_binding = asdict(pin_subagent_model(
+            effective_model, brain_models.configuration(task.get("conversation_id"))))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(409, "CODING_SUBAGENT_MODEL_UNAVAILABLE") from exc
+    if current_binding != proposal.get("model_binding"):
+        raise HTTPException(409, "CODING_SUBAGENT_MODEL_CHANGED")
+    try:
+        approved = db.approve_coding_subagent_proposal(
+            proposal_id, task_id=task_id, plan_revision=value.plan_revision,
+            plan_hash=value.plan_hash, proposal_hash=value.proposal_hash,
+            model_binding=current_binding, now=time.time(),
+            setting_enabled=settings.coding_subagents_enabled)
+    except ValueError as exc:
+        raise HTTPException(409, "CODING_SUBAGENT_PROPOSAL_STALE") from exc
+    return _public_coding_subagent_proposal(approved)
 
 def _record_coding_stop(task_id: str, reason: str, intended: bool) -> str:
     task = db.coding_task(task_id)
@@ -17678,6 +17768,8 @@ def patch_capability_settings(value: CapabilitySettingsPatch):
             candidate = settings.with_overrides(updates)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if settings.coding_subagents_enabled and not candidate.coding_subagents_enabled:
+            db.cancel_all_coding_subagents(time.time(), reason="SETTING_DISABLED")
         for key, item in updates.items():
             db.save_setting(key, item, time.time())
         if set(updates) == {'convert_enabled'}:

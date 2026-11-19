@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 
 if TYPE_CHECKING:
     from .provider_research import ProviderEvidence
@@ -158,6 +158,113 @@ CREATE INDEX IF NOT EXISTS coding_release_operations_task
 """
 
 SCHEMA += CODING_RELEASE_OPERATIONS_SCHEMA
+
+CODING_SUBAGENTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS coding_subagent_proposals(
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE,
+    phase_id TEXT NOT NULL,
+    plan_revision INTEGER NOT NULL,
+    plan_hash TEXT NOT NULL,
+    assessment_hash TEXT NOT NULL,
+    proposal_hash TEXT NOT NULL,
+    model_binding_json TEXT NOT NULL,
+    role_ids_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('PROPOSED','AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','DECLINED','TIMED_OUT','INTERRUPTED')),
+    authorization_json TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    UNIQUE(task_id,plan_revision,proposal_hash)
+);
+CREATE INDEX IF NOT EXISTS coding_subagent_proposals_task
+    ON coding_subagent_proposals(task_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS coding_subagent_runs(
+    id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL REFERENCES coding_subagent_proposals(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE,
+    phase_id TEXT NOT NULL,
+    plan_revision INTEGER NOT NULL,
+    role_id TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    model_binding_json TEXT NOT NULL,
+    assigned_paths_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','TIMED_OUT','INTERRUPTED')),
+    safe_summary TEXT,
+    usage_json TEXT NOT NULL DEFAULT '{}',
+    error_category TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    queued_at REAL,
+    started_at REAL,
+    finished_at REAL,
+    UNIQUE(proposal_id,id)
+);
+CREATE INDEX IF NOT EXISTS coding_subagent_runs_task
+    ON coding_subagent_runs(task_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS coding_subagent_runs_proposal
+    ON coding_subagent_runs(proposal_id,created_at);
+"""
+
+SCHEMA += CODING_SUBAGENTS_SCHEMA
+
+_SUBAGENT_MODEL_BINDING_KEYS = frozenset({
+    "requested_model", "model_id", "provider_id", "runtime_id", "model_revision",
+    "brain_mode", "selected_slot", "implementation_role", "fallback_policy",
+})
+_SUBAGENT_GROUP_TRANSITIONS = {
+    "AWAITING_USER_APPROVAL": {"CANCELLED", "INTERRUPTED"},
+    "AUTHORIZED": {"QUEUED", "CANCELLED", "INTERRUPTED"},
+    "QUEUED": {"RUNNING", "CANCELLED", "TIMED_OUT", "INTERRUPTED"},
+    "RUNNING": {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "INTERRUPTED"},
+}
+_SUBAGENT_RUN_TRANSITIONS = {
+    "AWAITING_USER_APPROVAL": {"CANCELLED", "INTERRUPTED"},
+    "AUTHORIZED": {"QUEUED", "CANCELLED", "INTERRUPTED"},
+    "QUEUED": {"RUNNING", "CANCELLED", "TIMED_OUT", "INTERRUPTED"},
+    "RUNNING": {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "INTERRUPTED"},
+}
+_SUBAGENT_ERROR_CATEGORIES = frozenset({
+    "MODEL_ERROR", "TIMEOUT", "CANCELLED", "INVALID_RESULT", "SCOPE_REJECTED",
+    "CONFLICT", "PROVIDER_UNAVAILABLE", "INTERRUPTED", "UNKNOWN",
+})
+
+
+def _subagent_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _subagent_model_binding(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _SUBAGENT_MODEL_BINDING_KEYS:
+        raise ValueError("invalid subagent model binding")
+    result = dict(value)
+    for key in ("requested_model", "model_id", "provider_id", "runtime_id", "brain_mode",
+                "selected_slot", "implementation_role", "fallback_policy"):
+        if not isinstance(result[key], str) or not result[key] or len(result[key]) > 256:
+            raise ValueError("invalid subagent model binding")
+    revision = result["model_revision"]
+    if revision is not None and (not isinstance(revision, str) or len(revision) > 256):
+        raise ValueError("invalid subagent model binding")
+    if result["fallback_policy"] != "NONE":
+        raise ValueError("subagent model fallback is forbidden")
+    return result
+
+
+def _subagent_path(path: Any) -> str:
+    from pathlib import PurePosixPath
+    if (not isinstance(path, str) or not path or path.endswith("/") or "\\" in path
+            or "\x00" in path):
+        raise ValueError("invalid subagent file scope")
+    parsed = PurePosixPath(path)
+    if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+        raise ValueError("invalid subagent file scope")
+    normalized = parsed.as_posix()
+    if normalized != path:
+        raise ValueError("invalid subagent file scope")
+    return normalized
+
+
+def _subagent_digest_matches(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 class ReleaseOperationConflict(ValueError):
@@ -1096,6 +1203,493 @@ class Database:
     def coding_tasks(self, conversation_id: str) -> list[dict[str, Any]]:
         with self.connect() as db: ids=[x[0] for x in db.execute("SELECT id FROM coding_tasks WHERE conversation_id=? ORDER BY updated_at DESC",(conversation_id,))]
         return [x for task_id in ids if (x:=self.coding_task(task_id))]
+
+    @staticmethod
+    def _decode_coding_subagent_run(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        value = dict(row)
+        for column, key, default in (
+            ("model_binding_json", "model_binding", "{}"),
+            ("assigned_paths_json", "assigned_paths", "[]"),
+            ("usage_json", "usage", "{}"),
+        ):
+            raw = value.pop(column, default)
+            try:
+                value[key] = json.loads(raw or default)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                value[key] = {} if default == "{}" else []
+        return value
+
+    def _decode_coding_subagent_proposal(self, db: sqlite3.Connection,
+                                         row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        value = dict(row)
+        for column, key, default in (
+            ("model_binding_json", "model_binding", "{}"),
+            ("role_ids_json", "role_ids", "[]"),
+            ("authorization_json", "authorization", "null"),
+        ):
+            raw = value.pop(column, default)
+            try:
+                value[key] = json.loads(raw or default)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                value[key] = None if key == "authorization" else {} if default == "{}" else []
+        workers = db.execute(
+            "SELECT * FROM coding_subagent_runs WHERE proposal_id=? ORDER BY created_at,id",
+            (value["id"],),
+        ).fetchall()
+        value["workers"] = [self._decode_coding_subagent_run(item) for item in workers]
+        return value
+
+    @staticmethod
+    def _record_coding_subagent_event(db: sqlite3.Connection, task_id: str,
+                                      kind: str, data: dict[str, Any], now: float) -> None:
+        import uuid
+        db.execute("INSERT INTO coding_task_events VALUES(?,?,?,?,?)",
+                   (str(uuid.uuid4()), task_id, kind, _subagent_json(data), float(now)))
+
+    @staticmethod
+    def _current_coding_subagent_plan(db: sqlite3.Connection, task_id: str,
+                                      plan_revision: int, plan_hash: str) -> tuple[sqlite3.Row, dict[str, Any], Any]:
+        from .coding_subagents import assess_delegation, plan_content_hash
+        task = db.execute("SELECT * FROM coding_tasks WHERE id=?", (task_id,)).fetchone()
+        if task is None:
+            raise ValueError("coding task not found")
+        if int(task["plan_revision"]) != plan_revision:
+            raise ValueError("stale coding subagent plan revision")
+        raw_plan = task["active_plan_json"] or task["plan_json"] or "null"
+        try:
+            plan = json.loads(raw_plan)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            plan = None
+        if not isinstance(plan, dict) or plan_content_hash(plan) != plan_hash:
+            raise ValueError("stale coding subagent plan hash")
+        assessment = assess_delegation(plan, task_id=task_id, plan_revision=plan_revision,
+                                       setting_enabled=True)
+        if not assessment.eligible:
+            raise ValueError("coding subagent task is no longer eligible")
+        return task, plan, assessment
+
+    @staticmethod
+    def _validate_coding_subagent_assignments(plan: Mapping[str, Any],
+                                               role_ids: list[str], workers: list[dict[str, Any]],
+                                               model_binding: dict[str, Any]) -> list[dict[str, Any]]:
+        from .coding_subagents import MAX_CODING_SUBAGENTS, ROLE_REGISTRY, _normalized_plan_path
+        if not isinstance(role_ids, list) or not role_ids or len(role_ids) > MAX_CODING_SUBAGENTS:
+            raise ValueError("invalid coding subagent role set")
+        if any(not isinstance(role_id, str) or role_id not in ROLE_REGISTRY for role_id in role_ids):
+            raise ValueError("unknown coding subagent role")
+        if len(set(role_ids)) != len(role_ids):
+            raise ValueError("duplicate coding subagent role")
+        if not isinstance(workers, list) or not workers or len(workers) > MAX_CODING_SUBAGENTS:
+            raise ValueError("invalid coding subagent worker set")
+        phases = {str(row.get("id")): row for row in plan.get("phases", []) if isinstance(row, Mapping)}
+        scopes: dict[str, set[str]] = {}
+        for entry in plan.get("file_manifest") or []:
+            if not isinstance(entry, Mapping):
+                continue
+            path = _normalized_plan_path(entry.get("path"))
+            owner = entry.get("owner_phase")
+            if path and isinstance(owner, str):
+                scopes.setdefault(owner, set()).add(path)
+        normalized_workers: list[dict[str, Any]] = []
+        worker_ids: set[str] = set()
+        for worker in workers:
+            if not isinstance(worker, Mapping) or set(worker) != {
+                "worker_id", "phase_id", "role_id", "prompt_version", "assigned_paths"
+            }:
+                raise ValueError("invalid coding subagent worker record")
+            worker_id = worker.get("worker_id")
+            phase_id = worker.get("phase_id")
+            role_id = worker.get("role_id")
+            role = ROLE_REGISTRY.get(role_id) if isinstance(role_id, str) else None
+            if (not isinstance(worker_id, str) or not worker_id or len(worker_id) > 120
+                    or worker_id in worker_ids or not isinstance(phase_id, str) or phase_id not in phases
+                    or role is None or role_id not in role_ids
+                    or worker.get("prompt_version") != role.prompt_version):
+                raise ValueError("invalid coding subagent worker identity")
+            raw_paths = worker.get("assigned_paths")
+            if not isinstance(raw_paths, list) or not raw_paths or len(raw_paths) > 64:
+                raise ValueError("invalid coding subagent file scope")
+            paths = sorted({_subagent_path(item) for item in raw_paths})
+            if not set(paths).issubset(scopes.get(phase_id, set())):
+                raise ValueError("coding subagent file scope exceeds approved plan")
+            worker_ids.add(worker_id)
+            normalized_workers.append({
+                "worker_id": worker_id, "phase_id": phase_id, "role_id": role_id,
+                "prompt_version": role.prompt_version, "assigned_paths": paths,
+            })
+        return normalized_workers
+
+    def create_coding_subagent_proposal(self, proposal_id: str, *, task_id: str, phase_id: str,
+                                        plan_revision: int, plan_hash: str,
+                                        assessment_hash: str, proposal_hash: str,
+                                        model_binding: dict[str, Any], role_ids: list[str],
+                                        workers: list[dict[str, Any]], now: float,
+                                        setting_enabled: bool,
+                                        authorization: dict[str, Any] | None = None) -> dict[str, Any]:
+        from .coding_subagents import UserDirectiveEvidence, _subagent_scopes_for_assessment, is_direct_user_delegation
+        if type(setting_enabled) is not bool or not setting_enabled:
+            raise ValueError("coding subagents are disabled")
+        if (not isinstance(proposal_id, str) or not proposal_id or len(proposal_id) > 120
+                or not isinstance(task_id, str) or not task_id or len(task_id) > 120
+                or not isinstance(phase_id, str) or len(phase_id) > 120
+                or type(plan_revision) is not int or plan_revision < 0
+                or not all(_subagent_digest_matches(value) for value in
+                           (plan_hash, assessment_hash, proposal_hash))):
+            raise ValueError("invalid coding subagent proposal identity")
+        binding = _subagent_model_binding(model_binding)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task, plan, assessment = self._current_coding_subagent_plan(
+                db, task_id, plan_revision, plan_hash)
+            if assessment.assessment_hash != assessment_hash:
+                raise ValueError("stale coding subagent assessment")
+            if phase_id not in {str(row.get("id")) for row in plan.get("phases", []) if isinstance(row, Mapping)}:
+                raise ValueError("coding subagent phase is not in the current plan")
+            normalized_workers = self._validate_coding_subagent_assignments(
+                plan, role_ids, workers, binding)
+            roles = sorted(role_ids)
+            binding_json = _subagent_json(binding)
+            roles_json = _subagent_json(roles)
+            authorization_json = None
+            status = "AWAITING_USER_APPROVAL"
+            if authorization is not None:
+                expected_keys = {"task_id", "source", "source_id", "plan_revision", "plan_hash",
+                                 "proposal_hash", "model_binding", "role_ids", "workstream_scopes"}
+                if (not isinstance(authorization, Mapping) or set(authorization) != expected_keys
+                        or authorization.get("task_id") != task_id
+                        or authorization.get("source") != "USER_DIRECTIVE"
+                        or authorization.get("plan_revision") != plan_revision
+                        or authorization.get("plan_hash") != plan_hash
+                        or authorization.get("proposal_hash") != proposal_hash
+                        or _subagent_json(authorization.get("model_binding")) != binding_json
+                        or sorted(authorization.get("role_ids") or []) != roles
+                        or authorization.get("workstream_scopes") != _subagent_scopes_for_assessment(assessment)):
+                    raise ValueError("invalid coding subagent authorization")
+                source_id = authorization.get("source_id")
+                message = db.execute(
+                    "SELECT role,conversation_id,content FROM messages WHERE id=?",
+                    (source_id,),
+                ).fetchone()
+                if (not isinstance(source_id, str) or message is None or message["role"] != "user"
+                        or message["conversation_id"] != task["conversation_id"]
+                        or not is_direct_user_delegation(UserDirectiveEvidence(
+                            source_id, message["role"], message["content"]))):
+                    raise ValueError("delegation directive is not from the task's user message")
+                authorization_json = _subagent_json({
+                    "task_id": task_id, "source": "USER_DIRECTIVE", "source_id": source_id,
+                    "plan_revision": plan_revision, "plan_hash": plan_hash,
+                    "proposal_hash": proposal_hash, "model_binding": binding,
+                    "role_ids": roles,
+                    "workstream_scopes": authorization.get("workstream_scopes"),
+                })
+                status = "AUTHORIZED"
+
+            existing = db.execute(
+                "SELECT * FROM coding_subagent_proposals WHERE task_id=? AND plan_revision=? AND proposal_hash=?",
+                (task_id, plan_revision, proposal_hash),
+            ).fetchone()
+            if existing is not None:
+                prior = self._decode_coding_subagent_proposal(db, existing)
+                prior_workers = [{key: row[key] for key in
+                                  ("id", "phase_id", "role_id", "prompt_version", "assigned_paths")}
+                                 for row in prior["workers"]]
+                expected_workers = [{"id": item["worker_id"], "phase_id": item["phase_id"],
+                                     "role_id": item["role_id"], "prompt_version": item["prompt_version"],
+                                     "assigned_paths": item["assigned_paths"]}
+                                    for item in normalized_workers]
+                if (prior["model_binding"] != binding or prior["role_ids"] != roles
+                        or prior_workers != expected_workers):
+                    raise ValueError("coding subagent idempotency key was reused for different work")
+                return prior
+
+            db.execute("""INSERT INTO coding_subagent_proposals(
+                id,task_id,phase_id,plan_revision,plan_hash,assessment_hash,proposal_hash,
+                model_binding_json,role_ids_json,status,authorization_json,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (proposal_id, task_id, phase_id, plan_revision, plan_hash, assessment_hash,
+                 proposal_hash, binding_json, roles_json, status, authorization_json, float(now), float(now)))
+            run_status = "AUTHORIZED" if status == "AUTHORIZED" else "AWAITING_USER_APPROVAL"
+            for worker in normalized_workers:
+                db.execute("""INSERT INTO coding_subagent_runs(
+                    id,proposal_id,task_id,phase_id,plan_revision,role_id,prompt_version,
+                    model_binding_json,assigned_paths_json,status,usage_json,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (worker["worker_id"], proposal_id, task_id, worker["phase_id"], plan_revision,
+                     worker["role_id"], worker["prompt_version"], binding_json,
+                     _subagent_json(worker["assigned_paths"]), run_status, "{}", float(now), float(now)))
+            self._record_coding_subagent_event(db, task_id,
+                "CODING_SUBAGENT_AUTHORIZED" if status == "AUTHORIZED" else "CODING_SUBAGENT_PROPOSED",
+                {"proposal_id": proposal_id, "plan_revision": plan_revision, "proposal_hash": proposal_hash,
+                 "status": status, "worker_count": len(normalized_workers)}, now)
+            row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def get_coding_subagent_proposal(self, proposal_id: str,
+                                     task_id: str | None = None) -> dict[str, Any] | None:
+        with self.connect() as db:
+            if task_id is None:
+                row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            else:
+                row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=? AND task_id=?",
+                                 (proposal_id, task_id)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def coding_subagent_proposals(self, task_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM coding_subagent_proposals WHERE task_id=? ORDER BY created_at,id",
+                (task_id,),
+            ).fetchall()
+            return [self._decode_coding_subagent_proposal(db, row) for row in rows]
+
+    def coding_subagent_runs(self, task_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM coding_subagent_runs WHERE task_id=? ORDER BY created_at,id",
+                (task_id,),
+            ).fetchall()
+        return [self._decode_coding_subagent_run(row) for row in rows]
+
+    def _validate_current_coding_subagent_proposal(self, db: sqlite3.Connection, proposal_id: str,
+                                                   task_id: str, plan_revision: int, plan_hash: str,
+                                                   proposal_hash: str, model_binding: dict[str, Any],
+                                                   setting_enabled: bool) -> tuple[sqlite3.Row, sqlite3.Row, Any]:
+        if type(setting_enabled) is not bool or not setting_enabled:
+            raise ValueError("coding subagents are disabled")
+        task, plan, assessment = self._current_coding_subagent_plan(db, task_id, plan_revision, plan_hash)
+        proposal = db.execute(
+            "SELECT * FROM coding_subagent_proposals WHERE id=? AND task_id=?",
+            (proposal_id, task_id),
+        ).fetchone()
+        if (proposal is None or proposal["status"] != "AWAITING_USER_APPROVAL"
+                or proposal["plan_revision"] != plan_revision or proposal["plan_hash"] != plan_hash
+                or proposal["assessment_hash"] != assessment.assessment_hash
+                or proposal["proposal_hash"] != proposal_hash
+                or proposal["model_binding_json"] != _subagent_json(model_binding)):
+            raise ValueError("stale coding subagent proposal")
+        return task, proposal, assessment
+
+    def approve_coding_subagent_proposal(self, proposal_id: str, *, task_id: str,
+                                         plan_revision: int, plan_hash: str, proposal_hash: str,
+                                         model_binding: dict[str, Any], now: float,
+                                         setting_enabled: bool) -> dict[str, Any]:
+        from .coding_subagents import _subagent_scopes_for_assessment
+        binding = _subagent_model_binding(model_binding)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task, proposal, assessment = self._validate_current_coding_subagent_proposal(
+                db, proposal_id, task_id, plan_revision, plan_hash, proposal_hash,
+                binding, setting_enabled)
+            import uuid
+            event_id = str(uuid.uuid4())
+            roles = json.loads(proposal["role_ids_json"])
+            authorization = {
+                "task_id": task_id, "source": "TASK_APPROVAL", "source_id": event_id,
+                "plan_revision": plan_revision, "plan_hash": plan_hash,
+                "proposal_hash": proposal_hash, "model_binding": binding,
+                "role_ids": roles, "workstream_scopes": _subagent_scopes_for_assessment(assessment),
+            }
+            db.execute("""UPDATE coding_subagent_proposals
+                SET status='AUTHORIZED',authorization_json=?,updated_at=?
+                WHERE id=? AND status='AWAITING_USER_APPROVAL'""",
+                (_subagent_json(authorization), float(now), proposal_id))
+            if db.execute("SELECT changes()").fetchone()[0] != 1:
+                raise ValueError("coding subagent proposal was already consumed")
+            db.execute("""UPDATE coding_subagent_runs SET status='AUTHORIZED',updated_at=?
+                WHERE proposal_id=? AND status='AWAITING_USER_APPROVAL'""", (float(now), proposal_id))
+            self._record_coding_subagent_event(db, task_id, "CODING_SUBAGENT_APPROVED",
+                {"proposal_id": proposal_id, "approval_event_id": event_id,
+                 "plan_revision": plan_revision, "proposal_hash": proposal_hash,
+                 "status": "AUTHORIZED"}, now)
+            row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def decline_coding_subagent_proposal(self, proposal_id: str, *, task_id: str,
+                                         plan_revision: int, plan_hash: str, proposal_hash: str,
+                                         now: float, setting_enabled: bool = True) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if type(setting_enabled) is not bool or not setting_enabled:
+                raise ValueError("coding subagents are disabled")
+            _task, _plan, assessment = self._current_coding_subagent_plan(
+                db, task_id, plan_revision, plan_hash)
+            _proposal = db.execute(
+                "SELECT * FROM coding_subagent_proposals WHERE id=? AND task_id=?",
+                (proposal_id, task_id),
+            ).fetchone()
+            if (_proposal is None or _proposal["status"] != "AWAITING_USER_APPROVAL"
+                    or _proposal["plan_revision"] != plan_revision
+                    or _proposal["plan_hash"] != plan_hash
+                    or _proposal["assessment_hash"] != assessment.assessment_hash
+                    or _proposal["proposal_hash"] != proposal_hash):
+                raise ValueError("stale coding subagent proposal")
+            # Decline does not need a live-model check, but it remains bound to the
+            # exact current proposal and plan hash.
+            current = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            db.execute("UPDATE coding_subagent_proposals SET status='DECLINED',updated_at=? WHERE id=? AND status='AWAITING_USER_APPROVAL'",
+                       (float(now), proposal_id))
+            if db.execute("SELECT changes()").fetchone()[0] != 1:
+                raise ValueError("coding subagent proposal was already consumed")
+            db.execute("UPDATE coding_subagent_runs SET status='CANCELLED',finished_at=?,updated_at=? WHERE proposal_id=? AND status='AWAITING_USER_APPROVAL'",
+                       (float(now), float(now), proposal_id))
+            self._record_coding_subagent_event(db, task_id, "CODING_SUBAGENT_DECLINED",
+                {"proposal_id": proposal_id, "plan_revision": plan_revision,
+                 "proposal_hash": proposal_hash, "status": "DECLINED"}, now)
+            row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def transition_coding_subagent_proposal(self, proposal_id: str, *, expected_status: str,
+                                            new_status: str, now: float) -> dict[str, Any]:
+        if new_status in {"AUTHORIZED", "DECLINED"}:
+            raise ValueError("authorization and decline require their explicit transitions")
+        if new_status not in _SUBAGENT_GROUP_TRANSITIONS.get(expected_status, set()):
+            raise ValueError("invalid coding subagent proposal transition")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            if row is None or row["status"] != expected_status:
+                raise ValueError("coding subagent proposal state changed")
+            db.execute("UPDATE coding_subagent_proposals SET status=?,updated_at=? WHERE id=? AND status=?",
+                       (new_status, float(now), proposal_id, expected_status))
+            if new_status in {"CANCELLED", "INTERRUPTED", "TIMED_OUT"}:
+                db.execute("""UPDATE coding_subagent_runs SET status=?,finished_at=?,updated_at=?
+                    WHERE proposal_id=? AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')""",
+                    (new_status, float(now), float(now), proposal_id))
+            self._record_coding_subagent_event(db, row["task_id"], "CODING_SUBAGENT_STATE",
+                {"proposal_id": proposal_id, "status": new_status}, now)
+            updated = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?", (proposal_id,)).fetchone()
+            return self._decode_coding_subagent_proposal(db, updated)
+
+    def transition_coding_subagent_run(self, worker_id: str, *, expected_status: str,
+                                       new_status: str, now: float,
+                                       summary: str | None = None,
+                                       usage: dict[str, Any] | None = None,
+                                       error_category: str | None = None) -> dict[str, Any]:
+        if new_status not in _SUBAGENT_RUN_TRANSITIONS.get(expected_status, set()):
+            raise ValueError("invalid coding subagent worker transition")
+        if summary is not None and (not isinstance(summary, str) or len(summary) > 1000 or "\x00" in summary):
+            raise ValueError("coding subagent summary exceeds the safe bound")
+        usage = {} if usage is None else usage
+        if not isinstance(usage, dict) or set(usage) - {"input_tokens", "output_tokens", "total_tokens", "latency_ms"}:
+            raise ValueError("invalid coding subagent usage")
+        normalized_usage = {}
+        for key, value in usage.items():
+            if type(value) not in {int, float} or value < 0 or value > 1_000_000_000:
+                raise ValueError("invalid coding subagent usage")
+            normalized_usage[key] = value
+        if error_category is not None and error_category not in _SUBAGENT_ERROR_CATEGORIES:
+            raise ValueError("invalid coding subagent error category")
+        if new_status == "SUCCEEDED" and summary is None:
+            raise ValueError("successful coding subagent run needs a safe summary")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM coding_subagent_runs WHERE id=?", (worker_id,)).fetchone()
+            if row is None or row["status"] != expected_status:
+                raise ValueError("coding subagent worker state changed")
+            proposal = db.execute("SELECT status FROM coding_subagent_proposals WHERE id=?",
+                                  (row["proposal_id"],)).fetchone()
+            if proposal is None or proposal["status"] not in {"AUTHORIZED", "QUEUED", "RUNNING"}:
+                raise ValueError("coding subagent proposal is not authorized")
+            started_at = float(now) if new_status == "RUNNING" and row["started_at"] is None else row["started_at"]
+            queued_at = float(now) if new_status == "QUEUED" and row["queued_at"] is None else row["queued_at"]
+            finished_at = float(now) if new_status in {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "INTERRUPTED"} else row["finished_at"]
+            db.execute("""UPDATE coding_subagent_runs SET status=?,safe_summary=COALESCE(?,safe_summary),
+                usage_json=?,error_category=?,queued_at=?,started_at=?,finished_at=?,updated_at=?
+                WHERE id=? AND status=?""",
+                (new_status, summary, _subagent_json(normalized_usage), error_category,
+                 queued_at, started_at, finished_at, float(now), worker_id, expected_status))
+            self._record_coding_subagent_event(db, row["task_id"], "CODING_SUBAGENT_WORKER_STATE",
+                {"proposal_id": row["proposal_id"], "worker_id": worker_id, "role_id": row["role_id"],
+                 "status": new_status, "error_category": error_category}, now)
+            updated = db.execute("SELECT * FROM coding_subagent_runs WHERE id=?", (worker_id,)).fetchone()
+            return self._decode_coding_subagent_run(updated)
+
+    def interrupt_unfinished_coding_subagents(self, now: float) -> dict[str, int]:
+        active_groups = ("AUTHORIZED", "QUEUED", "RUNNING")
+        placeholders = ",".join("?" for _ in active_groups)
+        interrupted_groups = interrupted_runs = 0
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(f"SELECT id,task_id FROM coding_subagent_proposals WHERE status IN ({placeholders})",
+                              active_groups).fetchall()
+            for row in rows:
+                db.execute("UPDATE coding_subagent_proposals SET status='INTERRUPTED',updated_at=? WHERE id=?",
+                           (float(now), row["id"]))
+                db.execute("UPDATE coding_subagent_runs SET status='INTERRUPTED',finished_at=?,updated_at=? WHERE proposal_id=? AND status IN ('AUTHORIZED','QUEUED','RUNNING')",
+                           (float(now), float(now), row["id"]))
+                interrupted_runs += db.execute("SELECT changes()").fetchone()[0]
+                self._record_coding_subagent_event(db, row["task_id"], "CODING_SUBAGENT_INTERRUPTED",
+                    {"proposal_id": row["id"], "status": "INTERRUPTED", "reason": "PROCESS_RESTART"}, now)
+                interrupted_groups += 1
+        return {"proposals": interrupted_groups, "runs": interrupted_runs}
+
+    def cancel_coding_subagents_for_task(self, task_id: str, now: float,
+                                         reason: str = "PARENT_CANCELLED") -> int:
+        if reason not in {"PARENT_CANCELLED", "SETTING_DISABLED", "PLAN_CHANGED", "PARENT_PAUSED"}:
+            raise ValueError("invalid coding subagent cancellation reason")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute("""SELECT id FROM coding_subagent_proposals WHERE task_id=?
+                AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')""",
+                (task_id,)).fetchall()
+            for row in rows:
+                db.execute("UPDATE coding_subagent_proposals SET status='CANCELLED',updated_at=? WHERE id=?",
+                           (float(now), row["id"]))
+                db.execute("UPDATE coding_subagent_runs SET status='CANCELLED',finished_at=?,updated_at=? WHERE proposal_id=? AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')",
+                           (float(now), float(now), row["id"]))
+                self._record_coding_subagent_event(db, task_id, "CODING_SUBAGENT_CANCELLED",
+                    {"proposal_id": row["id"], "status": "CANCELLED", "reason": reason}, now)
+            return len(rows)
+
+    def cancel_all_coding_subagents(self, now: float,
+                                    reason: str = "SETTING_DISABLED") -> int:
+        if reason != "SETTING_DISABLED":
+            raise ValueError("invalid global coding subagent cancellation reason")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute("""SELECT id,task_id FROM coding_subagent_proposals
+                WHERE status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')""").fetchall()
+            for row in rows:
+                db.execute("UPDATE coding_subagent_proposals SET status='CANCELLED',updated_at=? WHERE id=?",
+                           (float(now), row["id"]))
+                db.execute("""UPDATE coding_subagent_runs SET status='CANCELLED',finished_at=?,updated_at=?
+                    WHERE proposal_id=? AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')""",
+                    (float(now), float(now), row["id"]))
+                self._record_coding_subagent_event(db, row["task_id"], "CODING_SUBAGENT_CANCELLED",
+                    {"proposal_id": row["id"], "status": "CANCELLED", "reason": reason}, now)
+            return len(rows)
+
+    def invalidate_stale_coding_subagent_proposals(self, task_id: str, now: float) -> int:
+        from .coding_subagents import plan_content_hash
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = db.execute("SELECT plan_revision,active_plan_json,plan_json FROM coding_tasks WHERE id=?",
+                              (task_id,)).fetchone()
+            if task is None:
+                return 0
+            raw_plan = task["active_plan_json"] or task["plan_json"] or "null"
+            try:
+                plan = json.loads(raw_plan)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                plan = None
+            current_hash = plan_content_hash(plan) if isinstance(plan, dict) else ""
+            rows = db.execute("""SELECT id FROM coding_subagent_proposals WHERE task_id=?
+                AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')
+                AND (plan_revision<>? OR plan_hash<>?)""",
+                (task_id, int(task["plan_revision"]), current_hash)).fetchall()
+            for row in rows:
+                db.execute("UPDATE coding_subagent_proposals SET status='INTERRUPTED',updated_at=? WHERE id=?",
+                           (float(now), row["id"]))
+                db.execute("UPDATE coding_subagent_runs SET status='INTERRUPTED',finished_at=?,updated_at=? WHERE proposal_id=? AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')",
+                           (float(now), float(now), row["id"]))
+                self._record_coding_subagent_event(db, task_id, "CODING_SUBAGENT_INVALIDATED",
+                    {"proposal_id": row["id"], "status": "INTERRUPTED", "reason": "PLAN_CHANGED"}, now)
+            return len(rows)
+
     def save_coding_task_reference(self, reference: ProviderEvidence) -> dict[str, object]:
         """Save bounded source metadata; never persist fetched page bodies or queries."""
         identity = json.dumps(
@@ -1401,6 +1995,8 @@ class Database:
         if "mcp_evidence" in values: values["mcp_evidence_json"]=json.dumps(values.pop("mcp_evidence"))
         values["updated_at"]=__import__("time").time()
         with self.connect() as db: db.execute("UPDATE coding_tasks SET "+",".join(f"{k}=?" for k in values)+" WHERE id=?",(*values.values(),task_id))
+        if {"plan_json", "active_plan_json", "plan_revision"} & set(values):
+            self.invalidate_stale_coding_subagent_proposals(task_id, __import__("time").time())
         return self.coding_task(task_id)
     def save_coding_checkpoint(self, task_id: str, plan: dict, handoff: dict, cursor: int,
                                revision: int, blueprint_report: dict | None = None,
