@@ -155,6 +155,7 @@
 
 - [x] **Step 1: Write fake-executor tests for bounded orchestration**
   Cover maximum three workers, per-runtime concurrency, local model serialized capacity, remote worker capacity, cancellation while queued/running, timeout, partial result aggregation, no nested spawn, and use of only the snapshotted configured fallback sequence.
+  The provider integration test also verifies that a primary failure reaches the approval-time fallback and never tries a fallback added to settings afterward.
 - [x] **Step 2: Write workspace-scope and conflict tests**
   `test_worker_proposal_outside_assigned_paths_is_rejected`, `test_stale_preimage_is_rejected`, `test_overlapping_worker_proposals_are_serialized_or_blocked`, `test_worker_cannot_invoke_release_publish`, and `test_worker_never_commits_changes`.
 - [x] **Step 3: Implement provider/runtime-bound execution**

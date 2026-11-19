@@ -13,8 +13,11 @@ with patch.dict(os.environ, {"OLCR_DB_PATH": str(Path(_import_profile.name) / "i
 
 from olcr_api.coding_subagents import (assess_delegation, delegation_proposal_hash,
     model_binding_payload, pin_subagent_model, workstreams_for_assignments)
+from olcr_api.coding_subagent_executor import (CodingSubagentExecutor,
+    CodingSubagentFileContext, CodingSubagentRequest)
 from olcr_api.config import CODING_SUBAGENTS_WARNING_VERSION, Settings
 from olcr_api.db import Database
+from olcr_api.ollama import ModelFailure
 
 
 def plan_fixture():
@@ -224,6 +227,51 @@ class CodingSubagentApiTests(unittest.TestCase):
                     stream=False, _coding_subagent_binding=fallback_binding,
                     _coding_subagent_task_id="task-1")
         generate.assert_not_called()
+
+    def test_worker_provider_uses_only_the_approval_snapshot_fallback_sequence(self):
+        approved_configuration = {
+            **self.configuration,
+            "selections": {**self.configuration["selections"],
+                           "coder": "ollama:worker-primary"},
+            "fallback_models": ["ollama:approved-fallback"],
+        }
+        live_configuration = {
+            **approved_configuration,
+            "fallback_models": ["ollama:approved-fallback", "ollama:new-live-fallback"],
+        }
+        binding = model_binding_payload(pin_subagent_model(
+            "role:long_implementation", approved_configuration))
+        calls = []
+
+        def respond(messages, model, **kwargs):
+            calls.append(model)
+            if model == "worker-primary":
+                raise ModelFailure("provider_unavailable", "fixture primary failure")
+            return {"text": '{"summary":"Completed","findings":[],"proposed_mutations":[]}',
+                    "model": model, "prompt_tokens": 4, "completion_tokens": 2}
+
+        catalog = {"models": [
+            {"id": model_id, "available": True}
+            for model_id in ("ollama:worker-primary", "ollama:approved-fallback",
+                             "ollama:new-live-fallback")
+        ]}
+        request = CodingSubagentRequest(
+            task_id="task-1", phase_id="api", plan_revision=4, worker_id="worker-1",
+            role_id="implementation_worker", model_binding=binding,
+            original_goal="Implement the feature", phase_goal="Implement the API",
+            acceptance_criteria=("The API works",),
+            files=(CodingSubagentFileContext("backend/api.py", False, None, None, None),),
+        )
+
+        with patch.object(api.brain_models, "configuration", return_value=live_configuration), \
+             patch.object(api.brain_models, "catalog", return_value=catalog), \
+             patch.object(api.brain_models, "preflight", return_value={
+                 "state": "available", "reason": "fixture", "retry_at": None}), \
+             patch.object(api.runtime.model.ollama, "generate", side_effect=respond):
+            result = CodingSubagentExecutor(api._generate_coding_subagent).run_group([request])[0]
+
+        self.assertIsNone(result.error_category)
+        self.assertEqual(["worker-primary", "approved-fallback"], calls)
 
     def test_archiving_a_running_task_drains_subagent_mutations_after_cancellation(self):
         self.db.update_coding_task("task-1", status="RUNNING")
