@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import stat
 import tempfile
 import threading
@@ -368,6 +369,204 @@ class TaskWorkspaces:
                     content.extend(chunk)
         supported = info.st_size <= MAX_FILE_BYTES
         return {'exists': True, 'hash': hasher.hexdigest(), 'mode': stat.S_IMODE(info.st_mode), 'reviewable': supported, 'size': info.st_size}, bytes(content) if supported else None
+
+    @staticmethod
+    def _subagent_plan(task):
+        plan = task.get('active_plan') if isinstance(task.get('active_plan'), dict) else task.get('plan')
+        return plan if isinstance(plan, dict) else {}
+
+    def read_coding_subagent_files(self, task_id, phase_id, plan_revision, paths):
+        """Read only manifest-owned, nonsensitive text files and bind their preimages."""
+        from .coding_subagents import _normalized_plan_path
+        task = self.task(task_id)
+        if task.get('plan_revision') != plan_revision:
+            raise WorkspaceError('STALE_PLAN')
+        if not isinstance(phase_id, str) or not phase_id or not isinstance(paths, (list, tuple)) or not paths or len(paths) > 32:
+            raise WorkspaceError('SCOPE_REJECTED')
+        plan = self._subagent_plan(task)
+        manifest = plan.get('file_manifest') or []
+        owned = { _normalized_plan_path(entry.get('path')) for entry in manifest
+                  if isinstance(entry, dict) and entry.get('owner_phase') == phase_id }
+        requested = list(paths)
+        if (len(set(requested)) != len(requested)
+                or any(not isinstance(path, str) or _normalized_plan_path(path) != path
+                       or path not in owned or sensitive_path(path) for path in requested)):
+            raise WorkspaceError('SCOPE_REJECTED')
+        root = Path(self.root_for(task_id)).resolve(strict=True)
+        result = []
+        total = 0
+        with self.lock(root):
+            for path in sorted(requested):
+                try:
+                    state, contents = self._read(root, path)
+                except (WorkspaceError, OSError) as exc:
+                    raise WorkspaceError('SCOPE_REJECTED') from exc
+                if not state.get('reviewable') or state.get('sensitive'):
+                    raise WorkspaceError('SCOPE_REJECTED')
+                if contents is not None:
+                    try:
+                        text = contents.decode('utf-8')
+                    except UnicodeDecodeError as exc:
+                        raise WorkspaceError('SCOPE_REJECTED') from exc
+                    total += len(text)
+                    if total > 200_000:
+                        raise WorkspaceError('SCOPE_REJECTED')
+                else:
+                    text = None
+                result.append({"path": path, "exists": state['exists'],
+                               "sha256": state['hash'] if state['exists'] else None,
+                               "mode": state['mode'], "content": text})
+        return result
+
+    def wait_for_coding_subagent_mutations(self, task_id):
+        """Drain a task's current host-side mutation before pause/disable returns."""
+        root = self.root_for(task_id)
+        with self.lock(root):
+            return root
+
+    def apply_coding_subagent_mutations(self, task_id, worker_id, mutations, *, now):
+        """Validate and serially apply one worker's typed file proposals."""
+        from .coding_subagents import plan_content_hash, ROLE_REGISTRY, _normalized_plan_path
+        task = self.task(task_id)
+        if task.get('pause_requested'):
+            raise WorkspaceError('PARENT_PAUSED')
+        with self.db.connect() as conn:
+            run = conn.execute('SELECT * FROM coding_subagent_runs WHERE id=? AND task_id=?',
+                               (worker_id, task_id)).fetchone()
+            proposal = (conn.execute('SELECT * FROM coding_subagent_proposals WHERE id=? AND task_id=?',
+                                     (run['proposal_id'], task_id)).fetchone() if run else None)
+        if run is None or proposal is None:
+            raise WorkspaceError('WORKER_NOT_RUNNING')
+        if (task.get('plan_revision') != run['plan_revision']
+                or run['plan_revision'] != proposal['plan_revision']):
+            raise WorkspaceError('STALE_PLAN')
+        plan = self._subagent_plan(task)
+        if plan_content_hash(plan) != proposal['plan_hash']:
+            raise WorkspaceError('STALE_PLAN')
+        if run['status'] != 'RUNNING' or proposal['status'] != 'RUNNING':
+            raise WorkspaceError('WORKER_NOT_RUNNING')
+        if run['role_id'] not in ROLE_REGISTRY or ROLE_REGISTRY[run['role_id']].read_only:
+            raise WorkspaceError('ROLE_READ_ONLY')
+        if run['role_id'] != 'implementation_worker':
+            raise WorkspaceError('ROLE_READ_ONLY')
+        if not isinstance(mutations, list) or not mutations or len(mutations) > 8:
+            raise WorkspaceError('INVALID_MUTATION')
+        assigned = set(json.loads(run['assigned_paths_json'] or '[]'))
+        manifest = plan.get('file_manifest') or []
+        plan_entries = {}
+        for entry in manifest:
+            if isinstance(entry, dict):
+                path = _normalized_plan_path(entry.get('path'))
+                if path:
+                    plan_entries[path] = entry
+        normalized = []
+        seen = set()
+        for mutation in mutations:
+            if not isinstance(mutation, dict) or set(mutation) != {
+                'path', 'operation', 'expected_sha256', 'expected_mode', 'content'
+            }:
+                raise WorkspaceError('INVALID_MUTATION')
+            path = mutation.get('path')
+            entry = plan_entries.get(path) if isinstance(path, str) else None
+            operation = mutation.get('operation')
+            content = mutation.get('content')
+            expected_hash = mutation.get('expected_sha256')
+            expected_mode = mutation.get('expected_mode')
+            if (not isinstance(path, str) or _normalized_plan_path(path) != path
+                    or path in seen or path not in assigned or entry is None
+                    or entry.get('owner_phase') != run['phase_id'] or sensitive_path(path)
+                    or operation not in {'create', 'modify', 'delete'}
+                    or entry.get('action') != operation
+                    or (expected_hash is not None and (not isinstance(expected_hash, str)
+                        or re.fullmatch(r'[a-f0-9]{64}', expected_hash) is None))
+                    or (expected_mode is not None and (type(expected_mode) is not int
+                        or expected_mode < 0 or expected_mode > 0o777))
+                    or (operation == 'delete' and content is not None)
+                    or (operation != 'delete' and not isinstance(content, str))):
+                raise WorkspaceError('SCOPE_REJECTED' if path not in assigned or entry is None
+                                     or (entry and entry.get('owner_phase') != run['phase_id'])
+                                     or (isinstance(path, str) and sensitive_path(path))
+                                     else 'INVALID_MUTATION')
+            if isinstance(content, str):
+                try:
+                    encoded = content.encode('utf-8')
+                except UnicodeEncodeError as exc:
+                    raise WorkspaceError('INVALID_MUTATION') from exc
+                if len(encoded) > MAX_FILE_BYTES or b'\x00' in encoded:
+                    raise WorkspaceError('INVALID_MUTATION')
+            seen.add(path)
+            normalized.append({**mutation, 'encoded': content.encode('utf-8') if isinstance(content, str) else None})
+
+        root = Path(self.root_for(task_id)).resolve(strict=True)
+        prepared = []
+        with self.lock(root):
+            # Cancellation can race with proposal validation above. Re-read
+            # lifecycle state after acquiring the lock used by pause/disable
+            # draining, before touching any file.
+            task = self.task(task_id)
+            if task.get('pause_requested'):
+                raise WorkspaceError('PARENT_PAUSED')
+            with self.db.connect() as conn:
+                current_run = conn.execute(
+                    'SELECT status FROM coding_subagent_runs WHERE id=? AND task_id=?',
+                    (worker_id, task_id)).fetchone()
+                current_proposal = conn.execute(
+                    'SELECT status FROM coding_subagent_proposals WHERE id=? AND task_id=?',
+                    (proposal['id'], task_id)).fetchone()
+            if (current_run is None or current_proposal is None
+                    or current_run['status'] != 'RUNNING'
+                    or current_proposal['status'] != 'RUNNING'):
+                raise WorkspaceError('WORKER_NOT_RUNNING')
+            if (task.get('plan_revision') != run['plan_revision']
+                    or plan_content_hash(self._subagent_plan(task)) != proposal['plan_hash']):
+                raise WorkspaceError('STALE_PLAN')
+            for item in normalized:
+                path = item['path']
+                try:
+                    current_state, old_contents = self._read(root, path)
+                except (WorkspaceError, OSError) as exc:
+                    raise WorkspaceError('SCOPE_REJECTED') from exc
+                if (not current_state.get('reviewable') or current_state.get('sensitive')
+                        or current_state['hash'] != item['expected_sha256']
+                        or current_state['mode'] != item['expected_mode']):
+                    raise WorkspaceError('PREIMAGE_CHANGED')
+                operation = item['operation']
+                if ((operation == 'create' and current_state['exists'])
+                        or (operation in {'modify', 'delete'} and not current_state['exists'])):
+                    raise WorkspaceError('PREIMAGE_CHANGED')
+                if operation == 'delete':
+                    after_state, new_contents = {'exists': False, 'hash': None, 'mode': None,
+                                                  'reviewable': True}, None
+                else:
+                    new_contents = item['encoded']
+                    after_state = {'exists': True, 'hash': digest(new_contents),
+                                   'mode': current_state['mode'] if current_state['exists'] else 0o644,
+                                   'reviewable': True, 'size': len(new_contents)}
+                prepared.append((path, current_state, old_contents, after_state, new_contents))
+
+            completed = []
+            try:
+                for path, before, old_contents, after, new_contents in prepared:
+                    live, _ = self._read(root, path)
+                    if (live['hash'], live['mode']) != (before['hash'], before['mode']):
+                        raise WorkspaceError('PREIMAGE_CHANGED')
+                    self._write(root, path, after, new_contents)
+                    completed.append((path, before, old_contents, after))
+                self.checkpoint(task_id, [{'path': path, 'hash': state['hash']}
+                                          for path, _before, _old, state, _new in prepared])
+                with self.db.connect() as conn:
+                    conn.execute('INSERT INTO coding_task_events VALUES(?,?,?,?,?)', (
+                        str(uuid.uuid4()), task_id, 'CODING_SUBAGENT_MUTATIONS_APPLIED',
+                        json.dumps({'worker_id': worker_id, 'paths': [item[0] for item in prepared],
+                                    'post_apply_hashes': {path: state['hash'] for path, _before, _old, state, _new in prepared}},
+                                   sort_keys=True), float(now)))
+            except Exception:
+                for path, before, old_contents, after in reversed(completed):
+                    live, _ = self._read(root, path)
+                    if (live['hash'], live['mode']) == (after['hash'], after['mode']):
+                        self._write(root, path, before, old_contents)
+                raise
+        return {'status': 'APPLIED', 'paths': [item[0] for item in prepared]}
 
     def _files(self, root):
         found = []

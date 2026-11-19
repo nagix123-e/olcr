@@ -23,7 +23,7 @@ function task(overrides:Partial<CodingTask>={}):CodingTask{return {id:"task",sta
 ],...overrides}}
 function renderProgress(value: CodingTask){return render(<CodingTaskProgress task={value} reports={[]} loading={false} error="" pausePending={false} onPause={vi.fn()} onResume={vi.fn()} onArchive={vi.fn()}/>)}
 
-afterEach(() => { cleanup(); locale.language = "en"; });
+afterEach(() => { cleanup(); locale.language = "en"; request.mockClear(); });
 
 describe("CodingTaskProgress",()=>{
   it('shows the observed failure during a retry and does not cap the displayed attempt',()=>{
@@ -100,6 +100,36 @@ describe("CodingTaskProgress",()=>{
     expect(screen.getByText("1 / 3 tasks completed")).toBeInTheDocument();
     expect(screen.getByLabelText("Current task")).toHaveTextContent("Implement API");
     expect(screen.getByLabelText("Phase progress")).toHaveTextContent("Unverified");
+  });
+  it("requires a separate task-specific decision for coding subagents",async()=>{
+    const proposal={id:"proposal-1",phase_id:"api",plan_revision:4,plan_hash:"a".repeat(64),
+      proposal_hash:"b".repeat(64),status:"AWAITING_USER_APPROVAL",
+      model_binding:{model_id:"api:openai:gpt-coder",runtime_id:"brain-provider:openai"},
+      workers:[{id:"worker-1",phase_id:"ui",role_id:"implementation_worker",
+        status:"AWAITING_USER_APPROVAL",assigned_paths:["frontend/src/App.tsx"]}]};
+    const value=task({status:"WAITING_FOR_USER",pending_authorization:{type:"CODING_SUBAGENT_APPROVAL",
+      proposal_id:proposal.id,plan_revision:4,plan_hash:proposal.plan_hash,proposal_hash:proposal.proposal_hash,
+      reason:"Separate approval required."},subagent_proposals:[proposal]});
+    renderProgress(value);
+    expect(screen.getByLabelText("Coding subagents")).toHaveTextContent("Separate approval required.");
+    expect(screen.getByLabelText("Coding subagents")).toHaveTextContent("api:openai:gpt-coder");
+    fireEvent.click(screen.getByRole("button",{name:"Approve subagents"}));
+    await waitFor(()=>expect(request).toHaveBeenCalledWith("/coding-tasks/task/subagent-proposals/proposal-1/decision",{
+      method:"POST",body:JSON.stringify({action:"APPROVE_DELEGATION",plan_revision:4,
+        plan_hash:"a".repeat(64),proposal_hash:"b".repeat(64)})
+    }));
+    expect(screen.getByRole("button",{name:"Decline and continue with one agent"})).toBeTruthy();
+  });
+  it("keeps the pinned coding model visible after worker approval",()=>{
+    const proposal={id:"proposal-1",phase_id:"api",plan_revision:3,plan_hash:"a".repeat(64),
+      proposal_hash:"b".repeat(64),status:"SUCCEEDED",model_binding:{model_id:"api:openai:gpt-coder",
+        provider_id:"openai",runtime_id:"brain-provider:openai"},workers:[{id:"worker-1",phase_id:"ui",
+          role_id:"implementation_worker",status:"SUCCEEDED",assigned_paths:["src/App.tsx"],safe_summary:"Prepared UI",
+          started_at:100,finished_at:103}]};
+    renderProgress(task({subagent_proposals:[proposal]}));
+    expect(screen.getByLabelText("Coding subagents")).toHaveTextContent("api:openai:gpt-coder");
+    expect(screen.getByLabelText("Coding subagents")).toHaveTextContent("Prepared UI");
+    expect(screen.getByLabelText("Coding subagents")).toHaveTextContent("Elapsed 3s");
   });
   it("hides task graph and automatic diagrams while retaining plan details",()=>{
     renderProgress(task());

@@ -3,7 +3,8 @@ import unittest
 from dataclasses import asdict
 from pathlib import Path
 
-from olcr_api.coding_subagents import assess_delegation, pin_subagent_model
+from olcr_api.coding_subagents import (assess_delegation, delegation_proposal_hash,
+    pin_subagent_model, workstreams_for_assignments)
 from olcr_api.db import Database
 
 
@@ -53,6 +54,19 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
         self.proposal_id = "proposal-1"
 
     def create_proposal(self, *, proposal_id=None, authorization=None, binding=None):
+        workers = [
+            {"worker_id": "worker-1", "phase_id": "api", "role_id": "repo_explorer",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["backend/api.py"]},
+            {"worker_id": "worker-2", "phase_id": "ui", "role_id": "implementation_worker",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["frontend/src/App.tsx"]},
+            {"worker_id": "worker-3", "phase_id": "storage", "role_id": "test_reviewer",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["database/agents.sql"]},
+        ]
+        selected = workstreams_for_assignments(self.assessment, workers)
+        current_binding = binding if isinstance(binding, dict) else asdict(binding or self.binding)
+        proposal_hash = delegation_proposal_hash(self.assessment,
+            self.binding,
+            ("repo_explorer", "implementation_worker", "test_reviewer"), selected)
         return self.db.create_coding_subagent_proposal(
             proposal_id or self.proposal_id,
             task_id="task-1",
@@ -60,17 +74,10 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
             plan_revision=4,
             plan_hash=self.assessment.plan_hash,
             assessment_hash=self.assessment.assessment_hash,
-            proposal_hash="a" * 64,
-            model_binding=(binding if isinstance(binding, dict) else asdict(binding or self.binding)),
+            proposal_hash=proposal_hash,
+            model_binding=current_binding,
             role_ids=["repo_explorer", "implementation_worker", "test_reviewer"],
-            workers=[
-                {"worker_id": "worker-1", "phase_id": "api", "role_id": "repo_explorer",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["backend/api.py"]},
-                {"worker_id": "worker-2", "phase_id": "ui", "role_id": "implementation_worker",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["frontend/src/App.tsx"]},
-                {"worker_id": "worker-3", "phase_id": "storage", "role_id": "test_reviewer",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["database/agents.sql"]},
-            ],
+            workers=workers,
             now=10.0,
             setting_enabled=True,
             authorization=authorization,
@@ -82,7 +89,7 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
             task_id="task-1",
             plan_revision=4,
             plan_hash=self.assessment.plan_hash,
-            proposal_hash="a" * 64,
+            proposal_hash=(proposal or self.create_proposal())["proposal_hash"],
             model_binding=asdict(binding or self.binding),
             now=20.0,
             setting_enabled=True,
@@ -168,7 +175,7 @@ class CodingSubagentWorkflowTests(unittest.TestCase):
         proposal = self.create_proposal()
         declined = self.db.decline_coding_subagent_proposal(
             proposal["id"], task_id="task-1", plan_revision=4,
-            plan_hash=self.assessment.plan_hash, proposal_hash="a" * 64, now=20.0)
+            plan_hash=self.assessment.plan_hash, proposal_hash=proposal["proposal_hash"], now=20.0)
         self.assertEqual("DECLINED", declined["status"])
         self.assertEqual({"CANCELLED"}, {row["status"] for row in declined["workers"]})
         with self.assertRaises(ValueError):

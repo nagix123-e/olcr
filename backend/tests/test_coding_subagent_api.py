@@ -11,7 +11,8 @@ with patch.dict(os.environ, {"OLCR_DB_PATH": str(Path(_import_profile.name) / "i
     from fastapi.testclient import TestClient
     import olcr_api.app as api
 
-from olcr_api.coding_subagents import assess_delegation, pin_subagent_model
+from olcr_api.coding_subagents import (assess_delegation, delegation_proposal_hash,
+    pin_subagent_model, workstreams_for_assignments)
 from olcr_api.config import CODING_SUBAGENTS_WARNING_VERSION, Settings
 from olcr_api.db import Database
 
@@ -77,27 +78,37 @@ class CodingSubagentApiTests(unittest.TestCase):
         self.assessment = assess_delegation(self.plan, task_id="task-1", plan_revision=4,
                                             setting_enabled=True)
         self.binding = asdict(pin_subagent_model("role:long_implementation", self.configuration))
+        self.workers = [
+            {"worker_id": "worker-1", "phase_id": "api", "role_id": "repo_explorer",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["backend/api.py"]},
+            {"worker_id": "worker-2", "phase_id": "ui", "role_id": "implementation_worker",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["frontend/src/App.tsx"]},
+            {"worker_id": "worker-3", "phase_id": "storage", "role_id": "test_reviewer",
+             "prompt_version": "2026-11-v1", "assigned_paths": ["database/agents.sql"]},
+        ]
+        self.proposal_hash = delegation_proposal_hash(self.assessment,
+            pin_subagent_model("role:long_implementation", self.configuration),
+            ("repo_explorer", "implementation_worker", "test_reviewer"),
+            workstreams_for_assignments(self.assessment, self.workers))
         self.proposal = self.db.create_coding_subagent_proposal(
             "proposal-1", task_id="task-1", phase_id="api", plan_revision=4,
             plan_hash=self.assessment.plan_hash, assessment_hash=self.assessment.assessment_hash,
-            proposal_hash="a" * 64, model_binding=self.binding,
+            proposal_hash=self.proposal_hash, model_binding=self.binding,
             role_ids=["repo_explorer", "implementation_worker", "test_reviewer"],
-            workers=[
-                {"worker_id": "worker-1", "phase_id": "api", "role_id": "repo_explorer",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["backend/api.py"]},
-                {"worker_id": "worker-2", "phase_id": "ui", "role_id": "implementation_worker",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["frontend/src/App.tsx"]},
-                {"worker_id": "worker-3", "phase_id": "storage", "role_id": "test_reviewer",
-                 "prompt_version": "2026-11-v1", "assigned_paths": ["database/agents.sql"]},
-            ], now=10.0, setting_enabled=True,
+            workers=self.workers, now=10.0, setting_enabled=True,
         )
+        self.db.update_coding_task("task-1", pending_authorization={
+            "type": "CODING_SUBAGENT_APPROVAL", "proposal_id": self.proposal["id"],
+            "plan_revision": 4, "plan_hash": self.assessment.plan_hash,
+            "proposal_hash": self.proposal_hash,
+        }, pending_user_confirmation=1)
 
     def tearDown(self):
         api.db, api.settings = self.old_db, self.old_settings
 
     def decision(self, action="APPROVE_DELEGATION", **overrides):
         return {"action": action, "plan_revision": 4, "plan_hash": self.assessment.plan_hash,
-                "proposal_hash": "a" * 64, **overrides}
+                "proposal_hash": self.proposal_hash, **overrides}
 
     def post_decision(self, body=None):
         return self.client.post(
@@ -105,10 +116,15 @@ class CodingSubagentApiTests(unittest.TestCase):
             json=body or self.decision())
 
     def test_approval_is_a_separate_one_shot_action(self):
-        response = self.post_decision()
+        with patch.object(self.db, "enqueue_coding_task", return_value={"status": "QUEUED"}) as enqueue:
+            response = self.post_decision()
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("AUTHORIZED", response.json()["status"])
         self.assertNotIn("authorization", response.json())
+        enqueue.assert_called_once_with("task-1")
+        resumed = self.db.coding_task("task-1")
+        self.assertEqual("RESUMABLE", resumed["status"])
+        self.assertIsNone(resumed["pending_authorization"])
         self.assertEqual(409, self.post_decision().status_code)
 
     def test_plan_approval_action_cannot_authorize_workers(self):
@@ -118,10 +134,12 @@ class CodingSubagentApiTests(unittest.TestCase):
                          self.db.get_coding_subagent_proposal("proposal-1", "task-1")["status"])
 
     def test_decline_needs_no_model_call_and_cannot_be_replayed(self):
-        with patch.object(api, "_coding_phase_model", side_effect=AssertionError("model lookup")):
+        with patch.object(api, "_coding_phase_model", side_effect=AssertionError("model lookup")), \
+                patch.object(self.db, "enqueue_coding_task", return_value={"status": "QUEUED"}) as enqueue:
             response = self.post_decision(self.decision("DECLINE_DELEGATION"))
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("DECLINED", response.json()["status"])
+        enqueue.assert_called_once_with("task-1")
         self.assertEqual(409, self.post_decision(self.decision("DECLINE_DELEGATION")).status_code)
 
     def test_current_model_change_invalidates_approval(self):
@@ -154,6 +172,59 @@ class CodingSubagentApiTests(unittest.TestCase):
         self.assertEqual("AWAITING_USER_APPROVAL", proposal["status"])
         self.assertNotIn("authorization", proposal)
         self.assertEqual(3, len(proposal["workers"]))
+
+    def test_phase_context_includes_only_that_phases_host_validated_worker_summary(self):
+        with self.db.connect() as connection:
+            connection.execute("""UPDATE coding_subagent_runs SET status='SUCCEEDED',
+                safe_summary='Prepared the UI implementation'
+                WHERE proposal_id='proposal-1' AND phase_id='ui'""")
+        context = api._coding_subagent_phase_context("task-1", "ui", 4)
+        self.assertIn("Prepared the UI implementation", context)
+        self.assertIn("frontend/src/App.tsx", context)
+        self.assertNotIn("backend/api.py", context)
+
+    def test_worker_runtime_adapter_forwards_exact_selected_model_without_fallback(self):
+        with patch.object(api.runtime.model, "generate", return_value={"text": "provider fake"}) as generate:
+            result = api._generate_coding_subagent([], "role:long_implementation",
+                stream=False, _fallback_allowed=False,
+                _coding_subagent_binding=self.binding, _coding_subagent_task_id="task-1")
+        self.assertEqual({"text": "provider fake"}, result)
+        args, kwargs = generate.call_args
+        self.assertEqual("role:long_implementation", args[1])
+        self.assertFalse(kwargs["_fallback_allowed"])
+        self.assertNotIn("_coding_subagent_binding", kwargs)
+        self.assertNotIn("_coding_subagent_task_id", kwargs)
+
+    def test_archiving_a_running_task_drains_subagent_mutations_after_cancellation(self):
+        self.db.update_coding_task("task-1", status="RUNNING")
+        order = []
+        cancel = self.db.cancel_coding_subagents_for_task
+
+        def record_cancel(*args, **kwargs):
+            order.append("cancel")
+            return cancel(*args, **kwargs)
+
+        with patch.object(self.db, "cancel_coding_subagents_for_task", side_effect=record_cancel), \
+                patch.object(api, "_drain_coding_subagent_mutations",
+                             side_effect=lambda task_id: order.append("drain")):
+            response = self.client.patch("/api/coding-tasks/task-1", json={"archived": True})
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertTrue(response.json()["pause_requested"])
+        self.assertEqual(["cancel", "drain"], order)
+
+    def test_pause_cancels_the_parent_generation_before_child_registration_can_race(self):
+        order = []
+        with patch.object(api, "cancel_coding_generation",
+                          side_effect=lambda task_id: order.append("parent")), \
+                patch.object(api.coding_subagent_executor, "cancel_task",
+                             side_effect=lambda task_id: order.append("workers")), \
+                patch.object(self.db, "cancel_coding_subagents_for_task",
+                             side_effect=lambda *args, **kwargs: order.append("database")), \
+                patch.object(api, "_drain_coding_subagent_mutations",
+                             side_effect=lambda task_id: order.append("drain")):
+            response = self.client.patch("/api/coding-tasks/task-1", json={"pause_requested": True})
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(["parent", "workers", "database", "drain"], order)
 
 
 if __name__ == "__main__":

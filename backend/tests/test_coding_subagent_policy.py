@@ -12,6 +12,7 @@ from olcr_api.coding_subagents import (
     pin_subagent_model,
     plan_content_hash,
     role_for_id,
+    select_independent_workstreams,
 )
 
 
@@ -80,6 +81,17 @@ class CodingSubagentPolicyTests(unittest.TestCase):
         self.assertEqual({"backend", "frontend", "database"}, set(result.components))
         self.assertGreaterEqual(len(result.independent_groups), 2)
         self.assertTrue(all(len(group) == 2 for group in result.independent_groups))
+        self.assertEqual(3, len(select_independent_workstreams(result)))
+
+    def test_worker_selection_uses_a_disjoint_pair_when_no_three_way_group_exists(self):
+        plan = heavy_plan()
+        plan["phases"][2]["dependencies"] = ["api"]
+        result = assess_delegation(plan, task_id="task-1", plan_revision=4,
+                                   setting_enabled=True)
+        self.assertTrue(result.eligible)
+        selected = select_independent_workstreams(result)
+        self.assertEqual(2, len(selected))
+        self.assertNotIn("storage", {item.phase_id for item in selected})
 
     def test_one_independent_pair_is_not_enough_parallel_work(self):
         plan = heavy_plan()

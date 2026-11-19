@@ -135,7 +135,7 @@
 - [x] **Step 5: Run persistence/API tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_workflow.py backend/tests/test_coding_subagent_api.py -q`
   Expected: PASS with no external providers.
-- [ ] **Step 6: Commit persistence and authorization lifecycle**
+- [x] **Step 6: Commit persistence and authorization lifecycle**
 
 ### Task 5: Implement the bounded executor and safe result integration
 
@@ -153,20 +153,20 @@
 - Produces: executor adapter selected by Task 1 (Agents SDK only if accepted; otherwise existing OLCR runtime). The adapter cannot choose model, role, tools, scope, or provider host.
 - Consumes: registered immutable roles, approved authorization, current Coding Task model binding, and existing typed workspace mutation pipeline.
 
-- [ ] **Step 1: Write fake-executor tests for bounded orchestration**
+- [x] **Step 1: Write fake-executor tests for bounded orchestration**
   Cover maximum three workers, per-runtime concurrency, local model serialized capacity, remote worker capacity, cancellation while queued/running, timeout, partial result aggregation, no nested spawn, and fallback to the same parent model.
-- [ ] **Step 2: Write workspace-scope and conflict tests**
+- [x] **Step 2: Write workspace-scope and conflict tests**
   `test_worker_proposal_outside_assigned_paths_is_rejected`, `test_stale_preimage_is_rejected`, `test_overlapping_worker_proposals_are_serialized_or_blocked`, `test_worker_cannot_invoke_release_publish`, and `test_worker_never_commits_changes`.
-- [ ] **Step 3: Implement provider/runtime-bound execution**
+- [x] **Step 3: Implement provider/runtime-bound execution**
   Pass the exact persisted model binding to every role. Disable role-level model overrides and unregistered tools. Meter tokens/time and preserve the existing global execution limit for ordinary calls. Only the feature's explicitly authorized executor may use its bounded parallel lane; local model workers are serialized by default.
-- [ ] **Step 4: Implement typed proposal validation and serial application**
+- [x] **Step 4: Implement typed proposal validation and serial application**
   Workers return file-scoped proposals. Validate against task approved scopes, assigned file ownership, expected preimages, workspace path, and current plan revision. Apply only accepted proposals through the existing host workspace APIs in a deterministic order. Reject conflicts and let the parent decide the next single-agent step.
-- [ ] **Step 5: Add cancellation, timeout, and result synthesis**
+- [x] **Step 5: Add cancellation, timeout, and result synthesis**
   Stop workers on task cancel/pause and aggregate concise worker results into the existing parent phase context. Keep worker summaries/result evidence separate from hidden reasoning. If executor setup fails, continue with the already-selected parent model and report a single-agent fallback reason.
-- [ ] **Step 6: Run executor/workspace tests**
+- [x] **Step 6: Run executor/workspace tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_executor.py backend/tests/test_coding_subagent_workspace.py -q`
   Expected: PASS with fake provider/executor only; no project-controlled shell/process is run outside current sandbox policy.
-- [ ] **Step 7: Commit executor and workspace integration**
+- [x] **Step 7: Commit executor and workspace integration**
 
 ### Task 6: Integrate the gate into Coding Task lifecycle and task progress UI
 
@@ -182,19 +182,19 @@
 - Produces: task response fields `delegation_assessment`, `delegation_authorization`, and bounded `subagents[]` summaries with worker ID, role, scope, state, model label, and safe result.
 - Consumes: existing Coding Task progress/review, plan revision, follow-up, pause, cancellation, and task event surfaces.
 
-- [ ] **Step 1: Write integration tests for all three spawn conditions**
+- [x] **Step 1: Write integration tests for all three spawn conditions**
   Include setting off, setting on but task small, heavy task waiting for approval, user direct instruction, declined approval, plan revision invalidation, and direct directive while setting off.
-- [ ] **Step 2: Integrate assessment at the host boundary**
+- [x] **Step 2: Integrate assessment at the host boundary**
   Run it only for a Coding Task after the task plan is stable and immediately before eligible implementation work. Normal chat, direct coding fallback, verification-only phases, release publication, and task-manager-off flow do not expose a subagent spawn path.
-- [ ] **Step 3: Keep parent/child state separate**
+- [x] **Step 3: Keep parent/child state separate**
   Store worker rows and send task events without marking multiple `coding_tasks.subtask_progress` phases as RUNNING. Parent plan and final report remain authoritative.
-- [ ] **Step 4: Implement approval proposal and active-worker progress UI**
+- [x] **Step 4: Implement approval proposal and active-worker progress UI**
   Show why the task qualifies, roles/count/scopes, the selected model, and local-model warning as applicable. Provide separate approve/decline controls. Show status, safe summaries, elapsed time, and cancel; do not display raw hidden reasoning or sensitive tool output.
-- [ ] **Step 5: Run backend/frontend integration tests**
+- [x] **Step 5: Run backend/frontend integration tests**
   Run: `python -m pytest backend/tests/test_coding_subagent_integration.py -q`
   Run: `npm --prefix frontend test -- CodingTaskProgress.test.tsx`
   Expected: PASS; worker tests use fake executors.
-- [ ] **Step 6: Commit task lifecycle and UI integration**
+- [x] **Step 6: Commit task lifecycle and UI integration**
 
 ### Task 7: Documentation, operational evaluation, and security review
 
@@ -210,18 +210,18 @@
 - Produces: user-facing documentation for default-off behavior, how to enable, warning about local models, task authorization, when work qualifies, model pinning, worker visibility, cancellation, and fallback.
 - Consumes: actual implementation/support limits from Tasks 1–6; do not document unsupported provider/model modes as working.
 
-- [ ] **Step 1: Write matrix/wording checks**
+- [x] **Step 1: Write matrix/wording checks**
   Assert docs state the default is OFF, the setting is separate from Coding Orchestrator, local models are not recommended, user authorization is mandatory, and children use the task's selected model.
-- [ ] **Step 2: Add Japanese/English settings and task help**
+- [x] **Step 2: Add Japanese/English settings and task help**
   Explain that enabling the setting does not automatically spawn agents, and a small or non-parallelizable task will remain single-agent.
-- [ ] **Step 3: Evaluate the adoption path with fake and selected-provider tests**
+- [x] **Step 3: Evaluate the adoption path with fake and selected-provider tests**
   Run the same acceptance contract against every enabled executor. Use fake providers in automated CI. Any manual provider compatibility check must use a test project and explicit credentials; it must not publish, deploy, or change user repositories.
-- [ ] **Step 4: Run full targeted suites and final diff review**
+- [x] **Step 4: Run full targeted suites and final diff review**
   Run: `python -m pytest backend/tests/test_coding_subagent_*.py -q`
   Run: `npm --prefix frontend test -- ExternalToolsSettings.test.tsx CodingTaskProgress.test.tsx`
   Run: `git diff --check`
   Expected: all feature suites PASS; independent review confirms the hard gate, model identity, user approval source, local-model warning, file-scope enforcement, cancellation, and no release-capability leakage.
-- [ ] **Step 5: Commit docs and review fixes**
+- [x] **Step 5: Commit docs and review fixes**
 
 ## End-to-end exit criteria
 

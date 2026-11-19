@@ -144,9 +144,9 @@ _DIRECTIVE = re.compile(
     r"(?:\buse\s+(?:the\s+)?sub[- ]?agents?\b|\bspawn\s+(?:the\s+)?agents?\b|"
     r"\bdelegate\s+(?:this\s+)?(?:task|work)\s+to\s+(?:the\s+)?agents?\b|"
     r"\bparallel\s+agents?\s+(?:for|to)\s+(?:this|the)\s+(?:task|work)\b|"
-    r"サブエージェント(?:を|に)?(?:使って|使用して|利用して|用いて|任せて|依頼して)|"
-    r"複数(?:の)?エージェント(?:を|に)?(?:使って|使用して|利用して|用いて|立てて|起動して|任せて)|"
-    r"エージェント(?:を|に)(?:立てて|起動して|使って|使用して|利用して|用いて|任せて)|"
+    r"サブエージェント(?:を|に)?(?:使って|使用して|利用して|用いて|もちいて|任せて|依頼して)|"
+    r"複数(?:の)?エージェント(?:を|に)?(?:使って|使用して|利用して|用いて|もちいて|立てて|起動して|任せて)|"
+    r"エージェント(?:を|に)(?:立てて|起動して|使って|使用して|利用して|用いて|もちいて|任せて)|"
     r"サブエージェントで実行して)",
     re.IGNORECASE,
 )
@@ -211,6 +211,26 @@ def _subagent_scopes_for_assessment(assessment: DelegationAssessment) -> list[di
         {"phase_id": stream.phase_id, "assigned_paths": list(stream.assigned_paths)}
         for stream in assessment.workstreams
     ]
+
+
+def select_independent_workstreams(assessment: DelegationAssessment,
+                                  max_workers: int = MAX_CODING_SUBAGENTS,
+                                  eligible_phase_ids: set[str] | frozenset[str] | None = None
+                                  ) -> tuple[CodingWorkstream, ...]:
+    """Choose a deterministic largest mutually independent worker group."""
+    if type(max_workers) is not int or not 2 <= max_workers <= MAX_CODING_SUBAGENTS:
+        raise ValueError("invalid worker group limit")
+    if not assessment.eligible:
+        return ()
+    by_id = {stream.phase_id: stream for stream in assessment.workstreams
+             if eligible_phase_ids is None or stream.phase_id in eligible_phase_ids}
+    pairs = {tuple(sorted(pair)) for pair in assessment.independent_groups}
+    ids = tuple(sorted(by_id))
+    for size in range(min(max_workers, len(ids)), 1, -1):
+        for group in combinations(ids, size):
+            if all(tuple(sorted(pair)) in pairs for pair in combinations(group, 2)):
+                return tuple(by_id[phase_id] for phase_id in group)
+    return ()
 
 
 def _normalized_plan_path(raw: Any) -> str | None:
@@ -469,7 +489,8 @@ def is_direct_user_delegation(evidence: UserDirectiveEvidence | None) -> bool:
 
 def delegation_proposal_hash(assessment: DelegationAssessment,
                              model_binding: CodingSubagentModelBinding,
-                             role_ids: tuple[str, ...] | None = None) -> str:
+                             role_ids: tuple[str, ...] | None = None,
+                             workstreams: tuple[CodingWorkstream, ...] | None = None) -> str:
     try:
         roles = tuple(role_ids) if role_ids is not None else tuple(ROLE_REGISTRY)
     except TypeError:
@@ -478,29 +499,69 @@ def delegation_proposal_hash(assessment: DelegationAssessment,
             or any(not isinstance(role_id, str) for role_id in roles)
             or len(set(roles)) != len(roles)):
         raise ValueError("invalid fixed role selection")
+    roles = tuple(sorted(roles))
     try:
         for role_id in roles:
             role_for_id(role_id)
     except KeyError:
         raise ValueError("unknown fixed role") from None
+    selected = tuple(workstreams if workstreams is not None else assessment.workstreams)
+    if not selected or len(selected) > MAX_CODING_SUBAGENTS:
+        raise ValueError("invalid fixed workstream selection")
+    canonical = tuple(sorted(selected, key=lambda item: item.phase_id))
+    if len({item.phase_id for item in canonical}) != len(canonical):
+        raise ValueError("duplicate fixed workstream")
+    assessment_streams = {item.phase_id: item for item in assessment.workstreams}
+    for item in canonical:
+        if assessment_streams.get(item.phase_id) != item:
+            raise ValueError("workstream exceeds the current assessment")
+    independent_pairs = {tuple(sorted(pair)) for pair in assessment.independent_groups}
+    if any(tuple(sorted((left.phase_id, right.phase_id))) not in independent_pairs
+           for left, right in combinations(canonical, 2)):
+        raise ValueError("selected workstreams are not independent")
     return _digest({
         "assessment_hash": assessment.assessment_hash,
         "model_binding": asdict(model_binding),
         "role_ids": roles,
         "role_prompts": {role_id: ROLE_REGISTRY[role_id].prompt_version for role_id in roles},
+        "workstreams": [asdict(item) for item in canonical],
     })
+
+
+def workstreams_for_assignments(assessment: DelegationAssessment,
+                                assignments: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...]
+                                ) -> tuple[CodingWorkstream, ...]:
+    """Resolve worker records to exact assessed, pairwise-independent scopes."""
+    if not isinstance(assignments, (list, tuple)) or not 2 <= len(assignments) <= MAX_CODING_SUBAGENTS:
+        raise ValueError("invalid fixed worker assignments")
+    by_id = {item.phase_id: item for item in assessment.workstreams}
+    selected: list[CodingWorkstream] = []
+    for assignment in assignments:
+        if not isinstance(assignment, Mapping):
+            raise ValueError("invalid fixed worker assignment")
+        phase_id = assignment.get("phase_id")
+        paths = assignment.get("assigned_paths")
+        stream = by_id.get(phase_id) if isinstance(phase_id, str) else None
+        if stream is None or not isinstance(paths, (list, tuple)):
+            raise ValueError("worker assignment is not an assessed workstream")
+        if tuple(sorted(set(paths))) != stream.assigned_paths:
+            raise ValueError("worker assignment exceeds or omits its assessed scope")
+        selected.append(stream)
+    return tuple(sorted(selected, key=lambda item: item.phase_id))
 
 
 def authorize_delegation(assessment: DelegationAssessment, *, task_id: str,
                          model_binding: CodingSubagentModelBinding,
                          user_directive: UserDirectiveEvidence | None = None,
                          approval: DelegationApprovalEvidence | None = None,
-                         role_ids: tuple[str, ...] | None = None) -> DelegationAuthorization:
+                         role_ids: tuple[str, ...] | None = None,
+                         workstreams: tuple[CodingWorkstream, ...] | None = None) -> DelegationAuthorization:
     """Mint authorization only from a user directive or a distinct task approval."""
     if not assessment.eligible or task_id != assessment.task_id:
         raise ValueError("delegation assessment is not eligible for this task")
     roles = tuple(role_ids) if role_ids is not None else tuple(ROLE_REGISTRY)
-    proposal_hash = delegation_proposal_hash(assessment, model_binding, roles)
+    selected = tuple(workstreams if workstreams is not None else assessment.workstreams)
+    proposal_hash = delegation_proposal_hash(assessment, model_binding, roles, selected)
     if is_direct_user_delegation(user_directive):
         source, source_id = "USER_DIRECTIVE", str(user_directive.message_id)
     elif approval is not None:
@@ -521,23 +582,23 @@ def authorize_delegation(assessment: DelegationAssessment, *, task_id: str,
         proposal_hash=proposal_hash,
         model_binding=model_binding,
         role_ids=roles,
-        workstream_scopes=tuple((item.phase_id, item.assigned_paths) for item in assessment.workstreams),
+        workstream_scopes=tuple((item.phase_id, item.assigned_paths) for item in selected),
     )
 
 
 def authorization_is_current(authorization: DelegationAuthorization,
                              assessment: DelegationAssessment, task_id: str,
-                             model_binding: CodingSubagentModelBinding) -> bool:
+                             model_binding: CodingSubagentModelBinding,
+                             workstreams: tuple[CodingWorkstream, ...] | None = None) -> bool:
+    selected = tuple(workstreams if workstreams is not None else assessment.workstreams)
     return bool(
         assessment.eligible
         and authorization.task_id == task_id == assessment.task_id
         and authorization.plan_revision == assessment.plan_revision
         and authorization.plan_hash == assessment.plan_hash
         and authorization.model_binding == model_binding
-        and authorization.workstream_scopes == tuple(
-            (item.phase_id, item.assigned_paths) for item in assessment.workstreams
-        )
+        and authorization.workstream_scopes == tuple((item.phase_id, item.assigned_paths) for item in selected)
         and authorization.proposal_hash == delegation_proposal_hash(
-            assessment, model_binding, authorization.role_ids
+            assessment, model_binding, authorization.role_ids, selected
         )
     )

@@ -120,6 +120,64 @@ class CodingSubagentSettingsTests(unittest.TestCase):
             self.assertEqual(200, response.status_code, response.text)
             self.assertTrue(response.json()["coding_subagents_enabled"])
 
+    def test_disable_stops_executor_before_snapshotting_active_workers_to_drain(self):
+        self.db.create_conversation("Conversation", time.time(), "conversation-1")
+        self.db.create_coding_task("task-late-worker", "conversation-1", "Build",
+                                   "RUNNING", "IMPLEMENTATION", {}, time.time())
+        now = time.time()
+        with self.db.connect() as connection:
+            connection.execute("""INSERT INTO coding_subagent_proposals(
+                id,task_id,phase_id,plan_revision,plan_hash,assessment_hash,proposal_hash,
+                model_binding_json,role_ids_json,status,authorization_json,created_at,updated_at)
+                VALUES('proposal-late','task-late-worker','phase-1',0,?,?,?,?,?,'QUEUED','{}',?,?)""",
+                ("a" * 64, "b" * 64, "c" * 64, "{}", '["implementation_worker"]', now, now))
+            connection.execute("""INSERT INTO coding_subagent_runs(
+                id,proposal_id,task_id,phase_id,plan_revision,role_id,prompt_version,
+                model_binding_json,assigned_paths_json,status,usage_json,created_at,updated_at)
+                VALUES('worker-late','proposal-late','task-late-worker','phase-1',0,
+                'implementation_worker','2026-11-v1','{}','[\"backend/a.py\"]','QUEUED','{}',?,?)""",
+                (now, now))
+
+        enabled_settings = Settings(
+            db_path=self.db.path, context_budget=4096, task_manager_enabled=False,
+            coding_subagents_enabled=True,
+            coding_subagents_warning_ack_revision=WARNING_VERSION)
+        old_enabled = api.coding_subagent_executor.enabled
+        self.addCleanup(api.coding_subagent_executor.set_enabled, old_enabled)
+        events = []
+        original_set_enabled = api.coding_subagent_executor.set_enabled
+        injected = False
+
+        def set_enabled(enabled):
+            nonlocal injected
+            events.append(("enabled", enabled))
+            result = original_set_enabled(enabled)
+            if enabled is False and not injected:
+                injected = True
+                with self.db.connect() as connection:
+                    connection.execute("UPDATE coding_subagent_proposals SET status='RUNNING' WHERE id='proposal-late'")
+                    connection.execute("UPDATE coding_subagent_runs SET status='RUNNING' WHERE id='worker-late'")
+            return result
+
+        def cancel_all(*args, **kwargs):
+            events.append(("cancel", None))
+            return Database.cancel_all_coding_subagents(self.db, *args, **kwargs)
+
+        def drain(task_id):
+            events.append(("drain", task_id))
+
+        with patch.object(api, "db", self.db), patch.object(api, "settings", enabled_settings), \
+                patch.object(api, "rebuild", side_effect=lambda candidate: setattr(api, "settings", candidate)), \
+                patch.object(api.coding_subagent_executor, "set_enabled", side_effect=set_enabled), \
+                patch.object(self.db, "cancel_all_coding_subagents", side_effect=cancel_all), \
+                patch.object(api, "_drain_coding_subagent_mutations", side_effect=drain):
+            response = self.client.patch("/api/settings/capabilities", json={
+                "coding_subagents_enabled": False})
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertIn(("drain", "task-late-worker"), events)
+        self.assertLess(events.index(("enabled", False)), events.index(("cancel", None)))
+        self.assertLess(events.index(("cancel", None)), events.index(("drain", "task-late-worker")))
+
 
 if __name__ == "__main__":
     unittest.main()

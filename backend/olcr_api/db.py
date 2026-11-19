@@ -1330,7 +1330,8 @@ class Database:
                                         workers: list[dict[str, Any]], now: float,
                                         setting_enabled: bool,
                                         authorization: dict[str, Any] | None = None) -> dict[str, Any]:
-        from .coding_subagents import UserDirectiveEvidence, _subagent_scopes_for_assessment, is_direct_user_delegation
+        from .coding_subagents import (CodingSubagentModelBinding, UserDirectiveEvidence,
+            delegation_proposal_hash, is_direct_user_delegation, workstreams_for_assignments)
         if type(setting_enabled) is not bool or not setting_enabled:
             raise ValueError("coding subagents are disabled")
         if (not isinstance(proposal_id, str) or not proposal_id or len(proposal_id) > 120
@@ -1352,6 +1353,15 @@ class Database:
             normalized_workers = self._validate_coding_subagent_assignments(
                 plan, role_ids, workers, binding)
             roles = sorted(role_ids)
+            selected_workstreams = workstreams_for_assignments(assessment, normalized_workers)
+            expected_proposal_hash = delegation_proposal_hash(
+                assessment, CodingSubagentModelBinding(**binding), tuple(roles), selected_workstreams)
+            if proposal_hash != expected_proposal_hash:
+                raise ValueError("coding subagent proposal hash does not match assigned workstreams")
+            selected_scopes = [
+                {"phase_id": item.phase_id, "assigned_paths": list(item.assigned_paths)}
+                for item in selected_workstreams
+            ]
             binding_json = _subagent_json(binding)
             roles_json = _subagent_json(roles)
             authorization_json = None
@@ -1367,7 +1377,7 @@ class Database:
                         or authorization.get("proposal_hash") != proposal_hash
                         or _subagent_json(authorization.get("model_binding")) != binding_json
                         or sorted(authorization.get("role_ids") or []) != roles
-                        or authorization.get("workstream_scopes") != _subagent_scopes_for_assessment(assessment)):
+                        or authorization.get("workstream_scopes") != selected_scopes):
                     raise ValueError("invalid coding subagent authorization")
                 source_id = authorization.get("source_id")
                 message = db.execute(
@@ -1384,7 +1394,7 @@ class Database:
                     "plan_revision": plan_revision, "plan_hash": plan_hash,
                     "proposal_hash": proposal_hash, "model_binding": binding,
                     "role_ids": roles,
-                    "workstream_scopes": authorization.get("workstream_scopes"),
+                    "workstream_scopes": selected_scopes,
                 })
                 status = "AUTHORIZED"
 
@@ -1395,15 +1405,29 @@ class Database:
             if existing is not None:
                 prior = self._decode_coding_subagent_proposal(db, existing)
                 prior_workers = [{key: row[key] for key in
-                                  ("id", "phase_id", "role_id", "prompt_version", "assigned_paths")}
+                                  ("phase_id", "role_id", "prompt_version", "assigned_paths")}
                                  for row in prior["workers"]]
-                expected_workers = [{"id": item["worker_id"], "phase_id": item["phase_id"],
+                expected_workers = [{"phase_id": item["phase_id"],
                                      "role_id": item["role_id"], "prompt_version": item["prompt_version"],
                                      "assigned_paths": item["assigned_paths"]}
                                     for item in normalized_workers]
                 if (prior["model_binding"] != binding or prior["role_ids"] != roles
                         or prior_workers != expected_workers):
                     raise ValueError("coding subagent idempotency key was reused for different work")
+                if authorization_json and prior["status"] == "AWAITING_USER_APPROVAL":
+                    db.execute("""UPDATE coding_subagent_proposals SET status='AUTHORIZED',
+                        authorization_json=?,updated_at=? WHERE id=? AND status='AWAITING_USER_APPROVAL'""",
+                        (authorization_json, float(now), prior["id"]))
+                    db.execute("""UPDATE coding_subagent_runs SET status='AUTHORIZED',updated_at=?
+                        WHERE proposal_id=? AND status='AWAITING_USER_APPROVAL'""",
+                        (float(now), prior["id"]))
+                    self._record_coding_subagent_event(db, task_id, "CODING_SUBAGENT_AUTHORIZED",
+                        {"proposal_id": prior["id"], "plan_revision": plan_revision,
+                         "proposal_hash": proposal_hash, "status": "AUTHORIZED",
+                         "source": "USER_DIRECTIVE"}, now)
+                    existing = db.execute("SELECT * FROM coding_subagent_proposals WHERE id=?",
+                                           (prior["id"],)).fetchone()
+                    return self._decode_coding_subagent_proposal(db, existing)
                 return prior
 
             db.execute("""INSERT INTO coding_subagent_proposals(
@@ -1438,6 +1462,53 @@ class Database:
                                  (proposal_id, task_id)).fetchone()
             return self._decode_coding_subagent_proposal(db, row)
 
+    def get_coding_subagent_proposal_by_hash(self, task_id: str, plan_revision: int,
+                                             proposal_hash: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute("""SELECT * FROM coding_subagent_proposals
+                WHERE task_id=? AND plan_revision=? AND proposal_hash=?""",
+                (task_id, plan_revision, proposal_hash)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def get_active_coding_subagent_proposal(self, task_id: str, plan_revision: int,
+                                            phase_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute("""SELECT * FROM coding_subagent_proposals
+                WHERE task_id=? AND plan_revision=? AND phase_id=?
+                AND status IN ('AWAITING_USER_APPROVAL','AUTHORIZED','QUEUED','RUNNING')
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (task_id, plan_revision, phase_id)).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def get_coding_subagent_proposal_for_revision(self, task_id: str,
+                                                   plan_revision: int) -> dict[str, Any] | None:
+        """Return the single delegation group already considered for this plan."""
+        with self.connect() as db:
+            row = db.execute("""SELECT * FROM coding_subagent_proposals
+                WHERE task_id=? AND plan_revision=? ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (task_id, int(plan_revision))).fetchone()
+            return self._decode_coding_subagent_proposal(db, row)
+
+    def invalidate_pending_coding_subagent_model(self, task_id: str, plan_revision: int,
+                                                  plan_hash: str, model_binding: dict[str, Any],
+                                                  now: float) -> int:
+        binding_json = _subagent_json(_subagent_model_binding(model_binding))
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute("""SELECT id FROM coding_subagent_proposals WHERE task_id=?
+                AND plan_revision=? AND plan_hash=? AND status='AWAITING_USER_APPROVAL'
+                AND model_binding_json<>?""",
+                (task_id, plan_revision, plan_hash, binding_json)).fetchall()
+            for row in rows:
+                db.execute("UPDATE coding_subagent_proposals SET status='INTERRUPTED',updated_at=? WHERE id=?",
+                           (float(now), row['id']))
+                db.execute("""UPDATE coding_subagent_runs SET status='INTERRUPTED',finished_at=?,updated_at=?
+                    WHERE proposal_id=? AND status='AWAITING_USER_APPROVAL'""",
+                    (float(now), float(now), row['id']))
+                self._record_coding_subagent_event(db, task_id, 'CODING_SUBAGENT_INVALIDATED',
+                    {"proposal_id": row['id'], "status": "INTERRUPTED", "reason": "MODEL_CHANGED"}, now)
+            return len(rows)
+
     def coding_subagent_proposals(self, task_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
             rows = db.execute(
@@ -1457,7 +1528,9 @@ class Database:
     def _validate_current_coding_subagent_proposal(self, db: sqlite3.Connection, proposal_id: str,
                                                    task_id: str, plan_revision: int, plan_hash: str,
                                                    proposal_hash: str, model_binding: dict[str, Any],
-                                                   setting_enabled: bool) -> tuple[sqlite3.Row, sqlite3.Row, Any]:
+                                                   setting_enabled: bool) -> tuple[sqlite3.Row, sqlite3.Row, Any, tuple[Any, ...]]:
+        from .coding_subagents import (CodingSubagentModelBinding, delegation_proposal_hash,
+            workstreams_for_assignments)
         if type(setting_enabled) is not bool or not setting_enabled:
             raise ValueError("coding subagents are disabled")
         task, plan, assessment = self._current_coding_subagent_plan(db, task_id, plan_revision, plan_hash)
@@ -1471,17 +1544,27 @@ class Database:
                 or proposal["proposal_hash"] != proposal_hash
                 or proposal["model_binding_json"] != _subagent_json(model_binding)):
             raise ValueError("stale coding subagent proposal")
-        return task, proposal, assessment
+        workers = db.execute("SELECT phase_id,assigned_paths_json FROM coding_subagent_runs "
+                             "WHERE proposal_id=? ORDER BY phase_id", (proposal_id,)).fetchall()
+        assignments = [{"phase_id": row["phase_id"],
+                        "assigned_paths": json.loads(row["assigned_paths_json"] or "[]")}
+                       for row in workers]
+        selected = workstreams_for_assignments(assessment, assignments)
+        roles = tuple(json.loads(proposal["role_ids_json"] or "[]"))
+        expected_hash = delegation_proposal_hash(
+            assessment, CodingSubagentModelBinding(**model_binding), roles, selected)
+        if expected_hash != proposal_hash:
+            raise ValueError("stale coding subagent proposal scope")
+        return task, proposal, assessment, selected
 
     def approve_coding_subagent_proposal(self, proposal_id: str, *, task_id: str,
                                          plan_revision: int, plan_hash: str, proposal_hash: str,
                                          model_binding: dict[str, Any], now: float,
                                          setting_enabled: bool) -> dict[str, Any]:
-        from .coding_subagents import _subagent_scopes_for_assessment
         binding = _subagent_model_binding(model_binding)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            task, proposal, assessment = self._validate_current_coding_subagent_proposal(
+            task, proposal, assessment, selected_workstreams = self._validate_current_coding_subagent_proposal(
                 db, proposal_id, task_id, plan_revision, plan_hash, proposal_hash,
                 binding, setting_enabled)
             import uuid
@@ -1491,7 +1574,10 @@ class Database:
                 "task_id": task_id, "source": "TASK_APPROVAL", "source_id": event_id,
                 "plan_revision": plan_revision, "plan_hash": plan_hash,
                 "proposal_hash": proposal_hash, "model_binding": binding,
-                "role_ids": roles, "workstream_scopes": _subagent_scopes_for_assessment(assessment),
+                "role_ids": roles, "workstream_scopes": [
+                    {"phase_id": item.phase_id, "assigned_paths": list(item.assigned_paths)}
+                    for item in selected_workstreams
+                ],
             }
             db.execute("""UPDATE coding_subagent_proposals
                 SET status='AUTHORIZED',authorization_json=?,updated_at=?

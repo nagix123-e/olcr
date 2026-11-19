@@ -13,7 +13,9 @@ export type CodingSubtaskProgress={task_id:string;phase_id:string;status:"WAITIN
 export type CodingPhaseReport={id:string;phase_id:string;attempt:number;validation_status:string;structured_report?:{plan_revision?:number;status?:string;errors?:string[];blockers?:string[];test_fail?:string[];build_executed?:string;build_pass?:string;manager_decision?:{decision?:string}}};
 export type ImplementationPlanArtifact={target_root?:string;file_manifest?:{path?:string;action?:string}[];file_manifest_count?:number;scaffold_created_count?:number;scaffold_skipped_existing_count?:number;manifest_source?:string};
 export type CodingModelEvent={state:string;created_at:number;invocation_id?:string;event?:string;model?:string;reason?:string;failure?:string;generated_tokens?:number|null;max_tokens?:number;processed_tokens?:number;prompt_tokens?:number;reasoning_chars?:number;output_chars?:number;channel?:string;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};
-export type CodingTask={model_progress?:CodingModelEvent;model_invocation?:{model:string;runtime:string;role:string;state:string;failure?:string;created_at:number;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};console_hidden?:boolean;id:string;original_goal?:string;status:string;activity:string;plan_revision?:number;recovery_reason?:string;current_phase_id?:string|null;retry_count:number;max_retries:number;queue_position?:number|null;archived?:boolean;pause_requested?:boolean;execution_mode?:"NORMAL"|"HEAVY_BATCHED";batch_cursor?:number;batch_handoff?:{next_constraints?:string[];completed_phase_id?:string;next_phase_id?:string;changed_files?:string[];verification?:{phase_id?:string;status?:string;build_pass?:string;test_pass?:string[]}[]}|null;final_report?:{text?:string}|null;subtask_progress?:CodingSubtaskProgress[]|null;plan?:{concept_diagram?:ConceptDiagram;phases?:CodingPhase[];tasks?:CodingGraphTask[];implementation_plan_artifact?:ImplementationPlanArtifact}|null;pending_authorization?:{type?:string;message?:string;requested_scope?:string[];reason?:string;unmet_criteria?:string[];questions?:string[]}|null};
+export type CodingSubagentWorker={id:string;phase_id:string;role_id:string;status:string;assigned_paths:string[];safe_summary?:string|null;error_category?:string|null;started_at?:number|null;finished_at?:number|null;usage?:{input_tokens?:number;output_tokens?:number;latency_ms?:number}};
+export type CodingSubagentProposal={id:string;phase_id:string;plan_revision:number;plan_hash:string;proposal_hash:string;status:string;model_binding?:{model_id?:string;provider_id?:string;runtime_id?:string};role_ids?:string[];workers:CodingSubagentWorker[]};
+export type CodingTask={model_progress?:CodingModelEvent;model_invocation?:{model:string;runtime:string;role:string;state:string;failure?:string;created_at:number;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};console_hidden?:boolean;id:string;original_goal?:string;status:string;activity:string;plan_revision?:number;recovery_reason?:string;current_phase_id?:string|null;retry_count:number;max_retries:number;queue_position?:number|null;archived?:boolean;pause_requested?:boolean;execution_mode?:"NORMAL"|"HEAVY_BATCHED";batch_cursor?:number;batch_handoff?:{next_constraints?:string[];completed_phase_id?:string;next_phase_id?:string;changed_files?:string[];verification?:{phase_id?:string;status?:string;build_pass?:string;test_pass?:string[]}[]}|null;final_report?:{text?:string}|null;subtask_progress?:CodingSubtaskProgress[]|null;plan?:{concept_diagram?:ConceptDiagram;phases?:CodingPhase[];tasks?:CodingGraphTask[];implementation_plan_artifact?:ImplementationPlanArtifact}|null;pending_authorization?:{type?:string;message?:string;requested_scope?:string[];reason?:string;unmet_criteria?:string[];questions?:string[];proposal_id?:string;plan_revision?:number;plan_hash?:string;proposal_hash?:string}|null;subagent_proposals?:CodingSubagentProposal[]};
 
 const active=new Set(["PLANNING","RUNNING","FINAL_REPORTING","QWEN_REPLANNING"]);
 const pauseable=new Set(["QUEUED","PLANNING","RUNNING","FINAL_REPORTING","QWEN_REPLANNING"]);
@@ -72,6 +74,7 @@ export function CodingTaskProgress({task,reports,loading,error,pausePending,onPa
     <summary aria-label={`${ja?"コーディング オーケストレーター":"Coding Orchestrator"}: ${localizedDisplay[state]}`}><span><b>{ja?"コーディング オーケストレーター":"Coding Orchestrator"}</b><small><span>{progressSummary}</span>{phaseProgressLabel&&<span className="coding-phase-progress-summary"> · {phaseProgressLabel}</span>}</small></span><StatusBadge state={task.status} announce={false}>{activityLabel&&<span className="coding-activity-spinner" role="status" aria-label={activityLabel}/>}{localizedLabels[statusKey]||localizedDisplay[state]}</StatusBadge>{!task.archived&&<button type="button" className="coding-dismiss" aria-label={ja?"コーディング オーケストレーターを閉じる":"Dismiss Coding Orchestrator card"} title={ja?"カードを閉じる":"Dismiss card"} onClick={event=>{event.preventDefault();event.stopPropagation();onDismiss?.()}}>×</button>}</summary>
     <div className="coding-task-details">
       <p className="coding-status-description" role="status">{task.pause_requested&&taskIsActivelyRunning(task)?(ja?"停止処理中…":"Stopping…"):localizedLabels[statusKey]||(ja?"状態を確認中":"Checking status")}</p>{loading&&<p className="coding-loading" role="status">{ja?"進行状況を更新中…":"Updating progress…"}</p>}{error&&<p className="coding-error" role="alert">{ja?"進行状況を取得できませんでした。再試行できます。":"Could not load progress. You can retry."}</p>}
+      <CodingSubagentsPanel task={task} ja={ja}/>
       {workspaceSetup&&<section aria-label={ja?'作業場所の選択':'Choose workspace'} className="coding-workspace-setup"><p>{task.pending_authorization?.message}</p><div className="coding-actions"><button type="button" disabled={setupBusy} onClick={()=>void setup('direct')}>{ja?'このTaskは現在のWorkspaceで進める':'Use current workspace for this task'}</button>{['WORKTREE_REQUIRES_GIT_REPOSITORY','WORKTREE_REQUIRES_INITIAL_COMMIT'].includes(task.pending_authorization?.reason||'')&&<button type="button" disabled={setupBusy} onClick={()=>void setup('initialize')}>{ja?'空フォルダにGitと空の初期commitを作り、worktreeで進める':'Initialize empty Git baseline commit and use worktree'}</button>}<button type="button" disabled={setupBusy} onClick={()=>void setup('retry')}>{ja?'準備した作業場所を再確認':'Recheck prepared workspace'}</button></div>{setupError&&<p role="alert">{setupError}</p>}</section>}
       <CodingModelProgress task={task} ja={ja}/>
       {task.status==='WAITING_FOR_PLAN_APPROVAL'&&<section aria-label={ja?'実装計画':'Implementation plan'}><ol>{phases.slice(0,5).map(phase=><li key={phase.id}>{phase.goal}</li>)}</ol><p>{ja?'「この計画で進めて」、または修正指示をチャットへ入力してください。':'Reply “Approve this plan” or enter your changes in chat.'}</p><button type="button" disabled={setupBusy} onClick={async()=>{setSetupBusy(true);try{await api(`/coding-tasks/${task.id}/plan/approve`,{method:'POST',body:JSON.stringify({plan_revision:task.plan_revision||0})});window.dispatchEvent(new Event('olcr-command-complete'))}catch(reason){setSetupError(String(reason))}finally{setSetupBusy(false)}}}>{ja?'この計画で実装を開始':'Approve plan and start'}</button>{setupError&&!workspaceSetup&&<p role="alert">{setupError}</p>}</section>}
@@ -100,4 +103,64 @@ export function CodingTaskProgress({task,reports,loading,error,pausePending,onPa
       <div className="coding-actions">{pauseable.has(task.status)&&!task.archived&&<button type="button" onClick={onPause} disabled={pausePending}>{ja?(pausePending?"一時停止を要求中…":"一時停止"):(pausePending?"Requesting pause…":"Pause")}</button>}{task.status==="RESUMABLE"&&!task.archived&&<button type="button" onClick={onResume}>{ja?(checkpoint?"続行":"再開（リポジトリを再確認します）"):(checkpoint?"Continue":"Resume (recheck repository)")}</button>}{canExplicitlyResumeNarrativeFailure(task)&&!task.archived&&!task.pending_authorization&&<button type="button" onClick={onResume}>{ja?"同じコーディングタスクを段階的な復旧で再開":"Resume this Coding Task with bounded recovery"}</button>}{!taskIsActivelyRunning(task)&&!task.archived&&<button type="button" onClick={onArchive}>{ja?"アーカイブ":"Archive"}</button>}</div>
     </div>
   </details>
+}
+
+function CodingSubagentsPanel({task,ja}:{task:CodingTask;ja:boolean}){
+  const proposals=task.subagent_proposals||[];
+  const pendingId=task.pending_authorization?.type==="CODING_SUBAGENT_APPROVAL"
+    ?task.pending_authorization.proposal_id:null;
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  if(!proposals.length)return null;
+  const decide=async(proposal:CodingSubagentProposal,action:"APPROVE_DELEGATION"|"DECLINE_DELEGATION")=>{
+    if(busy)return;
+    setBusy(true);setError("");
+    try{
+      await api(`/coding-tasks/${task.id}/subagent-proposals/${proposal.id}/decision`,{
+        method:"POST",body:JSON.stringify({action,plan_revision:proposal.plan_revision,
+          plan_hash:proposal.plan_hash,proposal_hash:proposal.proposal_hash})
+      });
+      window.dispatchEvent(new Event("olcr-command-complete"));
+    }catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
+    finally{setBusy(false)}
+  };
+  const statuses:Record<string,string>={AWAITING_USER_APPROVAL:ja?"承認待ち":"Awaiting approval",
+    AUTHORIZED:ja?"承認済み":"Approved",QUEUED:ja?"待機中":"Queued",RUNNING:ja?"実行中":"Running",
+    SUCCEEDED:ja?"完了":"Completed",FAILED:ja?"失敗":"Failed",CANCELLED:ja?"キャンセル":"Cancelled",
+    DECLINED:ja?"辞退":"Declined",INTERRUPTED:ja?"中断":"Interrupted",TIMED_OUT:ja?"時間切れ":"Timed out"};
+  const roles:Record<string,string>={implementation_worker:ja?"実装担当":"Implementation worker",
+    repo_explorer:ja?"コード調査":"Repository explorer",test_reviewer:ja?"テストレビュー":"Test reviewer"};
+  const status=(value:string)=>statuses[value]||value;
+  const role=(value:string)=>roles[value]||value;
+  const elapsedSeconds=(worker:CodingSubagentWorker)=>worker.started_at==null?null:
+    Math.max(0,Math.floor((worker.finished_at??Date.now()/1000)-worker.started_at));
+  return <section className="coding-subagents" aria-label={ja?"サブエージェント":"Coding subagents"}>
+    <h3>{ja?"コーディングサブエージェント":"Coding subagents"}</h3>
+    {proposals.map(proposal=>{
+      const canDecide=pendingId===proposal.id&&proposal.status==="AWAITING_USER_APPROVAL"&&!task.archived;
+      return <article className="coding-subagent-proposal" key={proposal.id}>
+        <div className="coding-subagent-heading"><strong>{status(proposal.status)}</strong>
+          <span>{ja?`工程 ${proposal.phase_id}`:`Phase ${proposal.phase_id}`}</span></div>
+        {proposal.model_binding?.model_id&&<p>{ja?"使用モデル":"Coding model"}: {proposal.model_binding.model_id} · {proposal.model_binding.runtime_id||"—"}</p>}
+        {canDecide&&<p>{task.pending_authorization?.reason|| (ja?"このタスクだけに適用されるサブエージェント利用の承認です。":"Approve subagents for this task only.")}</p>}
+        <ul>{proposal.workers.map(worker=><li key={worker.id}>
+          <strong>{role(worker.role_id)}</strong> · {worker.phase_id} · {status(worker.status)}
+          {elapsedSeconds(worker)!=null&&<span>{ja?` · 経過 ${elapsedSeconds(worker)} 秒`:` · Elapsed ${elapsedSeconds(worker)}s`}</span>}
+          {worker.assigned_paths?.length>0&&<span className="coding-subagent-paths">{worker.assigned_paths.join(", ")}</span>}
+          {worker.safe_summary&&<p>{worker.safe_summary}</p>}
+          {worker.error_category&&<p className="coding-failure">{worker.error_category}</p>}
+        </li>)}</ul>
+        {canDecide&&<div className="coding-subagent-actions">
+          <button type="button" disabled={busy} onClick={()=>void decide(proposal,"APPROVE_DELEGATION")}>
+            {busy?(ja?"処理中…":"Working…"):(ja?"サブエージェントを承認":"Approve subagents")}
+          </button>
+          <button type="button" disabled={busy} onClick={()=>void decide(proposal,"DECLINE_DELEGATION")}>
+            {ja?"辞退して単独で続行":"Decline and continue with one agent"}
+          </button>
+        </div>}
+      </article>;
+    })}
+    {pendingId&&!proposals.some(item=>item.id===pendingId)&&<p>{ja?"承認内容を再読み込み中です。":"Refreshing the approval details…"}</p>}
+    {error&&<p role="alert" className="coding-error">{error}</p>}
+    {proposals.some(item=>item.status==="RUNNING")&&<p className="coding-status-description">{ja?"一時停止すると実行中のサブエージェントも停止します。":"Pausing the task also stops active subagents."}</p>}
+  </section>;
 }
