@@ -385,7 +385,7 @@ class BrainProviderTests(unittest.TestCase):
                         {'type':'object'},False)
                 self.assertEqual('output_limit',raised.exception.category)
 
-    def test_truncated_coding_response_uses_the_next_configured_model(self):
+    def test_truncated_coding_response_retries_primary_then_falls_back_after_provider_failure(self):
         self.providers.register('anthropic','api_key',{'base_url':'http://127.0.0.1:9/v1',
             'api_key':'synthetic','model_ids':'fixture-code'})
         self.providers.register('google','api_key',{'base_url':'http://127.0.0.1:9/v1',
@@ -396,13 +396,19 @@ class BrainProviderTests(unittest.TestCase):
         provider=RoleAwareModelProvider(Settings());provider.brain_models=self.manager
         self.addCleanup(provider.close)
         responses=[{'content':[{'type':'text','text':'{"operations":['}],'stop_reason':'max_tokens'},
+                   ModelFailure('provider_unavailable','fixture retry failure'),
                    {'candidates':[{'content':{'parts':[{'text':'{"operations":[]}' }]},'finishReason':'STOP'}]}]
         with brain_scope(configuration),patch('olcr_api.brain_providers.call_json',side_effect=responses) as call:
             result=provider.generate([{'role':'user','content':'implement'}],'role:long_implementation',
                 format={'type':'object'},max_tokens=12288)
         self.assertEqual('{"operations":[]}',result['text'])
         self.assertEqual('api:google:fixture-next',result['fallback_model_id'])
-        self.assertEqual(12288,call.call_args_list[1].args[1]['generationConfig']['maxOutputTokens'])
+        self.assertIn('/messages',call.call_args_list[0].args[0])
+        self.assertIn('/messages',call.call_args_list[1].args[0])
+        self.assertIn('/models/fixture-next:generateContent',call.call_args_list[2].args[0])
+        self.assertEqual(12288,call.call_args_list[0].args[1]['max_tokens'])
+        self.assertEqual(24576,call.call_args_list[1].args[1]['max_tokens'])
+        self.assertEqual(12288,call.call_args_list[2].args[1]['generationConfig']['maxOutputTokens'])
 
     def test_chatgpt_incomplete_token_limit_is_output_limit(self):
         events=[{'type':'response.output_text.delta','delta':'{"operations":['},

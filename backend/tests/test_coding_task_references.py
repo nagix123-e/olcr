@@ -75,7 +75,7 @@ class CodingTaskReferenceTests(unittest.TestCase):
             table_exists = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='coding_task_references'"
             ).fetchone()
-        self.assertEqual(40, version)
+        self.assertEqual(41, version)
         self.assertIsNotNone(table_exists)
         self.assertEqual(task_before, self.database.coding_task("task-1"))
         self.assertEqual(reports_before, self.database.coding_phase_reports("task-1"))

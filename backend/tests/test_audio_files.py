@@ -141,9 +141,23 @@ class AudioFileTests(unittest.TestCase):
                 payload=base64.b64decode(models.transcribe.call_args.args[0])
                 with wave.open(io.BytesIO(payload),'rb') as audio:
                     self.assertEqual((1,2,16000),(audio.getnchannels(),audio.getsampwidth(),audio.getframerate()))
-                if name.endswith('.m4a') and Path('/usr/bin/afconvert').is_file():
-                    with patch('olcr_api.audio_files._ffmpeg_executable',return_value=None):
-                        self.assertEqual('decoded transcript',transcribe_file(encoded.read_bytes(),name,'ja',models))
+
+    def test_afconvert_decodes_m4a_when_codec_is_available(self):
+        ffmpeg=shutil.which('ffmpeg')
+        afconvert=Path('/usr/bin/afconvert')
+        if not ffmpeg:self.skipTest('ffmpeg fixture encoder is not available')
+        if not afconvert.is_file():self.skipTest('afconvert is not available')
+        source=Path(self.temp.name)/'source.wav';source.write_bytes(wav())
+        encoded=source.with_name('録音.m4a')
+        subprocess.run([ffmpeg,'-v','error','-y','-i',str(source),str(encoded)],check=True,capture_output=True)
+        probe=source.with_name('afconvert-probe.wav')
+        result=subprocess.run([str(afconvert),'-f','WAVE','-d','LEI16@16000','-c','1',str(encoded),str(probe)],capture_output=True)
+        if result.returncode:
+            self.skipTest('afconvert is installed but this system cannot decode AAC M4A')
+        models=Mock();models.choice.return_value={'protocol':'openai','model':'configured'}
+        models.transcribe.return_value={'text':'decoded transcript'}
+        with patch('olcr_api.audio_files._ffmpeg_executable',return_value=None):
+            self.assertEqual('decoded transcript',transcribe_file(encoded.read_bytes(),'録音.m4a','ja',models))
 
     def test_preset_transcription_uses_existing_language_pipeline(self):
         models=Mock();models.choice.return_value={'protocol':'preset','model':'LFM'}
