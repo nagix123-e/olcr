@@ -13,7 +13,7 @@ npm run dev
 
 The workflow builds this site with `GITHUB_PAGES=true`, which sets Vite's project-site base path to `/olcr/`, then deploys `dist/` from the repository's `main` branch.
 
-After the workflow is merged, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** once. The site will be available at <https://nagix123-e.github.io/olcr/> after a successful deployment.
+The repository is configured to publish through GitHub Actions. Merging site changes to `main` runs the build and deploy workflow; after a successful deployment, the site is available at <https://nagix123-e.github.io/olcr/>.
 
 To build the Pages version locally:
 
