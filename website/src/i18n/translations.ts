@@ -248,7 +248,7 @@ export const translations: Record<Lang, TranslationContent> = {
         { href: '#capacity', label: 'Capacity' },
         { href: '#agents-coding', label: 'Agents & Coding' },
       ],
-      cta: 'Releases',
+      cta: 'GitHub repo',
       langToggleLabel: 'Language',
     },
     hero: {
@@ -715,7 +715,7 @@ export const translations: Record<Lang, TranslationContent> = {
         { href: '#capacity', label: 'モデル規模' },
         { href: '#agents-coding', label: 'エージェント' },
       ],
-      cta: 'リリース',
+      cta: 'プロジェクトリポジトリ',
       langToggleLabel: '言語切替',
     },
     hero: {
