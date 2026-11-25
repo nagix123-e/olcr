@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-sans: "DM Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-lime-olcr: #95E329;
+  --color-obsidian: #060706;
+  --color-surface: #0D0F0C;
+  --color-surface-elevated: #141712;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    background-color: #060706;
+    color: #F4F6F2;
+    font-family: var(--font-sans);
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessible focus ring using OLCR lime */
+:focus-visible {
+  outline: 2px solid #95E329;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
