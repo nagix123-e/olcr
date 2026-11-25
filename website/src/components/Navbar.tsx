@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight, Menu, X } from 'lucide-react';
-import { assetPath, RELEASES_URL } from '../constants';
+import { assetPath, PROJECT_REPOSITORY_URL } from '../constants';
 import { useLanguage } from '../i18n/LanguageContext';
 
 export function Navbar() {
@@ -43,7 +43,7 @@ export function Navbar() {
           ))}
         </nav>
 
-        {/* Zone 3: Compact JA/EN toggle + primary Releases CTA */}
+        {/* Zone 3: Compact JA/EN toggle + primary repository CTA */}
         <div className="flex shrink-0 items-center gap-3">
           <div
             role="group"
@@ -77,7 +77,7 @@ export function Navbar() {
           </div>
 
           <a
-            href={RELEASES_URL}
+            href={PROJECT_REPOSITORY_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="hidden min-h-[40px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-[#95E329] px-4 py-2 text-xs font-semibold text-[#060706] transition-colors duration-150 hover:bg-[#a6ee3f] sm:inline-flex"
@@ -112,13 +112,13 @@ export function Navbar() {
               </a>
             ))}
             <a
-              href={RELEASES_URL}
+              href={PROJECT_REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => setMobileMenuOpen(false)}
               className="mt-2 flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-[#95E329] px-4 py-2 text-sm font-semibold text-[#060706]"
             >
-              <span>{t.hero.primaryCta}</span>
+              <span>{t.nav.cta}</span>
               <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
             </a>
           </nav>
