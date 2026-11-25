@@ -18,7 +18,6 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
   const [error, setError] = useState('');
   const [credentialSetup,setCredentialSetup]=useState<CredentialSetupBlock|null>(null);
   const [codingSubagentsWarningOpen, setCodingSubagentsWarningOpen] = useState(false);
-  const [codingSubagentsWarningAcknowledged, setCodingSubagentsWarningAcknowledged] = useState(false);
   const codingSubagentsWarningVersion = typeof settings?.coding_subagents_warning_version === 'string'
     ? settings.coding_subagents_warning_version : '2026-11-v1';
   const load = async () => {
@@ -104,7 +103,6 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
             aria-describedby={`hint-${feature.key}`} onChange={event => {
               const enabled = event.target.checked;
               if (feature.key === 'coding_subagents_enabled' && enabled) {
-                setCodingSubagentsWarningAcknowledged(false);
                 setCodingSubagentsWarningOpen(true);
               } else {
                 void update({[feature.key]: enabled});
@@ -116,24 +114,19 @@ export function ExternalToolsSettings({ api, settings, save }: { api: (path: str
     </section>
     {codingSubagentsWarningOpen && <DialogFrame
       title={ja ? 'コーディングサブエージェントを有効にしますか？' : 'Enable coding subagents?'}
-      onClose={() => {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}}
+      onClose={() => setCodingSubagentsWarningOpen(false)}
       confirmDiscard={false}>
-      <p className="setting-hint">{ja
+      <p className="ui-feedback ui-feedback-error" role="note">{ja
         ? 'ローカルモデルは複数エージェントによるコーディングには推奨されません。固定ロールへの追従や結果の統合が不安定になる場合があり、複数の作業文脈によって遅延やメモリ・計算資源の負荷も増えることがあります。この設定を有効にしても、個別タスクの条件とユーザー承認なしにエージェントは起動しません。'
         : 'Local models are not recommended for multi-agent coding. Following fixed roles and combining results may be less reliable, while multiple work contexts can increase latency and pressure on memory and compute resources. Enabling this setting does not start agents without task-specific eligibility and user authorization.'}</p>
-      <label className="setting-row capability-setting">
-        <input type="checkbox" checked={codingSubagentsWarningAcknowledged}
-          onChange={event => setCodingSubagentsWarningAcknowledged(event.target.checked)}/>
-        <span>{ja ? 'この警告を確認しました' : 'I understand this warning'}</span>
-      </label>
       <div className="settings-actions">
-        <button type="button" onClick={() => {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}}>
+        <button type="button" onClick={() => setCodingSubagentsWarningOpen(false)}>
           {ja ? 'キャンセル' : 'Cancel'}
         </button>
-        <button type="button" disabled={!codingSubagentsWarningAcknowledged || busy} onClick={async () => {
+        <button type="button" disabled={busy} onClick={async () => {
           const saved = await update({coding_subagents_enabled: true,
             coding_subagents_warning_ack_revision: codingSubagentsWarningVersion});
-          if (saved) {setCodingSubagentsWarningOpen(false); setCodingSubagentsWarningAcknowledged(false);}
+          if (saved) setCodingSubagentsWarningOpen(false);
         }}>
           {ja ? 'サブエージェントを有効にする' : 'Enable coding subagents'}
         </button>

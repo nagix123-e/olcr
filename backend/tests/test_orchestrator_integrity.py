@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from fastapi.testclient import TestClient
 
 import olcr_api.app as api
 from olcr_api.db import Database
@@ -67,6 +68,156 @@ class OrchestratorIntegrityTests(unittest.TestCase):
             self.assertEqual('Coding Task completed.',api._complete_task('t',task))
         self.assertEqual('COMPLETED',api.db.coding_task('t')['status'])
 
+    def test_saved_blueprint_is_completed_by_its_host_checkpoint_not_a_file_write(self):
+        task = self.artifact_task()
+        plan = task["plan"]
+        phase = {"id": "blueprint", "kind": "ORCHESTRATOR_BLUEPRINT", "status": "pending",
+                 "execution_mode": "IMPLEMENTATION", "done": ["Implementation blueprint persisted with preflight evidence"],
+                 "verify": [], "dependencies": [], "risks": []}
+        plan["phases"].insert(0, phase)
+        plan["blueprint"] = {"preflight": {}}
+        api.db.update_coding_task("t", plan=plan)
+        api._finish_planning_boundary("t", plan, False)
+        task = api.db.coding_task("t")
+        self.assertTrue(api._phase_passed_in_epoch("t", phase, 0, 0, str(self.root)))
+        self.assertEqual("Coding Task completed.", api._complete_task("t", task))
+        self.assertEqual("COMPLETED", api.db.coding_task("t")["status"])
+
+    def test_resume_reconciles_reference_receipt_before_replanning_and_reports_browser_policy(self):
+        goal = "Implement app.js using the Anime.js MCP. Use the Playwright MCP for browser verification."
+        path = self.root / "app.js"
+        path.write_text("export const ready = true;")
+        implementation = {"id": "p1", "goal": "Implement app.js", "status": "pending",
+                          "execution_mode": "IMPLEMENTATION", "done": ["app.js uses Anime.js v4."],
+                          "verify": [], "dependencies": [], "risks": [], "required_mcp": ["Anime.js"]}
+        browser = {"id": "p2", "goal": "Browser verification", "status": "pending",
+                   "execution_mode": "VERIFICATION_ONLY", "done": ["Browser opens"],
+                   "verify": ["Browser opens"], "dependencies": ["p1"], "risks": [],
+                   "required_mcp": ["Playwright MCP"]}
+        plan = {"schema_version": 1, "original_goal": goal,
+                "scope": {"allowed": ["app.js"], "forbidden": []}, "assumptions": [],
+                "phases": [implementation, browser], "max_retries_per_phase": 2,
+                "requires_user_approval": True}
+        api.db.create_coding_task("resume-receipt", "c", goal, "QUEUED", "NONE", plan, time.time())
+        api.db.update_coding_task("resume-receipt", current_phase_id="p1", plan_revision=2,
+            recovery_action="REPLAN_CONTINUATION", recovery_reason="REPLAN_LIMIT",
+            required_mcp=["animejs", "playwright"],
+            mcp_evidence=[{"mcp_name": "animejs", "tool_name": "search_animejs_docs", "status": "PASS"}])
+        write = {"tool": "workspace_write", "status": "success",
+                 "output": {"path": "app.js", "net_changed": True}}
+        report = {**self.report(operations=[write], revision=2, mutations=1),
+                  "manager_decision": {"decision": "REPLAN_REQUIRED"}}
+        api.db.add_coding_phase_report("resume-receipt", "p1", 0, report, "PASS", time.time())
+        with patch.object(api, "_replan_task", side_effect=AssertionError("saved phase should pass")), \
+             patch.object(api.runtime, "execute", side_effect=AssertionError("must not rewrite the app")), \
+             patch.object(api, "server_definition", return_value={"enabled_by_policy": False}), \
+             patch.object(api, "_run_coding_playwright", side_effect=AssertionError("disabled tools must not launch")):
+            result = api._run_managed_task("resume-receipt", str(self.root))
+        saved = api.db.coding_task("resume-receipt")
+        self.assertEqual("pass", saved["plan"]["phases"][0]["status"])
+        self.assertEqual("p2", saved["current_phase_id"])
+        self.assertEqual("WAITING_FOR_USER", saved["status"])
+        self.assertIn("Playwright", result)
+        self.assertIn("設定でPlaywright MCPが無効", result)
+        pending = saved["pending_authorization"]
+        self.assertEqual("CONSTRAINED_CONTINUATION", pending["type"])
+        self.assertEqual("p2", pending["phase_id"])
+        self.assertIn("制約を受け入れて続行", api._resume_coding_task_control(saved, source="TEST")["response"])
+        self.assertEqual("WAITING_FOR_USER", api.db.coding_task("resume-receipt")["status"])
+        with patch.object(api, "_coding_scheduler_wake"), patch.object(api.git_integration, "completed_task") as handoff:
+            client = TestClient(api.app)
+            url = "/api/coding-tasks/resume-receipt"
+            response = client.post("/api/chat/stream", json={"conversation_id": "c", "project_id": "p",
+                "message": "承認します"})
+            self.assertIn("制約を受け入れて続行", response.text)
+            self.assertEqual("WAITING_FOR_USER", api.db.enqueue_coding_task("resume-receipt")["status"])
+            self.assertEqual(409, client.patch(url, json={"continuation_id": "stale", "continuation_choice": "accept"}).status_code)
+            self.assertEqual(200, client.patch(url, json={"continuation_id": pending["id"], "continuation_choice": "accept"}).status_code)
+            self.assertEqual(409, client.patch(url, json={"continuation_id": pending["id"], "continuation_choice": "accept"}).status_code)
+            api._run_managed_task("resume-receipt", str(self.root))
+            handoff.assert_not_called()
+        saved = api.db.coding_task("resume-receipt")
+        self.assertEqual("COMPLETED", saved["status"])
+        self.assertEqual("PARTIAL", saved["final_report_status"])
+        self.assertIn("Playwright", saved["final_report"]["text"])
+        self.assertEqual("export const ready = true;", path.read_text())
+
+    def test_declining_does_not_change_the_approved_plan_or_queue_the_task(self):
+        task = self.artifact_task()
+        api._coding_constraint_prompt("t", item="Playwright MCP", mcp="playwright", reason="Policy disabled")
+        waiting = api.db.coding_task("t")
+        with patch.object(api._coding_scheduler_wake, "set") as wake:
+            response = TestClient(api.app).post("/api/chat", json={"conversation_id":"c", "project_id":"p",
+                "coding_task_id":"t", "message":"ここで停止"})
+            self.assertEqual(200, response.status_code)
+            wake.assert_not_called()
+        saved = api.db.coding_task("t")
+        self.assertEqual("BLOCKED", saved["status"])
+        self.assertEqual(task["plan"], saved["plan"])
+        self.assertFalse((saved["requirements"] or {}).get("accepted_omissions"))
+
+    def test_omitting_the_only_unavailable_verification_finishes_with_no_pass_claim(self):
+        phase = {"id": "p1", "goal": "Run the test suite", "execution_mode": "VERIFICATION_ONLY",
+                 "verify": ["Run the test suite"], "done": ["Run the test suite"]}
+        api.db.create_coding_task("only-check", "c", "Run the tests", "RUNNING", "NONE",
+                                  {"phases": [phase]}, time.time())
+        api._coding_constraint_prompt("only-check", item=phase["goal"], reason="No test runner",
+            phase=phase, skip_phase=True, gaps=["required tests were not executed"])
+        pending = api.db.coding_task("only-check")["pending_authorization"]
+        with patch.object(api, "_coding_scheduler_wake"), patch.object(api.runtime, "execute") as executor:
+            api._coding_constraint_choice("only-check", pending["id"], "accept")
+            api._run_managed_task("only-check", str(self.root))
+            executor.assert_not_called()
+        saved = api.db.coding_task("only-check")
+        self.assertEqual("PARTIAL", saved["final_report_status"])
+        self.assertIn("Run the test suite", saved["final_report"]["text"])
+        self.assertEqual([], api.db.coding_phase_reports("only-check"))
+
+    def test_explicit_disabled_web_lookup_waits_for_consent_in_streaming_chat(self):
+        client = TestClient(api.app)
+        with patch.object(api.settings, "web_mode", "off"), \
+             patch.object(api.runtime, "_generate_brain", return_value={"text": "Limited answer"}) as model:
+            request = {"conversation_id":"c", "project_id":"p", "message":"Search the web for recent bread recipes."}
+            response = client.post("/api/chat/stream", json=request)
+            self.assertEqual(200, response.status_code)
+            self.assertIn("CONSTRAINED_LOOKUP", response.text)
+            model.assert_not_called()
+            confirmation = {**request, "message":"answer without lookup"}
+            response = client.post("/api/chat/stream", json=confirmation)
+            self.assertIn("Limited answer", response.text)
+            self.assertEqual(request["message"], model.call_args.args[1])
+            client.post("/api/chat/stream", json=confirmation)
+            model.assert_called_once()
+
+    def test_explicit_provider_timeout_does_not_trigger_another_lookup(self):
+        client = TestClient(api.app)
+        request = {"conversation_id": "c", "project_id": "p", "message": "Use the Qiita API to find React articles."}
+        with patch.object(api.settings, "web_mode", "auto"), \
+             patch.object(api, "capability_enabled", return_value=True), \
+             patch.object(api, "external_tool_credential_setup", return_value=None), \
+             patch.object(api, "execute_external_tool", side_effect=api.ExternalToolError("PROVIDER_TIMEOUT")) as lookup, \
+             patch.object(api, "_qiita_provider_failure_fallback", side_effect=AssertionError("no unapproved fallback")), \
+             patch.object(api.runtime, "_generate_brain", return_value={"text": "React background"}) as model:
+            reply = client.post("/api/chat/stream", json=request)
+            self.assertIn("情報取得なしで回答", reply.text)
+            lookup.assert_called_once()
+            model.assert_not_called()
+            reply = client.post("/api/chat", json={**request, "message": "この回答を停止"})
+            self.assertIn("停止しました", reply.json()["response"])
+            model.assert_not_called()
+
+    def test_unconfigured_web_provider_waits_without_generating(self):
+        client = TestClient(api.app)
+        with patch.object(api.settings, "web_mode", "manual"), \
+             patch.object(api.settings, "web_provider", "none"), \
+             patch.object(api.runtime, "_generate_brain") as model:
+            response = client.post("/api/chat/stream", json={"conversation_id": "c", "project_id": "p",
+                "message": "Search the web for recent bread recipes."})
+            self.assertEqual(200, response.status_code)
+            self.assertIn("Web検索プロバイダが設定されていない", response.text)
+            self.assertIn("情報取得なしで回答", response.text)
+            model.assert_not_called()
+
     def test_unrequested_acceptance_does_not_scan_project_or_dependencies(self):
         self.artifact_task()
         report=api.db.coding_phase_reports('t')[0]['structured_report']
@@ -77,17 +228,18 @@ class OrchestratorIntegrityTests(unittest.TestCase):
             self.assertTrue(evaluate_phase(self.phase,report,workspace_root=str(self.root))['phase_complete'])
 
     def test_dependency_and_generated_text_cannot_satisfy_project_structure(self):
-        labels='header hero feature workflow development tools cta footer links product'
+        source='<header></header><main><section></section></main><footer><a href="/">Home</a></footer>'
         for directory in ('node_modules/library','dist','target','coverage'):
             target=self.root/directory;target.mkdir(parents=True)
-            (target/'decoy.js').write_text(labels)
+            (target/'decoy.js').write_text(source)
         self.assertFalse(marketing_design_structure_acceptance(str(self.root)))
-        (self.root/'App.tsx').write_text(labels)
+        (self.root/'App.tsx').write_text(source)
         self.assertTrue(marketing_design_structure_acceptance(str(self.root)))
 
     def test_structure_scan_does_not_follow_external_symlinks(self):
         with tempfile.TemporaryDirectory(dir='/private/tmp') as external:
-            target=Path(external);(target/'decoy.js').write_text('header hero feature workflow development tools cta footer links visual')
+            target=Path(external);(target/'decoy.js').write_text(
+                '<header></header><main><section></section></main><footer><a href="/">Home</a></footer>')
             (self.root/'linked').symlink_to(target,target_is_directory=True)
             (self.root/'external.js').symlink_to(target/'decoy.js')
             self.assertFalse(marketing_design_structure_acceptance(str(self.root)))

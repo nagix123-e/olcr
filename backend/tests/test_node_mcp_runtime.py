@@ -11,7 +11,7 @@ from olcr_api.node_mcp_runtime import (launch_command, managed_browser_command,
 
 
 class NodeMcpRuntimeTests(unittest.TestCase):
-    def test_dedicated_browser_scope_resolves_bundle_without_enabling_generic_mcp(self):
+    def test_coding_playwright_requires_a_managed_browser_session(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); runtime=root/"mcp-runtime"/"node"
             node=runtime/"node"/"bin"/"node"; node.parent.mkdir(parents=True); node.touch(); node.chmod(0o755)
@@ -20,9 +20,9 @@ class NodeMcpRuntimeTests(unittest.TestCase):
             entrypoint=["node_modules/@playwright/mcp/cli.js","--headless","--executable-path","browser/chrome-headless-shell"]
             (runtime/"runtime-manifest.json").write_text(json.dumps({"entrypoints":{"playwright":entrypoint}}))
             definition=resolve_mcp_resources("playwright",root)
-            self.assertFalse(definition["enabled"])
-            self.assertEqual("POLICY_DISABLED",definition["reason"])
-            self.assertIsNone(launch_command("playwright",root))
+            self.assertTrue(definition["enabled"])
+            self.assertEqual("MANAGED_BROWSER_REQUIRED", definition["reason"])
+            self.assertIsNone(launch_command("playwright", root, prepare=True))
             self.assertEqual([str(node),str(cli),"--headless","--executable-path",str(browser)],
                              managed_browser_command(root))
 

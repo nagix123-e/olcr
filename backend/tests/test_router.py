@@ -174,6 +174,77 @@ class RouterTests(unittest.TestCase):
         self.assertIsNone(trace["selected"])
         self.assertEqual("LAYA_LOW_CONFIDENCE", trace["selection_guard"])
 
+    def test_laya_confidence_below_raised_floor_abstains(self):
+        class FakeVectors:
+            state = "ready"
+
+        prompt = "Ukraine conflict casualties in 2025?"
+
+        def embed(texts, _model):
+            if len(texts) == 1:
+                return [[1.0, 0.0]]
+            return [[0.5, 0.866025] if "conflict ucdp" in text else [0.0, 1.0] for text in texts]
+
+        with patch.object(app, "vectors", FakeVectors()), \
+             patch.object(app, "_api_embedding_provider") as embedding, \
+             patch.object(app.laya_provider.local, "loaded", True), \
+             patch.object(app.laya_provider, "choice", return_value={
+                 "tool_id": "conflict.ucdp", "confidence": 0.64,
+             }):
+            embedding.embed.side_effect = embed
+            decision = app.router_decision(prompt)
+
+        self.assertIsNone(decision)
+        trace = app._API_ROUTING_TRACE.get()
+        self.assertEqual("LAYA_LOW_CONFIDENCE", trace["selection_guard"])
+        self.assertIsNone(trace["selected"])
+
+    def test_laya_missing_confidence_abstains(self):
+        class FakeVectors:
+            state = "ready"
+
+        prompt = "Ukraine conflict casualties in 2025?"
+
+        def embed(texts, _model):
+            if len(texts) == 1:
+                return [[1.0, 0.0]]
+            return [[0.5, 0.866025] if "conflict ucdp" in text else [0.0, 1.0] for text in texts]
+
+        with patch.object(app, "vectors", FakeVectors()), \
+             patch.object(app, "_api_embedding_provider") as embedding, \
+             patch.object(app.laya_provider.local, "loaded", True), \
+             patch.object(app.laya_provider, "choice", return_value={"tool_id": "conflict.ucdp"}):
+            embedding.embed.side_effect = embed
+            decision = app.router_decision(prompt)
+
+        self.assertIsNone(decision)
+        trace = app._API_ROUTING_TRACE.get()
+        self.assertEqual("LAYA_LOW_CONFIDENCE", trace["selection_guard"])
+        self.assertIsNone(trace["selected"])
+
+    def test_laya_confidence_at_raised_floor_can_route(self):
+        class FakeVectors:
+            state = "ready"
+
+        prompt = "Ukraine conflict casualties in 2025?"
+
+        def embed(texts, _model):
+            if len(texts) == 1:
+                return [[1.0, 0.0]]
+            return [[0.5, 0.866025] if "conflict ucdp" in text else [0.0, 1.0] for text in texts]
+
+        with patch.object(app, "vectors", FakeVectors()), \
+             patch.object(app, "_api_embedding_provider") as embedding, \
+             patch.object(app.laya_provider.local, "loaded", True), \
+             patch.object(app.laya_provider, "choice", return_value={
+                 "tool_id": "conflict.ucdp", "confidence": 0.65,
+             }):
+            embedding.embed.side_effect = embed
+            decision = app.router_decision(prompt)
+
+        self.assertIsNotNone(decision)
+        self.assertEqual("conflict.ucdp", decision[0])
+
     def test_laya_cannot_promote_a_weak_semantic_neighbor_for_uncovered_domain(self):
         class FakeVectors:
             state = "ready"

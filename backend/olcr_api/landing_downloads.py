@@ -73,7 +73,7 @@ class LandingDownloads:
                 if event.is_set():
                     self._finish(job_id, 'cancelled')
                     return
-                model_job = self.model_downloads.start(model_ids, True)
+                model_job = self.model_downloads.start(model_ids, True, prepare_runtime=True)
                 with self.lock:
                     job['model_job_id'] = model_job['id']
                     job['current'] = model_ids[0]
@@ -84,6 +84,7 @@ class LandingDownloads:
                         raise RuntimeError('MODEL_DOWNLOAD_STATUS_LOST')
                     with self.lock:
                         job['current'] = state.get('current')
+                        job['phase'] = state.get('status')
                         job['completed_models'] = list(state.get('completed') or [])
                     if state.get('status') in {'complete', 'failed', 'cancelled'}:
                         if state['status'] == 'failed':

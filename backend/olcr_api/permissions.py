@@ -40,7 +40,7 @@ def requires_request_approval(method: str, path: str) -> bool:
         return method == 'POST' and path.endswith('/execute')
     if path.startswith('/api/symptom-consultations/'):
         return method == 'POST'
-    if path in {'/api/chat', '/api/chat/stream', '/api/mobile/bridge/runs', '/api/agents/builder/chat', '/api/commands', '/api/web/search', '/api/web/fetch', '/api/files/index'}:
+    if path in {'/api/chat', '/api/chat/stream', '/api/mobile/bridge/runs', '/api/mobile/bridge/youtube/search', '/api/agents/builder/chat', '/api/commands', '/api/web/search', '/api/web/fetch', '/api/files/index'}:
         return True
     if path.startswith('/api/assistant/'):
         return path.endswith('/confirm') or path == '/api/assistant/media/player'

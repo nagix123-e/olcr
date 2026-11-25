@@ -37,9 +37,10 @@ def _stream_synthesize_impl(text: str, language: str, cancelled: threading.Event
         raise ValueError('AUDIO_SYNTHESIS_REQUEST_INVALID')
     audio._require_audio_runtime()
     from . import audio_mlx
-    if audio_mlx.enabled():
+    if audio_mlx.enabled('lfm2_5_audio_1_5b'):
         yield from audio_mlx.stream('synthesize', language, audio._snapshot(audio._MODELS[language]),
-                                    audio._MODELS[language], cancelled, text=text.strip())
+                                    audio._MODELS[language], cancelled,
+                                    runtime_asset_id='lfm2_5_audio_1_5b', text=text.strip())
         return
     import torch
     from liquid_audio import ChatState

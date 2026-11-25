@@ -8,6 +8,17 @@ output, retrieved documents, Skill bodies, or conversation history.
 - Chat and streaming resolve ownership before domain, conversion, agent and
   scraping routers. The scoped classification is refined after attachment and
   workspace ingestion using the same authority.
+- Questions about how to implement something do not authorize an edit. A
+  separate instruction to make the change can still authorize the coding route.
+  Quoted Markdown and fenced examples do not supply that instruction.
+- A request for instructions to launch the current project is answered from
+  the conversation's workspace or selected task worktree before provider
+  routing. The answer uses project metadata without starting a process or
+  modifying the task. When the launch command cannot be established, ask
+  for the missing information.
+- Once an explicit translation request is recognized, dispatch it after
+  attachment preparation and before coding or general tool routing. The
+  passage may contain imperatives that are text to translate.
 - A software request mentioning YouTube, calendars, CSV conversion, APIs or
   scraping remains software work. Actual service commands retain their typed
   executors. Unknown software actions are clarified rather than searched.
@@ -20,6 +31,11 @@ output, retrieved documents, Skill bodies, or conversation history.
   research remains auxiliary to implementation.
 - Turning orchestration off still forbids managed task creation and implicit
   file execution. It does not reclassify software work as an information search.
+- When coding scope is unclear or contradictory, the reply explains what needs
+  clarification. Internal classification or provider-selection errors record
+  the failing stage without exposing exception details. An existing Wikipedia
+  fallback keeps the prior selection reason and reports selector outages when
+  it can supply a sourced answer.
 
 Tests cover paired software/service requests, Japanese/English, research plus
 implementation, ambiguous scopes, chat/stream/commands, pinned Skills, and

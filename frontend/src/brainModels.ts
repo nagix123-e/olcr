@@ -61,9 +61,13 @@ export async function signInBrainOAuth(request:typeof api=api,language:'ja'|'en'
  const deadline=Date.now()+305000;
  while(Date.now()<deadline){
   await new Promise(resolve=>window.setTimeout(resolve,1000));
-  const result=await request<{status:string;message?:string}>('/brain/oauth/'+encodeURIComponent(started.attempt_id));
+  const result=await request<{status:string;message?:string;failure_stage?:string;failure_category?:string}>('/brain/oauth/'+encodeURIComponent(started.attempt_id));
   if(result.status==='complete'){await persistBrainOAuthCredential(request,language,true);return;}
-  if(result.status!=='pending')throw Error(result.message||(language==='ja'?'ChatGPTへの接続が完了しませんでした。もう一度サインインしてください。':'ChatGPT sign-in did not complete. Please try again.'));
+  if(result.status!=='pending'){
+   const message=result.message||(language==='ja'?'ChatGPTへの接続が完了しませんでした。もう一度サインインしてください。':'ChatGPT sign-in did not complete. Please try again.');
+   const diagnostic=[result.failure_stage,result.failure_category].filter(value=>typeof value==='string'&&/^[a-z0-9_]{1,64}$/.test(value)).join('/');
+   throw Error(diagnostic?`${message} (${diagnostic})`:message);
+  }
  }
  throw Error(language==='ja'?'OAuth接続の待機時間を超えました。':'Timed out while waiting for OAuth sign-in.');
 }

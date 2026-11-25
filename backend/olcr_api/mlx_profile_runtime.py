@@ -12,9 +12,17 @@ MLX_LM_VERSION = '0.32.0'
 LLGUIDANCE_VERSION = '1.8.0'
 
 
-def _python():
-    from .audio_mlx import _python as audio_python
-    return audio_python()
+def _python(asset_id='ornith_1_5_9b_8bit'):
+    from .model_runtime_manager import get_runtime_manager
+    manager = get_runtime_manager()
+    if manager is not None:
+        binding = manager.resolve(asset_id)
+        if binding.ready and binding.python_path:
+            from pathlib import Path
+            return Path(binding.python_path)
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    return Path(os.environ.get('OLCR_MLX_PYTHON') or root / '.venv-mlx/bin/python')
 
 
 @lru_cache(maxsize=4)
@@ -35,23 +43,12 @@ def _available(python_path: str, system: str, machine: str) -> bool:
         return False
 
 
-def available() -> bool:
-    return _available(str(_python()), platform.system(), platform.machine())
+def available(python_path=None) -> bool:
+    python = python_path or _python()
+    return _available(str(python), platform.system(), platform.machine())
 
 
 def ensure() -> None:
     if available():
         return
-    if platform.system() != 'Darwin' or platform.machine() != 'arm64':
-        raise RuntimeError('MLX_PROFILE_RUNTIME_UNAVAILABLE')
-    python = _python()
-    if not python.is_file():
-        raise RuntimeError('MLX_RUNTIME_UNAVAILABLE')
-    env = {key: value for key, value in os.environ.items() if key not in {'PYTHONPATH', 'PYTHONHOME'}}
-    result = subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
-        '--no-deps', f'mlx=={MLX_VERSION}', f'mlx-lm=={MLX_LM_VERSION}',
-        f'llguidance=={LLGUIDANCE_VERSION}'], env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
-    _available.cache_clear()
-    if result.returncode or not available():
-        raise RuntimeError('MLX_PROFILE_RUNTIME_UNAVAILABLE')
+    raise RuntimeError('MLX_PROFILE_RUNTIME_PREPARATION_REQUIRED')

@@ -73,15 +73,21 @@ def check_cancelled(generation=None):
         raise GenerationCancelled('Generation stopped by user')
 
 
-def open_provider_response(req, *, timeout, handlers=()):
-    """Interrupt HTTP even before response headers/first-token metadata arrive."""
+def open_provider_response(req, *, timeout, connect_timeout=None, read_timeout=None, handlers=()):
+    """Interrupt HTTP even before headers arrive; allow a separate read wait."""
     generation = current_generation()
-    if generation is None:
-        return (request.build_opener(*handlers).open(req, timeout=timeout) if handlers
-                else request.urlopen(req, timeout=timeout))
-    check_cancelled()
+    if generation is not None:
+        check_cancelled()
+    if generation is None and connect_timeout is None:
+        response = (request.build_opener(*handlers).open(req, timeout=timeout) if handlers
+                    else request.urlopen(req, timeout=timeout))
+        if read_timeout is not None:
+            response.fp.raw._sock.settimeout(read_timeout)
+        return response
     with ExitStack() as pending:
         def connected(connection):
+            if generation is None:
+                return
             sock = connection.sock
             def shutdown():
                 try: sock.shutdown(socket.SHUT_RDWR)
@@ -90,11 +96,27 @@ def open_provider_response(req, *, timeout, handlers=()):
             pending.enter_context(generation.interrupt(shutdown))
         class HTTPConnection(http.client.HTTPConnection):
             def connect(self):
-                super().connect()
+                request_timeout = self.timeout
+                if connect_timeout is not None:
+                    self.timeout = connect_timeout
+                try:
+                    super().connect()
+                finally:
+                    self.timeout = request_timeout
+                if read_timeout is not None and self.sock is not None:
+                    self.sock.settimeout(read_timeout)
                 connected(self)
         class HTTPSConnection(http.client.HTTPSConnection):
             def connect(self):
-                super().connect()
+                request_timeout = self.timeout
+                if connect_timeout is not None:
+                    self.timeout = connect_timeout
+                try:
+                    super().connect()
+                finally:
+                    self.timeout = request_timeout
+                if read_timeout is not None and self.sock is not None:
+                    self.sock.settimeout(read_timeout)
                 connected(self)
         class HTTPHandler(request.HTTPHandler):
             def http_open(self, value):
@@ -104,7 +126,9 @@ def open_provider_response(req, *, timeout, handlers=()):
                 return self.do_open(HTTPSConnection, value, context=self._context)
         try:
             response = request.build_opener(*handlers, HTTPHandler(), HTTPSHandler()).open(req, timeout=timeout)
-            if generation.is_set():
+            if read_timeout is not None:
+                response.fp.raw._sock.settimeout(read_timeout)
+            if generation is not None and generation.is_set():
                 response.close()
             check_cancelled()
             return response

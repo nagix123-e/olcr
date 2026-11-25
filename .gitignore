@@ -47,3 +47,5 @@ mcp-runtime/
 /desktop/src-tauri/target/
 /desktop/src-tauri/binaries/olcr-macos-speech
 **/graphify-out/
+
+.tooling/

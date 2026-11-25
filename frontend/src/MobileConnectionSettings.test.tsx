@@ -4,12 +4,14 @@ import {MobileConnectionSettings} from './MobileConnectionSettings';
 afterEach(cleanup);
 it('requires consent and a PC confirmation before granting a phone access',async()=>{
   const api=vi.fn(async(path:string,init?:RequestInit)=>{
+    if(path==='/mobile/status')return {workspaces:['/example'],happier_cli_available:true};
     if(init?.method==='POST'&&path==='/mobile/pairing')return {url:'happier:///pair?test',qr_data_url:'data:image/svg+xml;base64,AA==',expires_at:'2099-01-01T00:00:00Z'};
     if(path==='/mobile/pairing/approve')return {state:'approved'};
     return {state:'requested',device_label:'Test phone',confirm_code:'123 456'};
   });
   render(<MobileConnectionSettings api={api} onBack={()=>{}}/>);
   expect(screen.getByRole('button',{name:'接続用QRを表示'})).toBeDisabled();
+  await screen.findByRole('option',{name:'/example'});
   fireEvent.click(screen.getByRole('checkbox'));
   fireEvent.click(screen.getByRole('button',{name:'接続用QRを表示'}));
   expect(await screen.findByAltText('スマホ接続用の一回限りのQRコード')).toBeVisible();

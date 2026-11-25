@@ -6,7 +6,7 @@ import './skills-library.css';
 import './mcp-connections.css';
 
 type Server = {
-  server: string; display_name: string; scope: string; can_check: boolean;
+  server: string; display_name: string; scope: string; can_check: boolean; coding_enabled?: boolean;
   connection_status: string; reason: string; checked_at?: string | null; tool_count?: number | null;
 };
 
@@ -99,7 +99,9 @@ export function MCPConnectionsSettings({api}: {api: (path: string, init?: Reques
             {row.can_check && <button disabled={!!checking} onClick={() => void check(row.server)}
               aria-label={`${row.display_name} ${ja ? 'の接続を確認' : 'check connection'}`}>{ja ? '接続確認' : 'Check connection'}</button>}
           </div>
-          {row.scope === 'managed_browser' && <p className="setting-hint">{ja ? '管理ブラウザー用。コーディングTaskへの直接公開は無効です。' : 'Managed browser adapter. Direct exposure to coding tasks is disabled.'}</p>}
+          {row.scope === 'managed_browser' && <p className="setting-hint">{row.coding_enabled
+            ? (ja ? 'コーディングタスクで依頼されたローカルのブラウザー検証に使えます。' : 'Available for requested local browser checks in coding tasks.')
+            : (ja ? '管理ブラウザー用。コーディングTaskへの直接公開は無効です。' : 'Managed browser adapter. Direct exposure to coding tasks is disabled.')}</p>}
           {row.reason !== 'READY' && row.reason !== 'NOT_CHECKED' && <p className="setting-hint">{reasons[row.reason] ?? `${ja ? '接続エラー' : 'Connection error'}: ${row.reason}`}</p>}
           {row.checked_at && <p className="setting-hint">{ja ? '最終確認' : 'Last checked'}: {new Date(row.checked_at).toLocaleString()}
             {row.tool_count != null ? ` · ${row.tool_count} ${ja ? 'ツール' : 'tools'}` : ''}</p>}

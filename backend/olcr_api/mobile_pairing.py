@@ -100,16 +100,19 @@ class HappierPairing:
         if not isinstance(self.token, str) or not self.token:
             raise PairingError('RELAY_INVALID_RESPONSE')
 
-    async def start(self):
+    async def start(self, *, prepare=None, workspace=None):
         async with self.lock:
             await self._authenticate()
+            if prepare:
+                await prepare(self)
             secret = secrets.token_urlsafe(32)
             secret_hash = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()).decode().rstrip('=')
             result = await self._request('POST', '/v1/auth/pairing/start', json={'secretHash': secret_hash})
             if not result.get('pairId') or not result.get('expiresAt'):
                 raise PairingError('RELAY_INVALID_RESPONSE')
             url = 'happier:///pair?' + urlencode({'v': '1', 'pairId': result['pairId'],
-                                                  'secret': secret, 'server': self.relay})
+                                                  'secret': secret, 'server': self.relay,
+                                                  **({'olcrWorkspace': workspace} if workspace else {})})
             self.session = {'id': result['pairId'], 'expires_at': result['expiresAt'], 'url': url}
             return dict(self.session)
 

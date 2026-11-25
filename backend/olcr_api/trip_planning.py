@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .generation_control import check_cancelled
 from .travel_dates import extract_trip_date_tokens, resolve_trip_dates
+from .db import finalize_pending_conversation_title
 
 _LOCK = threading.RLock()
 _TURN_LOCKS = weakref.WeakValueDictionary()
@@ -345,6 +346,7 @@ class TripPlanner:
                 for offset,(role,content,blocks) in enumerate([('user',text,None),('assistant',response,result['blocks'])]):
                     con.execute('INSERT INTO messages(id,conversation_id,role,content,ordinal,created_at,blocks_json) VALUES(?,?,?,?,?,?,?)',
                         (source if role=='user' else assistant_id,cid,role,content,ordinal+offset,time.time(),json.dumps(blocks,ensure_ascii=False) if blocks else None))
+                    if role=='user':finalize_pending_conversation_title(con,cid,content)
                 con.execute('UPDATE conversations SET updated_at=? WHERE id=?',(time.time(),cid))
                 con.execute('INSERT OR REPLACE INTO trip_chat_turns VALUES(?,?,?,?,?,?)',(cid,source,digest,json.dumps(result,ensure_ascii=False),json.dumps(state,ensure_ascii=False),assistant_id))
             return result

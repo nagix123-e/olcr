@@ -51,6 +51,13 @@ it('explains that a structured reasoning-budget failure is retrying the same mod
  expect(english).toContain('ornith-1.5:9b');expect(english).toContain('same model');expect(english).toContain('without thinking');
 });
 
+it('distinguishes an API output budget request from a locally resolved budget',()=>{
+ const api=liveLogBlock([{state:'worker_progress',event:'output_budget_requested',model:'preview/GLM-5.3-Flash',runtime:'brain:openai',requested_max_tokens:8192,at:100}],true,false,100).logs[0].text;
+ expect(api).toContain('API');expect(api).toContain('8192');expect(api).toContain('未確認');expect(api).not.toContain('ローカルモデル');
+ const local=liveLogBlock([{state:'worker_progress',event:'output_budget_resolved',model:'local-model',runtime:'ollama',requested_max_tokens:8192,effective_max_tokens:2048,at:100}],true,false,100).logs[0].text;
+ expect(local).toContain('ローカルモデル');expect(local).toContain('2048');expect(local).not.toContain('未確認');
+});
+
 it('distinguishes preflight schema fallback from an API rejection and retry',()=>{
  const preflight=liveLogBlock([{state:'schema_compatibility',model:'gpt-6-luna',reason:'schema_unsupported_by_native_mode',at:100}],true,false,100).logs[0].text;
  const rejected=liveLogBlock([{state:'schema_compatibility',model:'gpt-6-luna',reason:'provider_rejected_schema',http_status:400,provider_code:'invalid_json_schema',parameter:'response_format',at:100}],true,false,100).logs[0].text;

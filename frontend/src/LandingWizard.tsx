@@ -4,8 +4,8 @@ import {useLanguage} from './language';
 import './landing-wizard.css';
 
 type Api = (path:string, init?:RequestInit)=>Promise<any>;
-type ModelOption = {id:string;download_id?:string|null;label?:string;runtime?:string;size_bytes?:number|null;weight_gb?:number;license?:string;downloaded?:boolean;fits_memory?:boolean;available?:boolean;experimental?:boolean;installed_custom?:boolean};
-type DownloadModel = {id:string;label?:string;repo?:string;runtime?:string;size_bytes?:number|null;weight_gb?:number;license?:string;downloaded?:boolean;verified?:boolean;experimental?:boolean};
+type ModelOption = {id:string;download_id?:string|null;label?:string;runtime?:string;size_bytes?:number|null;weight_gb?:number;license?:string;downloaded?:boolean;needs_runtime_preparation?:boolean;fits_memory?:boolean;available?:boolean;experimental?:boolean;installed_custom?:boolean};
+type DownloadModel = {id:string;label?:string;repo?:string;runtime?:string;size_bytes?:number|null;weight_gb?:number;license?:string;downloaded?:boolean;installed?:boolean;needs_runtime_preparation?:boolean;verified?:boolean;experimental?:boolean};
 type ComponentStatus = {name:string;state:string;message?:string};
 type Stage = 'models'|'downloads'|'progress'|'done';
 
@@ -80,6 +80,7 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
   const [requiredModelIds,setRequiredModelIds]=useState<string[]>([]);
   const [selectionMade,setSelectionMade]=useState(false);
   const [selectedModelIds,setSelectedModelIds]=useState<string[]>([]);
+  const [selectedRuntimeIds,setSelectedRuntimeIds]=useState<string[]>([]);
   const [selectedComponents,setSelectedComponents]=useState<string[]>([]);
   const [individual,setIndividual]=useState(false);
   const [jobId,setJobId]=useState('');
@@ -108,8 +109,7 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
       const nextAudio={...(current?.audio||profileData?.profile?.audio)};
       const nextModels=Array.isArray(downloadData?.presets)?downloadData.presets:[];
       const nextCustomPurposeRoles=Array.isArray(purposeData?.roles)?purposeData.roles.filter((row:any)=>row?.selected?.protocol&&row.selected.protocol!=='preset').map((row:any)=>row.role):[];
-      const currentMissing=current?.applied===false?downloadIdsForSelection(nextRoles,nextAudio,profileData,nextModels,nextCustomPurposeRoles)
-        .filter(id=>!nextModels.find((model:DownloadModel)=>model.id===id)?.downloaded):[];
+      const currentMissing=current?.applied===false?downloadIdsForSelection(nextRoles,nextAudio,profileData,nextModels,nextCustomPurposeRoles):[];
       setRoleModels(nextRoles);
       setAudioModels(nextAudio);
       const currentCustom=Boolean(current&&(
@@ -121,7 +121,10 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
       setModels(nextModels);
       setComponents(Array.isArray(componentData?.components)?componentData.components:[]);
       setCustomPurposeRoles(nextCustomPurposeRoles);
-      setRequiredModelIds(currentMissing);setSelectedModelIds(currentMissing);setSelectedComponents([]);
+      setRequiredModelIds(currentMissing);
+      setSelectedModelIds(currentMissing.filter(id=>!nextModels.find((model:DownloadModel)=>model.id===id)?.downloaded));
+      setSelectedRuntimeIds(currentMissing.filter(id=>nextModels.find((model:DownloadModel)=>model.id===id)?.needs_runtime_preparation));
+      setSelectedComponents([]);
       setApplied(current?.applied===true?true:null);setJob(null);setJobId('');setIndividual(false);setStage('models');
     }catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
     finally{setLoading(false)}
@@ -153,10 +156,12 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
         !sameRecord(current.roles,next?.profile?.roles)||
         !sameRecord(current.audio,next?.profile?.audio)));
       setCustomize(currentCustom);
-      const missing=current?.applied===false?downloadIdsForSelection(nextRoles,nextAudio,next,models,customPurposeRoles)
-        .filter(id=>!models.find(item=>item.id===id)?.downloaded):[];
+      const missing=current?.applied===false?downloadIdsForSelection(nextRoles,nextAudio,next,models,customPurposeRoles):[];
       setSelectionMade(Boolean(current?.applied===false));
-      setRequiredModelIds(missing);setSelectedModelIds(missing);setApplied(current?.applied===true?true:null);
+      setRequiredModelIds(missing);
+      setSelectedModelIds(missing.filter(id=>!models.find(item=>item.id===id)?.downloaded));
+      setSelectedRuntimeIds(missing.filter(id=>models.find(item=>item.id===id)?.needs_runtime_preparation));
+      setApplied(current?.applied===true?true:null);
       setMemoryNeedsRecheck(false);
     }catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
   };
@@ -174,13 +179,14 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
   const saveModelSelection=async(skip=false)=>{
     setError('');setLoading(true);
     try{
-      if(skip){setSelectionMade(false);setRequiredModelIds([]);setProfileId('');setStage('downloads');return}
+      if(skip){setSelectionMade(false);setRequiredModelIds([]);setProfileId('');setStage('downloads');setSelectedRuntimeIds([]);return}
       const result=await api('/model-profiles/selection',{method:'PUT',body:JSON.stringify({profile_id:profileId,role_models:roleModels,audio_models:audioModels,memory_gb:memoryGb,confirm_apply:true})});
       setSelectionMade(true);
       const missing=Array.isArray(result?.download_ids)?result.download_ids:[];
       setRequiredModelIds(missing);
       setApplied(result?.applied===true);
-      setSelectedModelIds(missing);
+      setSelectedModelIds(missing.filter((id:string)=>!models.find(item=>item.id===id)?.downloaded));
+      setSelectedRuntimeIds(missing.filter((id:string)=>models.find(item=>item.id===id)?.needs_runtime_preparation));
       setSelectedComponents([]);
       setStage('downloads');
     }catch(reason){setError(reason instanceof Error?reason.message:String(reason))}
@@ -204,12 +210,13 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
     const weight=Number(descriptor?.weight_gb??item.weight_gb??(Number(item.size_bytes)||0)/(1024**3));
     return weight>0&&weight+reserve+overhead<=memoryGb;
   }),[models,profileId,catalog,memoryGb,requiredModelIds,targetModelIds]);
+  const runtimeChoices=useMemo(()=>models.filter(item=>targetModelIds.has(item.id)&&item.downloaded&&item.needs_runtime_preparation),[models,targetModelIds]);
   const currentSelectionSize=useMemo(()=>modelChoices.filter(item=>selectedModelIds.includes(item.id)).reduce((sum,item)=>sum+(Number(item.size_bytes)||0),0),[modelChoices,selectedModelIds]);
   const allModelSize=useMemo(()=>modelChoices.reduce((sum,item)=>sum+(Number(item.size_bytes)||0),0),[modelChoices]);
 
   const beginDownload=async(mode:'all'|'selected')=>{
     setError('');
-    const modelIds=mode==='all'?modelChoices.map(item=>item.id):selectedModelIds;
+    const modelIds=mode==='all'?[...modelChoices.map(item=>item.id),...runtimeChoices.map(item=>item.id)]:[...selectedModelIds,...selectedRuntimeIds];
     const componentIds=mode==='all'?componentChoices.map(item=>item.id):selectedComponents;
     if(!modelIds.length&&!componentIds.length){await finishWithoutDownload();return}
     const generation=++operationGeneration.current;
@@ -306,6 +313,7 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
     setSelectionMade(true);
   };
   const toggleModel=(id:string)=>setSelectedModelIds(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
+  const toggleRuntime=(id:string)=>setSelectedRuntimeIds(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
   const toggleComponent=(id:string)=>setSelectedComponents(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
   const heading=ja?'OLCRをこのMacに合わせる':'Set up OLCR for this Mac';
   const modelLabel=(model:ModelOption)=>model.label||model.id;
@@ -358,26 +366,28 @@ export function LandingWizard({api,open,onClose}:{api:Api;open:boolean;onClose:(
           <p className="landing-download-note">{ja?'容量はモデル分の概算です。追加環境の容量と所要時間はネットワークや構成により変わります。ConvertXのコンテナイメージは機能を有効にすると取得されます。':'The estimate covers model files only. Runtime sizes and download times vary; ConvertX downloads its container image when the feature is enabled.'}</p>
         </div>
         {!individual?<div className="landing-choice-actions">
-          <button type="button" className="landing-primary" onClick={()=>void beginDownload('all')} disabled={loading}>{ja?`すべて今ダウンロード（モデル ${modelChoices.length} 件・約 ${(allModelSize/GB).toFixed(1)} GB・追加環境 ${componentChoices.length} 件）`:`Download everything now (${modelChoices.length} models, about ${(allModelSize/GB).toFixed(1)} GB, ${componentChoices.length} runtimes)`}</button>
-          <button type="button" onClick={()=>{setIndividual(true);setSelectedModelIds(requiredModelIds);setSelectedComponents([])}} disabled={loading}>{ja?'項目を選んでダウンロード':'Choose items to download'}</button>
+          <button type="button" className="landing-primary" onClick={()=>void beginDownload('all')} disabled={loading}>{ja?`すべて今ダウンロード（モデル ${modelChoices.length} 件・実行環境 ${runtimeChoices.length} 件・約 ${(allModelSize/GB).toFixed(1)} GB・追加機能 ${componentChoices.length} 件）`:`Download everything now (${modelChoices.length} models, ${runtimeChoices.length} runtimes, about ${(allModelSize/GB).toFixed(1)} GB, ${componentChoices.length} features)`}</button>
+          <button type="button" onClick={()=>{setIndividual(true);setSelectedModelIds(requiredModelIds.filter(id=>!models.find(item=>item.id===id)?.downloaded));setSelectedRuntimeIds(requiredModelIds.filter(id=>models.find(item=>item.id===id)?.needs_runtime_preparation));setSelectedComponents([])}} disabled={loading}>{ja?'項目を選んでダウンロード':'Choose items to download'}</button>
           <button type="button" onClick={()=>void finishWithoutDownload()} disabled={loading}>{ja?'後でダウンロード':'Download later'}</button>
         </div>:<>
-          <div className="landing-choice-actions compact"><button type="button" onClick={()=>{setSelectedModelIds(modelChoices.map(item=>item.id));setSelectedComponents(componentChoices.map(item=>item.id))}}>{ja?'すべて選択':'Select all'}</button><button type="button" onClick={()=>{setSelectedModelIds(requiredModelIds);setSelectedComponents([])}}>{ja?'選択した設定に必要なものだけ':'Required for selected models only'}</button></div>
+          <div className="landing-choice-actions compact"><button type="button" onClick={()=>{setSelectedModelIds(modelChoices.map(item=>item.id));setSelectedRuntimeIds(runtimeChoices.map(item=>item.id));setSelectedComponents(componentChoices.map(item=>item.id))}}>{ja?'すべて選択':'Select all'}</button><button type="button" onClick={()=>{setSelectedModelIds(requiredModelIds.filter(id=>!models.find(item=>item.id===id)?.downloaded));setSelectedRuntimeIds(requiredModelIds.filter(id=>models.find(item=>item.id===id)?.needs_runtime_preparation));setSelectedComponents([])}}>{ja?'選択した設定に必要なものだけ':'Required for selected models only'}</button></div>
           <div className="landing-download-list">
             <h3>{ja?'モデル':'Models'}</h3>
             {modelChoices.length?modelChoices.map(item=><label className="landing-download-row" key={item.id}><input type="checkbox" checked={selectedModelIds.includes(item.id)} onChange={()=>toggleModel(item.id)}/><span><strong>{itemLabel(item)}</strong><small>{[item.runtime,item.license,sizeLabel(item.size_bytes),requiredModelIds.includes(item.id)?(ja?'選択設定に必要':'Required by selection'):null].filter(Boolean).join(' · ')||item.repo||item.id}</small></span></label>):<p>{ja?'未ダウンロードのモデルはありません。':'All model packages are downloaded.'}</p>}
+            <h3>{ja?'ダウンロード済みモデルの実行環境':'Runtimes for downloaded models'}</h3>
+            {runtimeChoices.length?runtimeChoices.map(item=><label className="landing-download-row" key={`runtime-${item.id}`}><input type="checkbox" checked={selectedRuntimeIds.includes(item.id)} onChange={()=>toggleRuntime(item.id)}/><span><strong>{itemLabel(item)}</strong><small>{ja?'モデル本体は保持し、互換性を検証した実行環境を追加します。':'Keeps the model files and adds a validated compatible runtime.'} {requiredModelIds.includes(item.id)?(ja?'選択設定に必要':'Required by selection'):''}</small></span></label>):<p>{ja?'準備が必要な実行環境はありません。':'No downloaded model needs runtime preparation.'}</p>}
             <h3>{ja?'追加機能の実行環境':'Feature runtimes'}</h3>
             {componentChoices.map(item=>{
               const status=components.find(row=>row.name===item.id);
               return <label className="landing-download-row" key={item.id}><input type="checkbox" checked={selectedComponents.includes(item.id)} onChange={()=>toggleComponent(item.id)}/><span><strong>{ja?item.ja:item.en}</strong><small>{item.id==='convertx'?(ja?'基本ファイルのみ。コンテナイメージは機能を有効にしたとき取得します。':'Base files only; the container image is fetched when enabled.'):status?.message||item.id}</small></span></label>;
             })}
           </div>
-          <div className="landing-actions"><button type="button" className="landing-primary" onClick={()=>void beginDownload('selected')} disabled={loading}>{ja?`選択した項目をダウンロード${currentSelectionSize?` · 約 ${(currentSelectionSize/GB).toFixed(1)} GB`:''}`:`Download selected items${currentSelectionSize?` · about ${(currentSelectionSize/GB).toFixed(1)} GB`:''}`}</button><button type="button" onClick={()=>setIndividual(false)}>{ja?'戻る':'Back'}</button><button type="button" onClick={()=>void finishWithoutDownload()}>{ja?'後で':'Later'}</button></div>
+          <div className="landing-actions"><button type="button" className="landing-primary" onClick={()=>void beginDownload('selected')} disabled={loading}>{ja?`選択した項目を準備（モデル ${selectedModelIds.length} 件・実行環境 ${selectedRuntimeIds.length} 件・追加機能 ${selectedComponents.length} 件${currentSelectionSize?` · 約 ${(currentSelectionSize/GB).toFixed(1)} GB`:''}）`:`Prepare selected items (${selectedModelIds.length} models, ${selectedRuntimeIds.length} runtimes, ${selectedComponents.length} features${currentSelectionSize?` · about ${(currentSelectionSize/GB).toFixed(1)} GB`:''})`}</button><button type="button" onClick={()=>setIndividual(false)}>{ja?'戻る':'Back'}</button><button type="button" onClick={()=>void finishWithoutDownload()}>{ja?'後で':'Later'}</button></div>
         </>}
       </>}
       {stage==='progress'&&<div className="landing-progress">
         <StatusBadge state={job?.status||'downloading'}>{ja?'追加データを準備中':'Preparing downloads'}</StatusBadge>
-        <p>{job?.current?`${ja?'現在':'Now'}: ${job.current}`:ja?'ダウンロード項目を確認中…':'Checking download items…'}</p>
+        <p>{job?.current?`${ja?'現在':'Now'}: ${job.current}${job?.phase==='preparing_runtime'?(ja?' · 実行環境を準備中':' · Preparing runtime'):''}`:ja?'ダウンロード項目を確認中…':'Checking download items…'}</p>
         <progress max={Math.max(1,progressItems)} value={Math.min(progressItems,finishedItems)}/>
         <small>{ja?`${finishedItems} / ${progressItems} 項目が完了`:`${finishedItems} of ${progressItems} items complete`}</small>
         <p className="landing-download-note">{ja?'右上の×でいつでも中断できます。進行中のファイルは完了する場合がありますが、後続の項目は開始しません。':'Close with × at any time. An active file may finish, but no later item will start.'}</p>

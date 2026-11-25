@@ -1316,7 +1316,8 @@ class OrchestratorRegressions(unittest.TestCase):
             api._generate_plan('plan-bounds',goal,'Plan the supplied specification.','QWEN_PLANNING',
                 {'planning_policy':{'mode':'LEAN'}})
         schema=generate.call_args.kwargs['format']
-        self.assertEqual(goal,schema['properties']['original_goal']['const'])
+        self.assertNotIn('original_goal',schema['properties'])
+        self.assertNotIn('original_goal',schema['required'])
         self.assertNotIn('tasks',schema['properties'])
         self.assertIn('file_manifest',schema['required'])
         self.assertIn('owner_phase',schema['properties']['file_manifest']['items']['required'])
@@ -1707,27 +1708,29 @@ class OrchestratorRegressions(unittest.TestCase):
              patch.object(api,'_replan_task',side_effect=AssertionError('No architecture replan for missing executable')),\
              patch.object(api,'run_acceptance',side_effect=FileNotFoundError('Missing test executable')):
             response=api._run_managed_task('missing-executor',str(self.root))
-        self.assertIn('executor failed',response)
+        self.assertIn('検証コマンドを起動できませんでした',response)
         task=api.db.coding_task('missing-executor')
-        self.assertEqual('RESUMABLE',task['status'])
+        self.assertEqual('WAITING_FOR_USER',task['status'])
+        self.assertEqual('CONSTRAINED_CONTINUATION',task['pending_authorization']['type'])
         self.assertEqual(0,task['replan_count'])
         self.assertEqual('ORIGINAL_SOURCE',(self.root/'probe.py').read_text())
         reports=api.db.coding_phase_reports('missing-executor')
         self.assertEqual(1,len(reports))
         self.assertEqual('VERIFICATION_EXECUTOR',reports[0]['structured_report']['manager_decision']['retry_channel'])
-        # A host-marked phase must also preserve its explicit executor on
-        # resume, rather than author a different passing check or edit source.
-        api.db.update_coding_task('missing-executor',status='QUEUED',plan={**plan,'phases':[{**phase,'host_verification':True}]})
+        # A host-marked phase must also preserve its explicit executor when
+        # it is unavailable, rather than author a different passing check.
+        api.db.create_coding_task('missing-host-executor','conversation','Run tests','QUEUED','NONE',
+                                  {**plan,'phases':[{**phase,'host_verification':True}]},time.time())
         with patch.object(api.runtime,'execute',side_effect=AssertionError('No source repair on executor resume')),\
              patch.object(api,'_model_text',side_effect=AssertionError('Do not replace an unavailable explicit executor')),\
              patch.object(api,'_replan_task',side_effect=AssertionError('Do not replan for an executor start failure')),\
              patch.object(api,'run_acceptance',side_effect=FileNotFoundError('Still missing test executable')):
-            response=api._run_managed_task('missing-executor',str(self.root))
-        self.assertIn('verification executor is unavailable',response)
-        self.assertEqual('RESUMABLE',api.db.coding_task('missing-executor')['status'])
-        self.assertEqual(1,len(api.db.coding_phase_reports('missing-executor')))
-        self.assertIn('Still missing test executable',api.db.coding_task('missing-executor')['resume_state']['verification_preparation_failure']['error'])
-        self.assertEqual(0,api.db.coding_task('missing-executor')['recovery_epoch'])
+            response=api._run_managed_task('missing-host-executor',str(self.root))
+        self.assertIn('検証コマンドを起動できませんでした',response)
+        host_task=api.db.coding_task('missing-host-executor')
+        self.assertEqual('WAITING_FOR_USER',host_task['status'])
+        self.assertEqual(0,host_task['recovery_epoch'])
+        self.assertIn('Still missing test executable',host_task['resume_state']['verification_preparation_failure']['error'])
 
     def test_incomplete_acceptance_checks_are_preserved_and_only_missing_ids_are_generated(self):
         (self.root/'index.html').write_text('<h1>App</h1>')
@@ -2745,17 +2748,19 @@ class OrchestratorRegressions(unittest.TestCase):
         self.assertEqual(original["criteria_evidence"], repaired["criteria_evidence"])
         self.assertEqual(4, repaired["plan_revision"])
 
-    def test_verification_only_missing_executor_repairs_plan_without_calling_file_implementer(self):
+    def test_verification_only_missing_executor_waits_without_calling_file_implementer(self):
         phase = {"id": "p1", "goal": "Verify the application", "status": "pending",
                  "execution_mode": "VERIFICATION_ONLY", "done": ["verification complete"],
                  "verify": ["tests pass"], "dependencies": [], "risks": []}
         plan = {**self.plan, "phases": [phase]}
         api.db.create_coding_task("verify-only", "conversation", "Verify existing app", "RUNNING", "NONE", plan, time.time())
         with patch.object(api.runtime, "execute", side_effect=AssertionError("verification must not write")), \
-             patch.object(api, "_replan_task", return_value="repairing verifier") as repair:
-            self.assertEqual("repairing verifier", api._run_managed_task("verify-only", str(self.root)))
-        self.assertIn("no executable verification contract", repair.call_args.args[3])
-        self.assertIn("verification_targets", repair.call_args.args[4]["specific_fix"])
+             patch.object(api, "_replan_task", side_effect=AssertionError("do not replan without a decision")):
+            response = api._run_managed_task("verify-only", str(self.root))
+        self.assertIn("実行可能な検証コマンドがありません", response)
+        saved = api.db.coding_task("verify-only")
+        self.assertEqual("WAITING_FOR_USER", saved["status"])
+        self.assertEqual("p1", saved["pending_authorization"]["phase_id"])
 
     def test_prior_permission_failure_does_not_block_current_successful_repair(self):
         phase = {"id": "P1", "goal": "create probe.py", "execution_mode": "IMPLEMENTATION",

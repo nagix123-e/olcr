@@ -1,5 +1,6 @@
 """Safe diagnostics from provider errors: never retain response messages or bodies."""
 import json
+import http.client
 import re
 from .ollama import ModelFailure
 from .model_availability import attach_http_failure
@@ -44,7 +45,7 @@ def _explicit_provider_parameter(error,message):
 
 def provider_http_failure(exc,label='Provider'):
     try:raw=exc.read(32768).decode('utf-8','replace')
-    except (OSError,ValueError):raw=''
+    except (OSError,ValueError,http.client.HTTPException):raw=''
     try:detail=json.loads(raw).get('error',{})
     except (ValueError,AttributeError):detail={}
     if not isinstance(detail,dict):detail={}

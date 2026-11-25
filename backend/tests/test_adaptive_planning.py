@@ -14,6 +14,17 @@ HTML・CSS・JavaScriptを使い、外部ライブラリやネットワークは
 
 
 class AdaptivePlanningTests(unittest.TestCase):
+    def test_large_lean_plan_uses_bounded_deliverable_batches(self):
+        requirements = normalize_coding_requirements(LUNCH)
+        large_prompt = lean_plan_prompt(LUNCH, requirements, "LARGE")
+        medium_prompt = lean_plan_prompt(LUNCH, requirements, "MEDIUM")
+
+        self.assertIn("Use 4-7 coherent deliverable phases", large_prompt)
+        self.assertIn("at most 6 mutable files", large_prompt)
+        self.assertIn("at most 6 independent done criteria", large_prompt)
+        self.assertIn("Use 1-2 coherent deliverable phases", medium_prompt)
+        self.assertNotIn("at most 6 mutable files", medium_prompt)
+
     def test_bounded_offline_production_api_is_generated_together_before_its_tests(self):
         requirements=normalize_coding_requirements(LUNCH)
         policy=planning_policy(LUNCH,requirements,'MEDIUM')

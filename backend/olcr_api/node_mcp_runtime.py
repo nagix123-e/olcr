@@ -171,6 +171,10 @@ def resolve_mcp_resources(server: str, resource_root: str | Path | None = None,
     }
     if not registered or not enabled:
         return result
+    if server == "playwright":
+        # The raw browser command is reserved for origin-scoped sessions.
+        result["reason"] = "MANAGED_BROWSER_REQUIRED"
+        return result
     root = runtime_root(resource_root)
     bundled_reason: str | None = None
     if root is not None:
@@ -215,6 +219,8 @@ def resolve_mcp_resources(server: str, resource_root: str | Path | None = None,
 
 def launch_command(server: str, resource_root: str | Path | None = None, *, prepare=False, for_connection=False) -> list[str] | None:
     """Return a command using only a bundled Node executable, or ``None``."""
+    if server == "playwright":
+        return None
     if prepare and resource_root is None and not runtime_root():
         from .mcp_manifest import server_definition
         definition = server_definition(server) or {}
@@ -242,9 +248,8 @@ def launch_command(server: str, resource_root: str | Path | None = None, *, prep
 def managed_browser_command(resource_root: str | Path | None = None, *, prepare=False) -> list[str] | None:
     """Resolve only OLCR's bundled Playwright entrypoint for Web/Scrape scope.
 
-    This is deliberately separate from ``launch_command``: the generic MCP
-    policy may keep Playwright disabled for Coding Tasks while the dedicated
-    browser capability owns its own public-Web egress proxy and tool allowlist.
+    Unlike the generic resource resolver, this prepares the separate browser
+    component for sessions that own an egress proxy and tool allowlist.
     """
     root = runtime_root(resource_root)
     if prepare and root is None and resource_root is None:

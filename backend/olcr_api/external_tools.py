@@ -25,6 +25,11 @@ from .evidence_quality import subject_queries, subject_matches
 from .api_acceptance import PRODUCTION_ACCEPTANCE_CASES, PRODUCTION_EXCLUDED_API_IDS, production_tool_ids
 from .response_language import response_language
 from . import regional_statistics
+from .translation_languages import (
+    LANGUAGE_PATTERN as _TRANSLATION_LANGUAGE_PATTERN,
+    normalize_language_code,
+)
+from .text_processing import MAX_TEXT_PROCESSING_CHARS
 
 MAX_BYTES = 1_000_000
 # The official sanctions exports are XML snapshots rather than JSON.  Keep a
@@ -1705,40 +1710,13 @@ def _compact(value: Any, maximum: int = 160) -> str:
     return " ".join(str(value or "").split()).strip(" 、。！？!?\t\r\n")[:maximum]
 
 
-MAX_TRANSLATION_CHARS = 12_000
-_TRANSLATION_LANGUAGE_CODES = {
-    'Arabic': 'ar', 'アラビア語': 'ar',
-    'German': 'de', 'ドイツ語': 'de',
-    'English': 'en', '英語': 'en',
-    'Spanish': 'es', 'スペイン語': 'es',
-    'French': 'fr', 'フランス語': 'fr',
-    'Indonesian': 'id', 'インドネシア語': 'id',
-    'Italian': 'it', 'イタリア語': 'it',
-    'Japanese(easy)': 'ja-easy', 'Japanese (easy)': 'ja-easy',
-    'やさしい日本語': 'ja-easy', '易しい日本語': 'ja-easy', '簡単な日本語': 'ja-easy',
-    'Japanese': 'ja', '日本語': 'ja',
-    'Korean': 'ko', '韓国語': 'ko',
-    'Dutch': 'nl', 'オランダ語': 'nl',
-    'Russian': 'ru', 'ロシア語': 'ru',
-    'Thai': 'th', 'タイ語': 'th',
-    'Vietnamese': 'vi', 'ベトナム語': 'vi',
-    'Traditional Chinese': 'zh-tw', '繁体字中国語': 'zh-tw', '繁體中文': 'zh-tw',
-    '繁体中文': 'zh-tw', 'Taiwanese': 'zh-tw', '台湾華語': 'zh-tw',
-    'Simplified Chinese': 'zh-cn', 'Chinese (Simplified)': 'zh-cn', '简体中文': 'zh-cn', '簡体中文': 'zh-cn',
-    'Chinese': 'zh', '中国語': 'zh', '中文': 'zh',
-}
-_TRANSLATION_LANGUAGE_CODES_BY_NAME = {
-    name.casefold(): code for name, code in _TRANSLATION_LANGUAGE_CODES.items()
-}
-_TRANSLATION_LANGUAGE_PATTERN = "|".join(
-    re.escape(name) for name in sorted(_TRANSLATION_LANGUAGE_CODES, key=len, reverse=True)
-)
 _LEADING_TRANSLATION_COMMAND_RE = re.compile(
     r"(?is)^\s*[#>*_`]*(?:"
     r"(?:please\s+)?translate(?:\s+(?:this|it|the following))?\s+(?:to|into)\s+(?P<prefix_en_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")|"
     r"(?:to|into)\s+(?P<prefix_to_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")|"
     r"[^:：\r\n]{1,100}?(?P<prefix_context_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")(?:に|へ)\s*(?:(?:全部|全文|すべて|全て)(?:を)?\s*)?(?:翻訳(?:してください|して)?|訳(?:してください|して)?|して(?:ください|下さい)?)(?:お願いします)?(?=[：:])|"
     r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<prefix_ja_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")(?:に|へ)\s*(?:(?:全部|全文|すべて|全て)(?:を)?\s*)?(?:翻訳(?:してください|して)?|訳(?:してください|して)?|して(?:ください|下さい)?)(?:お願いします)?|"
+    r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<prefix_generic>翻訳|訳)(?:してください|して|お願いします)?|"
     r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<prefix_short>英訳|和訳)(?:してください|して|お願いします)?|"
     r"(?P<prefix_label_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")\s+(?:translation|translate)\b"
     r")[ \t#>*_`。.!！?？]*(?:[:：,、]\s*|\s+|$)"
@@ -1749,7 +1727,7 @@ _TRANSLATION_COMMAND_RE = re.compile(
     r"(?:please\s+)?(?:translate|translation)(?:\s+(?:this|it|the following))?\s+(?:to|into)\s+(?P<suffix_en_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")|"
     r"(?P<suffix_label_target>" + _TRANSLATION_LANGUAGE_PATTERN + r")\s+(?:translation|translate)\b|"
     r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<suffix_short>英訳|和訳)(?:してください|して|お願いします)?|"
-    r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<suffix_generic>翻訳)(?:してください|して|お願いします)?"
+    r"(?:(?:次の|以下の|この)?(?:文章|文|テキスト|本文|これ)(?:を)?\s*)?(?P<suffix_generic>翻訳|訳)(?:してください|して|お願いします)?"
     r")[ \t#>*_`。.!！?？]*$"
 )
 
@@ -1761,7 +1739,7 @@ def _translation_language_pair(text: str, match: re.Match | None = None,
         'prefix_en_target', 'prefix_to_target', 'prefix_context_target', 'prefix_ja_target', 'prefix_label_target',
         'suffix_ja_target', 'suffix_en_target', 'suffix_label_target',
     ) if groups.get(name)), None)
-    target = _TRANSLATION_LANGUAGE_CODES_BY_NAME.get(target_name.casefold()) if target_name else None
+    target = normalize_language_code(target_name) if target_name else None
     short = groups.get('prefix_short') or groups.get('suffix_short')
     if short == '英訳':
         target = 'en'
@@ -1775,12 +1753,74 @@ def _translation_language_pair(text: str, match: re.Match | None = None,
         # particle is instruction grammar, not evidence that the source text
         # itself is Japanese.
         body = re.sub(r"[を、。\s]+$", "", body)
-    source = 'ja' if re.search(r"[ぁ-んァ-ヶ]", body) else 'en'
+    # Keep the default destination useful for Japanese users, but let PLaMo
+    # identify the source language. Script heuristics cannot distinguish the
+    # many supported languages that share Latin, Arabic, or Indic scripts.
+    likely_japanese = bool(re.search(r"[ぁ-んァ-ヶ]", body))
     if target is None:
-        target = 'en' if source == 'ja' else 'ja'
-    if source == target:
-        source = 'en' if target in {'ja', 'ja-easy'} else 'ja'
-    return source, target
+        target = 'en' if likely_japanese else 'ja'
+    return 'auto', target
+
+
+def explicit_translation_route(text: str) -> tuple[str, dict[str, Any]] | None:
+    """Recognize a standalone translation command anchored at either edge."""
+    value = str(text or "")
+    leading = _LEADING_TRANSLATION_COMMAND_RE.match(value)
+    trailing = None if leading else _TRANSLATION_COMMAND_RE.search(value)
+    command = leading or trailing
+    if not command:
+        return None
+    source, target = _translation_language_pair(
+        value, command, leading=leading is not None)
+    return "language.translation", {"text": value, "source": source, "target": target}
+
+
+def translation_request_with_attachment(
+    message: str, attachment_text: str | None = None,
+) -> tuple[str, tuple[str, dict[str, Any]] | None]:
+    """Use a text attachment as translation source when the turn names it.
+
+    The typed instruction stays at the same edge of the combined text so the
+    normal route/compiler can remove it and infer its destination. If the file
+    itself ends or begins with a translation instruction, that is also routed.
+    """
+    value = str(message or "")
+    attachment = str(attachment_text or "")
+    message_route = explicit_translation_route(value)
+    if not attachment:
+        return value, message_route
+    if not message_route:
+        attachment_route = explicit_translation_route(attachment)
+        return (attachment, attachment_route) if attachment_route else (value, None)
+
+    leading = _LEADING_TRANSLATION_COMMAND_RE.match(value)
+    command = leading or _TRANSLATION_COMMAND_RE.search(value)
+    if command is None:
+        return value, message_route
+    command_text = command.group(0).strip()
+    source_text = (value[command.end():].strip() if leading
+                   else value[:command.start()].strip())
+    source_text = re.sub(r"[、。\s]*を[、。\s]*$", "", source_text).strip()
+    if re.fullmatch(
+        r"(?is)(?:これ|それ|以下|(?:この|その|次の|以下の)?(?:文章|文|テキスト|本文)|"
+        r"(?:この|その|添付(?:された|の)?\s*)?(?:ファイル|文書|ドキュメント)|"
+        r"(?:(?:the|this|attached|following)(?:\s+attached)?\s+)?(?:file|document|text|passage)|this|it|the\s+following)[。.!！?？]*",
+        source_text,
+    ):
+        source_text = ""
+
+    attachment_route = explicit_translation_route(attachment)
+    if attachment_route:
+        attachment_leading = _LEADING_TRANSLATION_COMMAND_RE.match(attachment)
+        attachment_command = attachment_leading or _TRANSLATION_COMMAND_RE.search(attachment)
+        if attachment_command:
+            attachment = (attachment[attachment_command.end():] if attachment_leading
+                          else attachment[:attachment_command.start()]).strip()
+    body = "\n\n".join(part for part in (source_text, attachment.strip()) if part)
+    combined = (f"{command_text}\n\n{body}" if leading
+                else f"{body}\n\n{command_text}")
+    combined_route = explicit_translation_route(combined)
+    return combined, combined_route or message_route
 
 
 def _limit_from_text(text: str, default: int = DEFAULT_RESULTS) -> int:
@@ -3069,7 +3109,7 @@ def compile_provider_arguments(tool_id: str, user_text: str, arguments: dict[str
             if sentence.startswith(opening) and sentence.endswith(closing):
                 sentence = sentence[len(opening):-len(closing)].strip()
                 break
-        if not sentence or len(sentence) > MAX_TRANSLATION_CHARS:
+        if not sentence or len(sentence) > MAX_TEXT_PROCESSING_CHARS:
             raise ExternalToolError("ARGUMENT_COMPILATION_FAILED")
         result = {"text": sentence, "source": source, "target": target}
     elif adapter_tool_id == "visualization.chart":
@@ -3816,7 +3856,7 @@ def validate_tool_arguments(tool_id: str, arguments: dict[str, Any]) -> list[str
     canonical = CANONICAL_ALIASES.get(tool_id, tool_id)
     for key, value in arguments.items():
         if canonical == 'language.translation' and key == 'text':
-            if not isinstance(value, str) or not value.strip() or len(value) > MAX_TRANSLATION_CHARS:
+            if not isinstance(value, str) or not value.strip() or len(value) > MAX_TEXT_PROCESSING_CHARS:
                 errors.append(key)
             continue
         if isinstance(value, str):
@@ -9020,13 +9060,9 @@ def route(text: str) -> tuple[str, dict[str, Any]] | None:
     value = str(text or "")
     # A clear target-language instruction at the start or end belongs to the
     # translation model even when the passage contains structured-provider terms.
-    leading_translation = _LEADING_TRANSLATION_COMMAND_RE.match(value)
-    trailing_translation = None if leading_translation else _TRANSLATION_COMMAND_RE.search(value)
-    translation_command = leading_translation or trailing_translation
-    if translation_command:
-        source, target = _translation_language_pair(
-            value, translation_command, leading=leading_translation is not None)
-        return "language.translation", {"text": value, "source": source, "target": target}
+    translation_route = explicit_translation_route(value)
+    if translation_route:
+        return translation_route
     # Nager.Date is country-scoped. A global/worldwide holiday question with
     # no country must use the provider's worldwide endpoint, not be rejected
     # merely because no country code appears. For a non-global holiday query,

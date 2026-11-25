@@ -12,7 +12,30 @@ import subprocess
 import threading
 
 
-def _python() -> Path:
+def _asset_id(request=None, asset_id=None) -> str:
+    if asset_id:
+        return str(asset_id)
+    if request and str(request.get('model') or '').startswith('whisper_'):
+        return str(request['model'])
+    if request and request.get('operation') == 'synthesize':
+        return 'lfm2_5_audio_1_5b'
+    return 'transcription_' + str((request or {}).get('language') or 'ja')
+
+
+def _runtime(asset_id=None):
+    from .model_runtime_manager import get_runtime_manager
+    manager = get_runtime_manager()
+    if manager is None:
+        return None, None
+    binding = manager.resolve(asset_id or 'transcription_ja')
+    return manager, binding
+
+
+def _python(asset_id=None) -> Path:
+    if asset_id:
+        _manager, binding = _runtime(asset_id)
+        if binding and binding.ready and binding.python_path:
+            return Path(binding.python_path).expanduser()
     root = Path(__file__).resolve().parents[2]
     return Path(os.environ.get('OLCR_AUDIO_MLX_PYTHON') or os.environ.get('OLCR_MLX_PYTHON')
                 or root / '.venv-mlx/bin/python').expanduser()
@@ -42,14 +65,15 @@ def _installed(python: str) -> bool:
         return False
 
 
-def enabled() -> bool:
+def enabled(asset_id=None) -> bool:
     engine = os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower()
     if engine not in ('auto', 'torch', 'mlx'):
         raise RuntimeError('AUDIO_ENGINE_INVALID')
     if engine == 'torch':
         return False
-    available = (platform.system() == 'Darwin' and platform.machine() == 'arm64'
-                 and _python().is_file() and _installed(str(_python())))
+    python = _python(asset_id or 'transcription_ja')
+    available = (platform.system() == 'Darwin' and platform.machine() in {'arm64', 'aarch64'}
+                 and python.is_file() and _installed(str(python)))
     if engine == 'mlx' and not available:
         raise RuntimeError('AUDIO_MLX_RUNTIME_UNAVAILABLE')
     return available
@@ -67,54 +91,65 @@ def _whisper_installed(python: str) -> bool:
         return False
 
 
-def whisper_enabled() -> bool:
+def whisper_enabled(asset_id='whisper_large_v3_turbo') -> bool:
+    python = _python(asset_id)
     return (platform.system() == 'Darwin' and platform.machine() == 'arm64'
-            and _python().is_file() and _whisper_installed(str(_python())))
+            and python.is_file() and _whisper_installed(str(python)))
 
 
 def ensure_whisper_runtime() -> None:
     if whisper_enabled():
         return
-    if platform.system() != 'Darwin' or platform.machine() != 'arm64':
-        raise RuntimeError('AUDIO_WHISPER_RUNTIME_UNAVAILABLE')
-    python = _python()
-    if not python.is_file():
-        raise RuntimeError('AUDIO_MLX_RUNTIME_UNAVAILABLE')
-    result = subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
-                             '--no-deps', 'mlx-whisper==0.4.3'],
-                            env=_environment(), stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
-    _whisper_installed.cache_clear()
-    if result.returncode or not whisper_enabled():
-        raise RuntimeError('AUDIO_WHISPER_RUNTIME_UNAVAILABLE')
+    raise RuntimeError('AUDIO_WHISPER_RUNTIME_PREPARATION_REQUIRED')
 
 
 class AudioWorker:
     def __init__(self):
         self.lock = threading.Lock()
         self.process = None
+        self.runtime_id = None
+        self.manager = None
+        self.lease = None
 
     def close(self):
         process, self.process = self.process, None
-        if process is None:
-            return
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=3)
-        for stream in (process.stdin, process.stdout):
-            if stream:
-                stream.close()
+        try:
+            if process is not None:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=3)
+                for stream in (process.stdin, process.stdout):
+                    if stream:
+                        stream.close()
+        finally:
+            lease, self.lease = self.lease, None
+            self.runtime_id = None
+            self.manager = None
+            if lease:
+                lease.__exit__(None, None, None)
 
-    def _start(self):
+    def _start(self, python, manager, binding):
         self.close()
         worker = Path(__file__).with_name('audio_mlx_worker.py')
-        process = subprocess.Popen([str(_python()), '-u', str(worker)], env=_environment(),
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   text=True, encoding='utf-8', bufsize=1)
+        environment = _environment()
+        if binding:
+            environment['OLCR_MLX_RUNTIME_PROFILE_ID'] = binding.profile_id
+            environment['OLCR_MLX_RUNTIME_ID'] = binding.runtime_id
+        lease = manager.worker_lease(binding) if manager and binding else None
+        if lease:
+            lease.__enter__()
+        try:
+            process = subprocess.Popen([str(python), '-u', str(worker)], env=environment,
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       text=True, encoding='utf-8', bufsize=1)
+        except BaseException:
+            if lease:
+                lease.__exit__(*__import__('sys').exc_info())
+            raise
         messages = queue.Queue()
         def read():
             try:
@@ -126,8 +161,16 @@ class AudioWorker:
                 messages.put(None)
         threading.Thread(target=read, name='olcr-audio-mlx-output', daemon=True).start()
         self.process, self.messages = process, messages
+        self.runtime_id = binding.runtime_id if binding else str(python)
+        self.manager, self.lease = manager, lease
 
     def stream(self, request, cancelled=None):
+        asset_id = _asset_id(request, request.pop('runtime_asset_id', None))
+        manager, binding = _runtime(asset_id)
+        if not binding or not binding.ready or not binding.python_path:
+            raise RuntimeError('AUDIO_MLX_RUNTIME_UNAVAILABLE')
+        python = Path(binding.python_path)
+        runtime_id = binding.runtime_id + ':' + str(python)
         cancelled = cancelled or threading.Event()
         while not self.lock.acquire(timeout=0.1):
             if cancelled.is_set():
@@ -137,8 +180,10 @@ class AudioWorker:
             if cancelled.is_set():
                 completed = True
                 return
+            if self.process is not None and self.runtime_id != runtime_id:
+                self.close()
             if self.process is None or self.process.poll() is not None:
-                self._start()
+                self._start(python, manager, binding)
             self.process.stdin.write(json.dumps(request, ensure_ascii=False) + '\n')
             self.process.stdin.flush()
             while not cancelled.is_set():
@@ -168,6 +213,7 @@ worker = AudioWorker()
 atexit.register(worker.close)
 
 
-def stream(operation, language, path, model_id, cancelled=None, **payload):
+def stream(operation, language, path, model_id, cancelled=None, runtime_asset_id=None, **payload):
     yield from worker.stream({'operation': operation, 'language': language,
-                              'path': str(path), 'model': model_id, **payload}, cancelled)
+                              'path': str(path), 'model': model_id,
+                              'runtime_asset_id': runtime_asset_id, **payload}, cancelled)

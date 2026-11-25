@@ -84,7 +84,7 @@ def lean_plan_prompt(goal: str, requirements: dict[str, Any], task_size: str) ->
     """Avoid duplicate graph generation and design expansion for a supplied specification."""
     coherent=coherent_static_application(goal,requirements,task_size)
     verification_requested=verification_requested_by_user(goal,requirements)
-    count = '1-2' if coherent else '2-4' if task_size == 'LARGE' else '1-3'
+    count = '1-2' if coherent else '4-7' if task_size == 'LARGE' else '1-3'
     focused = ('This is a focused FIX: inspect the existing target and make the smallest patch; no refactor or new architecture. '
                if requirements.get('mutation_mode') == 'FIX' else '')
     integration=('This is a bounded standalone offline app. Put its production UI and shared logic in ONE coherent implementation phase, '
@@ -92,10 +92,13 @@ def lean_plan_prompt(goal: str, requirements: dict[str, Any], task_size: str) ->
                  'Create test files in that same implementation phase only when requested as deliverables, using the actual produced API. '
                  'Do not generate the logic, its tests and its UI consumer as three independently designed APIs. '
                  if coherent else '')
+    large_batches=('For LARGE tasks, scale the phase count to the number of deliverables. Use bounded implementation batches: keep each implementation phase to at most 6 mutable files and at most 6 independent done criteria; split broad multi-section work into dependency-ordered, independently executable slices. '
+                   'Keep related producer/consumer code together when it defines one shared API. Use no more than 7 returned phases so the host can retain its blueprint within the overall 8-phase bound. '
+                   if task_size == 'LARGE' else '')
     verification=('The human explicitly requests verification. Include only the requested checks in the smallest coherent phase; do not add unrelated acceptance suites. '
                   if verification_requested else
                   'DEFAULT_VERIFICATION=OFF. Do not create a test/build/typecheck/browser phase or routine checks. Use verify:[] for implementation phases. Feature behavior is an implementation requirement, not a request to run tests. Create test files only when requested as deliverables, and do not run them unless requested. ')
-    return ('Return JSON only for a short read-only execution plan translating the human definition. ' + focused + integration +
+    return ('Return JSON only for a short read-only execution plan translating the human definition. ' + focused + integration + large_batches +
             f'Use {count} coherent deliverable phases. Declare separate UI and logic files when requested; their work may share a coherent phase. '
             + verification +
             'Create requested test files in the same implementation phase as the source they exercise unless the human explicitly requests a separate test phase; a separate test file is fine. '

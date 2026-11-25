@@ -18,6 +18,17 @@ from olcr_api.config import Settings
 from olcr_api.db import Database
 from olcr_api.retrieval import DisabledVectorStore, FileRetriever, FTSRetriever, RetrievalRouter
 from olcr_api.runtime import Runtime
+from olcr_api.coding_tasks import validate_plan
+
+
+def valid_stack_plan(goal, file_paths, phase_fields=None):
+    phase = {"id": "p1", "goal": goal, "status": "pending", "done": ["Implementation criteria are met"],
+             "verify": [], "dependencies": [], "risks": [], "execution_mode": "IMPLEMENTATION"}
+    phase.update(phase_fields or {})
+    return {"schema_version": 1, "original_goal": goal,
+            "scope": {"allowed": [], "forbidden": []}, "assumptions": [],
+            "file_manifest": [{"path": path, "action": "create"} for path in file_paths],
+            "phases": [phase], "max_retries_per_phase": 2, "requires_user_approval": True}
 
 
 class ImplementationPlanTests(unittest.TestCase):
@@ -595,13 +606,148 @@ class ImplementationPlanTests(unittest.TestCase):
         requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
                         "required_stack": ["Vite", "React", "TypeScript"],
                         "forbidden_stack": ["Next.js"]}
-        plan = {"file_manifest": [{"path": "package.json", "action": "create",
-                                    "content": {"dependencies": {"next": "latest"}}}],
-                "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
-                             "goal": "Implement the landing page"}]}
+        goal = "Implement the landing page"
+        plan = valid_stack_plan(goal,
+                                ("package.json", "index.html", "src/main.tsx", "src/App.tsx", "src/index.css"),
+                                {"dependency_requirements": [{"package": "next", "source_requirement": "test",
+                                                               "canonical_stack_provenance": "test",
+                                                               "authorization_status": "AUTHORIZED"}]})
+        self.assertEqual([], validate_plan(plan, goal))
         result = stack_conformance(plan, requirements)
         self.assertFalse(result["valid"])
         self.assertIn("NEXT_JS_SIGNAL", result["observed_stack_signals"])
+
+    def test_stack_conformance_ignores_forbidden_tools_in_absence_acceptance_criteria(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript", "Tailwind", "shadcn", "Anime.js v4"],
+                        "forbidden_stack": ["Next.js", "GSAP", "Framer Motion", "Three.js"]}
+        goal = "Build the requested Vite React site"
+        plan = valid_stack_plan(goal, ("package.json", "vite.config.ts", "index.html", "src/main.tsx",
+                                       "src/App.tsx", "src/index.css"),
+                                {"done": ["依存ツリーにNext.js、GSAP、Framer Motion、Three.jsが含まれない"]})
+        self.assertEqual([], validate_plan(plan, goal))
+
+        result = stack_conformance(plan, requirements)
+
+        self.assertTrue(result["valid"], result["stack_conflicts"])
+        self.assertEqual([], result["stack_conflicts"])
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            state = workspace_state(directory)
+            state.update({"greenfield": True, "new_project_intent": True,
+                          "host_workspace_authorized": True,
+                          "workspace_state": "EMPTY_GREENFIELD"})
+            prepared, artifact = prepare_implementation_plan(
+                "negative-stack-criterion", plan, directory, requirements, state)
+            self.assertEqual(6, artifact["file_manifest_count"])
+            self.assertTrue(artifact["stack_conformance"]["valid"])
+
+    def test_stack_conformance_uses_dependency_metadata_not_plan_prose(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js", "GSAP", "Framer Motion", "Three.js"]}
+        plan = {
+            "file_manifest": [{"path": path, "action": "create"} for path in (
+                "package.json", "vite.config.ts", "index.html", "src/main.tsx",
+                "src/App.tsx", "src/index.css")],
+            "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                        "goal": "Build the requested Vite site; do not install Next.js, GSAP, Framer Motion, or Three.js",
+                        "done": ["依存ツリーにNext.js、GSAP、Framer Motion、Three.jsが含まれない"],
+                        "verify": []}],
+        }
+
+        result = stack_conformance(plan, requirements)
+
+        self.assertTrue(result["valid"], result["stack_conflicts"])
+        self.assertEqual([], result["stack_conflicts"])
+
+    def test_stack_conformance_rejects_forbidden_dependency_metadata_for_each_framework(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js", "GSAP", "Framer Motion", "Three.js"]}
+        forbidden_packages = {
+            "next": ("Next.js", "NEXT_JS_SIGNAL"),
+            "gsap": ("GSAP", "GSAP_SIGNAL"),
+            "framer-motion": ("Framer Motion", "FRAMER_MOTION_SIGNAL"),
+            "three": ("Three.js", "THREE_JS_SIGNAL"),
+        }
+        for package, (technology, signal) in forbidden_packages.items():
+            with self.subTest(package=package):
+                goal = "Implement the landing page"
+                plan = valid_stack_plan(
+                    goal, ("package.json", "index.html", "src/main.tsx", "src/App.tsx", "src/index.css"),
+                    {"dependency_requirements": [{"package": package, "source_requirement": "test",
+                                                   "canonical_stack_provenance": "test",
+                                                   "authorization_status": "AUTHORIZED"}]})
+                self.assertEqual([], validate_plan(plan, goal))
+
+                result = stack_conformance(plan, requirements)
+
+                self.assertFalse(result["valid"], package)
+                self.assertIn(signal, result["observed_stack_signals"], technology)
+
+    def test_stack_conformance_rejects_forbidden_npm_alias_dependencies(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js", "GSAP", "Framer Motion", "Three.js"]}
+        goal = "Implement the landing page"
+        phase_alias = valid_stack_plan(
+            goal, ("package.json", "index.html", "src/main.tsx", "src/App.tsx", "src/index.css"),
+            {"dependency_requirements": [{"package": "motion-lib", "version_range": "npm:gsap@3.13.0",
+                                           "source_requirement": "test", "canonical_stack_provenance": "test",
+                                           "authorization_status": "AUTHORIZED"}]})
+        package_json_alias = {"file_manifest": [{"path": "package.json", "action": "create",
+                                                  "content": {"dependencies": {"motion-lib": "npm:gsap@3.13.0"}}}],
+                              "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION", "goal": goal}]}
+
+        for plan in (phase_alias, package_json_alias):
+            with self.subTest(plan=plan):
+                result = stack_conformance(plan, requirements)
+                self.assertFalse(result["valid"])
+                self.assertIn("GSAP_SIGNAL", result["observed_stack_signals"])
+
+    def test_vite_stack_ignores_nested_next_config_fixture(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js"]}
+        plan = {"file_manifest": [{"path": path, "action": "create"} for path in (
+                    "index.html", "src/main.tsx", "src/App.tsx", "src/index.css", "vite.config.ts",
+                    "examples/next.config.ts", "next.config.example.ts")],
+                "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                            "goal": "Implement the landing page"}]}
+
+        result = stack_conformance(plan, requirements)
+
+        self.assertTrue(result["valid"], result["stack_conflicts"])
+        self.assertNotIn("NEXT_CONFIG_PATH", result["observed_stack_signals"])
+
+    def test_vite_stack_rejects_exact_nested_next_config_with_package_manifest(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js"]}
+        plan = {"file_manifest": [{"path": path, "action": "create"} for path in (
+                    "index.html", "src/main.tsx", "src/App.tsx", "src/index.css", "vite.config.ts",
+                    "examples/package.json", "examples/next.config.ts")],
+                "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                            "goal": "Implement the landing page"}]}
+
+        result = stack_conformance(plan, requirements)
+
+        self.assertFalse(result["valid"])
+        self.assertIn("NEXT_CONFIG_PATH", result["observed_stack_signals"])
+
+    def test_vite_stack_rejects_root_next_config(self):
+        requirements = {"task_profile": "FRONTEND_ONLY_MARKETING_SITE",
+                        "required_stack": ["Vite", "React", "TypeScript"],
+                        "forbidden_stack": ["Next.js"]}
+        plan = {"file_manifest": [{"path": path, "action": "create"} for path in (
+                    "index.html", "src/main.tsx", "src/App.tsx", "src/index.css", "next.config.ts")],
+                "phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                            "goal": "Implement the landing page"}]}
+
+        result = stack_conformance(plan, requirements)
+
+        self.assertFalse(result["valid"])
+        self.assertIn("NEXT_CONFIG_PATH", result["observed_stack_signals"])
 
     def test_canonical_stack_contract_is_explicit_for_frontend_profile(self):
         contract = canonical_stack_contract({"task_profile": "FRONTEND_ONLY_MARKETING_SITE"})

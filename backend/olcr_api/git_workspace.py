@@ -15,7 +15,37 @@ import uuid
 from contextlib import contextmanager
 
 
-GENERATED_DIRECTORIES = frozenset({'.git', 'node_modules', '.venv', '.venv312', '.venv-mlx', '__pycache__', 'target', 'dist', 'graphify-out'})
+GENERATED_DIRECTORIES = frozenset({
+    '.git', 'node_modules', '.venv', '.venv312', '.venv-mlx', '__pycache__',
+    'target', 'dist', 'build', '.next', '.olcr', '.cache', 'coverage',
+    'storybook-static', 'graphify-out',
+})
+
+
+def workspace_source_files(workspace_root: str | Path):
+    """Yield project files while pruning generated trees before walking them.
+
+    Keeping this inventory free of dependency/build output prevents a large
+    ``node_modules`` tree from consuming the bounded source snapshot before
+    the project's own entrypoints are reached.
+    """
+    base = Path(workspace_root).expanduser().resolve()
+    for current, directories, names in os.walk(base, topdown=True, followlinks=False):
+        current_path = Path(current)
+        directories[:] = sorted(
+            name for name in directories
+            if name not in GENERATED_DIRECTORIES and not (current_path / name).is_symlink()
+        )
+        for name in sorted(names):
+            candidate = current_path / name
+            if candidate.is_symlink() or not candidate.is_file():
+                continue
+            try:
+                resolved = candidate.resolve(strict=True)
+                if resolved.is_relative_to(base):
+                    yield resolved.relative_to(base).as_posix()
+            except (OSError, RuntimeError, ValueError):
+                continue
 
 
 class GitError(ValueError):

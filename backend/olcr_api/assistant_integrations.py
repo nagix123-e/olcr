@@ -349,9 +349,17 @@ def youtube_search_results(document: str):
     if not isinstance(packet, dict):
         raise ActionError('YOUTUBE_SEARCH_FAILED')
     pending, data, visited = [packet], [], 0
+    ad_renderer_key = re.compile(r'^(?:ad|promoted|sponsored|inFeedAd|carouselAd|mastheadAd|displayAd).*(?:renderer|viewmodel)$', re.I)
     def label(value):
         if not isinstance(value, dict): return ''
         return str(value.get('simpleText') or ''.join(str(run.get('text', '')) for run in value.get('runs', []) if isinstance(run, dict)))[:300]
+    def has_ad_badge(video):
+        for badge in video.get('badges', []):
+            if not isinstance(badge, dict): continue
+            renderer = badge.get('metadataBadgeRenderer') or badge.get('badgeRenderer')
+            text = label(renderer.get('label') or renderer.get('text')) if isinstance(renderer, dict) else ''
+            if re.fullmatch(r'(?:ad|sponsored|広告|プロモーション)', text, re.I): return True
+        return False
     while pending and visited < 10_000 and len(data) < 20:
         value = pending.pop(); visited += 1
         if isinstance(value, list):
@@ -359,11 +367,14 @@ def youtube_search_results(document: str):
         elif isinstance(value, dict):
             video = value.get('videoRenderer')
             if isinstance(video, dict):
-                data.append({'id': video.get('videoId'), 'title': label(video.get('title')) or 'YouTube',
-                             'channel': label(video.get('ownerText') or video.get('shortBylineText'))})
+                title = label(video.get('title'))
+                channel = label(video.get('ownerText') or video.get('shortBylineText'))
+                if title and not re.fullmatch(r'YouTube(?: Music)?', title, re.I) and not has_ad_badge(video):
+                    data.append({'id': video.get('videoId'), 'title': title, 'channel': channel})
             else:
-                pending.extend(reversed(list(value.values())))
-    return data[:5]
+                pending.extend(child for key, child in reversed(list(value.items()))
+                               if not ad_renderer_key.fullmatch(str(key)))
+    return data[:10]
 
 
 class PlayerTickets:

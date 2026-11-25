@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING, Any, Mapping
 if TYPE_CHECKING:
     from .provider_research import ProviderEvidence
 
+from .constrained_continuation import PENDING as CONSTRAINED_CONTINUATION
 
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 CONVERSATION_MEMORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversation_memory_summaries(
     id INTEGER PRIMARY KEY,
@@ -72,10 +73,37 @@ CREATE TABLE IF NOT EXISTS custom_agent_builders(conversation_id TEXT PRIMARY KE
 CREATE TABLE IF NOT EXISTS custom_agent_builder_turns(conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, message_id TEXT NOT NULL, result_json TEXT NOT NULL, PRIMARY KEY(conversation_id,message_id));
 """
 
+def _conversation_title_from_prompt(prompt: str) -> str:
+    """Return a stable, short title derived from a conversation's first prompt."""
+    first_line = next((line.strip() for line in str(prompt or "").splitlines() if line.strip()), "")
+    normalized = re.sub(r"\s+", " ", first_line).strip()
+    if not normalized:
+        return ""
+    first_sentence = re.split(r"(?<=[。！？!?])", normalized, maxsplit=1)[0].strip()
+    title = first_sentence or normalized
+    if len(title) > 60:
+        title = title[:59].rstrip() + "…"
+    return title
+
+
+def finalize_pending_conversation_title(connection: sqlite3.Connection,
+                                        conversation_id: str, prompt: str) -> bool:
+    """Set a conversation's title once, inside the caller's message transaction."""
+    title = _conversation_title_from_prompt(prompt)
+    if not title:
+        return False
+    updated = connection.execute(
+        "UPDATE conversations SET title=?,title_auto_pending=0 "
+        "WHERE id=? AND title_auto_pending=1",
+        (title, conversation_id),
+    )
+    return updated.rowcount == 1
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_path TEXT, archived INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL, pinned INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id), title TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL, pinned INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id), title TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, title_auto_pending INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, task_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, ordinal INTEGER NOT NULL, created_at REAL NOT NULL, blocks_json TEXT);
 CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, conversation_id TEXT, raw_request TEXT NOT NULL, route TEXT, state TEXT NOT NULL, authorization_state TEXT NOT NULL, reason_category TEXT, selected_context_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL, duration_ms REAL, error TEXT);
 CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY, source TEXT UNIQUE NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, metadata_json TEXT NOT NULL, indexed_at REAL NOT NULL);
@@ -100,6 +128,7 @@ CREATE TABLE IF NOT EXISTS vector_embeddings(id INTEGER PRIMARY KEY, document_id
 CREATE TABLE IF NOT EXISTS coding_tasks(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, source_message_id TEXT UNIQUE, response_language TEXT NOT NULL DEFAULT 'ja', original_goal TEXT NOT NULL, status TEXT NOT NULL, activity TEXT NOT NULL, plan_json TEXT, active_plan_json TEXT, plan_revision INTEGER NOT NULL DEFAULT 0, pending_plan_json TEXT, subtask_progress_json TEXT, current_phase_id TEXT, retry_count INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 2, replan_count INTEGER NOT NULL DEFAULT 0, replan_count_in_epoch INTEGER NOT NULL DEFAULT 0, recovery_epoch INTEGER NOT NULL DEFAULT 0, human_recovery_epochs INTEGER NOT NULL DEFAULT 0, task_total_plan_repair_count INTEGER NOT NULL DEFAULT 0, task_total_recovery_model_calls INTEGER NOT NULL DEFAULT 0, approved_scopes_json TEXT NOT NULL DEFAULT '[]', pending_authorization_json TEXT, pending_user_confirmation INTEGER NOT NULL DEFAULT 0, pause_requested INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, console_hidden INTEGER NOT NULL DEFAULT 0, queue_order INTEGER, recovery_action TEXT NOT NULL DEFAULT 'NONE', recovery_reason TEXT NOT NULL DEFAULT 'NONE', final_report_json TEXT, final_report_status TEXT NOT NULL DEFAULT 'NOT_RUN', execution_mode TEXT NOT NULL DEFAULT 'NORMAL', task_profile TEXT NOT NULL DEFAULT 'GENERAL_CODING', requirements_json TEXT NOT NULL DEFAULT '{}', required_mcp_json TEXT NOT NULL DEFAULT '[]', mcp_evidence_json TEXT NOT NULL DEFAULT '[]', batch_cursor INTEGER NOT NULL DEFAULT 0, batch_handoff_json TEXT, resume_state_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_phase_reports(id TEXT PRIMARY KEY, coding_task_id TEXT NOT NULL REFERENCES coding_tasks(id) ON DELETE CASCADE, phase_id TEXT NOT NULL, attempt INTEGER NOT NULL, structured_report_json TEXT NOT NULL, validation_status TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS interactive_planning_sessions(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, planning_mode TEXT NOT NULL, status TEXT NOT NULL, planning_revision INTEGER NOT NULL, pending_questions_json TEXT NOT NULL, answered_questions_json TEXT NOT NULL, assumptions_json TEXT NOT NULL, decisions_json TEXT NOT NULL, format_state_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS constrained_chat_continuations(conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, request_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS coding_task_telemetry(task_id TEXT PRIMARY KEY REFERENCES coding_tasks(id) ON DELETE CASCADE, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 """
 
@@ -717,6 +746,33 @@ class Database:
                 db.executescript(CODING_RELEASE_OPERATIONS_SCHEMA)
                 db.execute("UPDATE schema_version SET version=41")
                 rows=[(41,)]
+            if rows and rows[0][0] == 41:
+                # Auto-title state was added after the provider release schema.
+                _ensure_column(db, "conversations", "title_auto_pending INTEGER NOT NULL DEFAULT 0")
+                placeholders = db.execute(
+                    "SELECT id FROM conversations WHERE title='New conversation'"
+                ).fetchall()
+                for placeholder in placeholders:
+                    first_prompt = db.execute(
+                        "SELECT content FROM messages WHERE conversation_id=? AND role='user' "
+                        "ORDER BY ordinal,created_at,id LIMIT 1",
+                        (placeholder[0],),
+                    ).fetchone()
+                    title = _conversation_title_from_prompt(first_prompt[0]) if first_prompt else ""
+                    if title:
+                        db.execute(
+                            "UPDATE conversations SET title=?,title_auto_pending=0 "
+                            "WHERE id=? AND title='New conversation'",
+                            (title, placeholder[0]),
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE conversations SET title_auto_pending=1 "
+                            "WHERE id=? AND title='New conversation'",
+                            (placeholder[0],),
+                        )
+                db.execute("UPDATE schema_version SET version=42")
+                rows=[(42,)]
             if rows and rows[0][0] != SCHEMA_VERSION: raise RuntimeError(f"incompatible schema version {rows[0][0]}")
             db.executescript(CUSTOM_AGENT_SCHEMA)
             db.executescript('''CREATE TABLE IF NOT EXISTS coding_task_events(
@@ -2135,7 +2191,7 @@ class Database:
         with self.connect() as db:
             db.execute("UPDATE coding_tasks SET status='RESUMABLE', activity='NONE', updated_at=? WHERE status IN ('PLANNING','RUNNING','FINAL_REPORTING','QUEUED')",(__import__('time').time(),))
 
-    def save_coding_completion(self, task_id: str, revision: int, text: str) -> None:
+    def save_coding_completion(self, task_id: str, revision: int, text: str, *, partial: bool = False) -> None:
         """Publish the terminal state and its chat report in one transaction."""
         now = __import__('time').time()
         with self.connect() as conn:
@@ -2153,8 +2209,8 @@ class Database:
             steering_exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='coding_steering'").fetchone()
             if steering_exists and conn.execute("SELECT 1 FROM coding_steering WHERE task_id=? AND status IN ('QUEUED','APPLYING','NEEDS_REVIEW')", (task_id,)).fetchone():
                 raise RuntimeError('COMPLETION_PENDING_INSTRUCTIONS')
-            conn.execute("UPDATE coding_tasks SET status='COMPLETED',activity='NONE',queue_order=NULL,current_phase_id=NULL,final_report_json=?,final_report_status='PASS',recovery_action='NONE',recovery_reason='NONE',updated_at=? WHERE id=?",
-                         (json.dumps({'text': text}, ensure_ascii=False), now, task_id))
+            conn.execute("UPDATE coding_tasks SET status='COMPLETED',activity='NONE',queue_order=NULL,current_phase_id=NULL,final_report_json=?,final_report_status=?,recovery_action='NONE',recovery_reason='NONE',updated_at=? WHERE id=?",
+                         (json.dumps({'text': text}, ensure_ascii=False), 'PARTIAL' if partial else 'PASS', now, task_id))
             ordinal = conn.execute("SELECT COALESCE(MAX(ordinal),-1)+1 FROM messages WHERE conversation_id=?", (row['conversation_id'],)).fetchone()[0]
             conn.execute("INSERT INTO messages(id,conversation_id,task_id,role,content,ordinal,created_at) VALUES(?,?,?,'assistant',?,?,?)",
                          (str(__import__('uuid').uuid4()), row['conversation_id'], task_id, text, ordinal, now))
@@ -2181,10 +2237,10 @@ class Database:
         """Queue an explicit resume, or preserve pauses during automatic continuation."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT status,queue_order,pause_requested,archived FROM coding_tasks WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT status,queue_order,pause_requested,archived,pending_authorization_json FROM coding_tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 return None
-            if row['archived']:
+            if row['archived'] or (json.loads(row['pending_authorization_json'] or 'null') or {}).get('type') == CONSTRAINED_CONTINUATION:
                 return self.coding_task(task_id)
             if row['pause_requested'] and not clear_pause:
                 return self.coding_task(task_id)
@@ -2193,6 +2249,43 @@ class Database:
             next_order=db.execute("SELECT COALESCE(MAX(queue_order),0)+1 FROM coding_tasks WHERE status='QUEUED'").fetchone()[0]
             db.execute("UPDATE coding_tasks SET status='QUEUED',activity='NONE',pause_requested=0,queue_order=?,updated_at=? WHERE id=?",(next_order,__import__('time').time(),task_id))
         return self.coding_task(task_id)
+
+    def resolve_coding_continuation(self, task_id: str, proposal_id: str, *, plan: dict | None,
+                                    requirements: dict | None, current_phase_id: str | None,
+                                    recovery_action: str, decline_reason: str) -> bool:
+        """Consume exactly one consent proposal and commit its next state together."""
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT status,archived,plan_revision,pending_authorization_json FROM coding_tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+            pending = json.loads(row["pending_authorization_json"] or "null") if row else None
+            if (not row or row["archived"] or row["status"] != "WAITING_FOR_USER" or not pending
+                    or pending.get("type") != CONSTRAINED_CONTINUATION or pending.get("id") != proposal_id
+                    or pending.get("plan_revision") != row["plan_revision"]):
+                return False
+            now = __import__("time").time()
+            if requirements is None:
+                conn.execute(
+                    "UPDATE coding_tasks SET status='BLOCKED',activity='NONE',queue_order=NULL,"
+                    "pending_authorization_json='null',pending_user_confirmation=0,recovery_action='NONE',"
+                    "recovery_reason=?,updated_at=? WHERE id=?", (decline_reason, now, task_id),
+                )
+            else:
+                next_order = conn.execute(
+                    "SELECT COALESCE(MAX(queue_order),0)+1 FROM coding_tasks WHERE status='QUEUED'"
+                ).fetchone()[0]
+                serialized = json.dumps(plan)
+                conn.execute(
+                    "UPDATE coding_tasks SET status='QUEUED',activity='NONE',queue_order=?,pause_requested=0,"
+                    "plan_json=?,active_plan_json=?,requirements_json=?,current_phase_id=?,pending_plan_json='null',"
+                    "pending_authorization_json='null',pending_user_confirmation=0,recovery_action=?,recovery_reason='NONE',"
+                    "updated_at=? WHERE id=?",
+                    (next_order, serialized, serialized, json.dumps(requirements), current_phase_id, recovery_action, now, task_id),
+                )
+        return True
+
     def next_queued_coding_task(self) -> dict[str, Any] | None:
         with self.connect() as db:
             row=db.execute("SELECT id FROM coding_tasks WHERE status='QUEUED' AND archived=0 AND pause_requested=0 ORDER BY queue_order,id LIMIT 1").fetchone()
@@ -2250,6 +2343,8 @@ class Database:
                 return self.coding_task(task_id)
             scopes = json.loads(row['approved_scopes_json'] or '[]')
             authorization = json.loads(row['pending_authorization_json'] or 'null') or {}
+            if authorization.get('type') == CONSTRAINED_CONTINUATION:
+                return self.coding_task(task_id)
             # Approval authorizes exact reviewed manifest paths, not prose.
             manifest = plan.get('file_manifest') if isinstance(plan.get('file_manifest'), list) else []
             allowed = [entry['path'] for entry in manifest if isinstance(entry, dict)
@@ -2307,8 +2402,12 @@ class Database:
             db.execute("DELETE FROM conversations WHERE project_id=?",(project_id,))
             db.execute("DELETE FROM projects WHERE id=?",(project_id,))
         return True
-    def create_conversation(self, title: str, now: float, conversation_id: str, project_id: str | None = None) -> str:
-        with self.connect() as db: db.execute("INSERT INTO conversations(id,project_id,title,created_at,updated_at) VALUES(?,?,?,?,?)", (conversation_id, project_id, title[:120] or "New conversation", now, now))
+    def create_conversation(self, title: str, now: float, conversation_id: str, project_id: str | None = None,
+                            *, title_auto_pending: bool = False) -> str:
+        with self.connect() as db:
+            db.execute("INSERT INTO conversations(id,project_id,title,created_at,updated_at,title_auto_pending) VALUES(?,?,?,?,?,?)",
+                       (conversation_id, project_id, title[:120] or "New conversation", now, now,
+                        int(title_auto_pending)))
         return conversation_id
     def add_message(self, conversation_id: str, role: str, content: str, now: float, message_id: str, task_id: str | None = None, blocks: list[dict[str, Any]] | None = None) -> None:
         if role=="assistant":
@@ -2329,7 +2428,18 @@ class Database:
                     blocks.append(json.loads(log[0]))
             ordinal = db.execute("SELECT COALESCE(MAX(ordinal),-1)+1 FROM messages WHERE conversation_id=?", (conversation_id,)).fetchone()[0]
             db.execute("INSERT INTO messages(id,conversation_id,task_id,role,content,ordinal,created_at,blocks_json) VALUES(?,?,?,?,?,?,?,?)", (message_id, conversation_id, task_id, role, content, ordinal, now, json.dumps(blocks, ensure_ascii=False) if blocks else None))
+            if role == "user":
+                finalize_pending_conversation_title(db, conversation_id, content)
             db.execute("UPDATE conversations SET updated_at=? WHERE id=?",(now,conversation_id))
+    def delete_messages(self, conversation_id: str, message_ids: list[str]) -> None:
+        """Delete only the explicitly listed messages from one conversation."""
+        ids = list(dict.fromkeys(message_id for message_id in message_ids if message_id))
+        if not ids:
+            return
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.executemany("DELETE FROM messages WHERE conversation_id=? AND id=?",
+                           [(conversation_id, message_id) for message_id in ids])
     def rewind_conversation(self, conversation_id: str, message_id: str, expected_last_message_id: str,
                             project_id: str | None, now: float) -> dict[str, Any]:
         """Drop one of the latest two user turns and its suffix, atomically.
@@ -2373,9 +2483,23 @@ class Database:
             conn.execute("UPDATE interactive_planning_sessions SET status='SUPERSEDED',updated_at=? WHERE conversation_id=? AND status='ACTIVE'", (now, conversation_id))
             conn.execute("DELETE FROM custom_agent_builders WHERE conversation_id=?", (conversation_id,))
             conn.execute("DELETE FROM custom_agent_builder_turns WHERE conversation_id=?", (conversation_id,))
+            conn.execute("DELETE FROM constrained_chat_continuations WHERE conversation_id=?", (conversation_id,))
             conn.execute("DELETE FROM messages WHERE conversation_id=? AND ordinal>=?", (conversation_id, target["ordinal"]))
             conn.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conversation_id))
         return self.conversation(conversation_id) or {}
+
+    def save_constrained_chat(self, conversation_id: str, request: dict[str, Any]) -> None:
+        with self.connect() as conn:
+            conn.execute("INSERT OR REPLACE INTO constrained_chat_continuations VALUES(?,?)",
+                         (conversation_id, json.dumps(request, ensure_ascii=False)))
+
+    def take_constrained_chat(self, conversation_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT request_json FROM constrained_chat_continuations WHERE conversation_id=?",
+                               (conversation_id,)).fetchone()
+            conn.execute("DELETE FROM constrained_chat_continuations WHERE conversation_id=?", (conversation_id,))
+        return json.loads(row[0]) if row else None
 
     def active_interactive_planning(self, conversation_id: str) -> dict[str, Any] | None:
         with self.connect() as db:
@@ -2428,7 +2552,9 @@ class Database:
     def rename_conversation(self, conversation_id: str, title: str, now: float) -> dict[str, Any] | None:
         cleaned = title.strip()[:120]
         if not cleaned: return None
-        with self.connect() as db: db.execute("UPDATE conversations SET title=?,updated_at=? WHERE id=?", (cleaned, now, conversation_id))
+        with self.connect() as db:
+            db.execute("UPDATE conversations SET title=?,title_auto_pending=0,updated_at=? WHERE id=?",
+                       (cleaned, now, conversation_id))
         return self.conversation(conversation_id)
     def completed_turns(self, exclude_conversation: str | None = None, project_id: str | None = None) -> list[dict[str, Any]]:
         with self.connect() as db:
@@ -2581,6 +2707,16 @@ class Database:
             return self._memory_range(db, conversation_id, first, last, limit, scope, args)
     def save_setting(self, key: str, value: Any, now: float) -> None:
         with self.connect() as db: db.execute("INSERT OR REPLACE INTO application_settings VALUES(?,?,?)", (key,json.dumps(value),now))
+    def update_setting(self, key: str, updater, now: float) -> Any:
+        """Update one JSON setting under a SQLite write lock."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT value_json FROM application_settings WHERE key=?", (key,)).fetchone()
+            current = json.loads(row["value_json"]) if row else None
+            updated = updater(current)
+            db.execute("INSERT OR REPLACE INTO application_settings VALUES(?,?,?)",
+                       (key, json.dumps(updated), now))
+            return updated
     def load_settings(self) -> dict[str, Any]:
         with self.connect() as db:
             result = {x["key"]: json.loads(x["value_json"]) for x in db.execute("SELECT * FROM application_settings")}

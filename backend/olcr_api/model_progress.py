@@ -18,6 +18,8 @@ def observe_model_progress(callback):
 
 def model_progress(**data):
     callback=_observer.get()
-    if data.get('state') in {'request_started','account_attempt','model_skipped'}:_invocation.set(uuid.uuid4().hex)
+    if (data.get('state') in {'request_started','account_attempt','model_skipped'}
+            or (data.get('state') == 'context_compression' and data.get('phase') == 'started')):
+        _invocation.set(uuid.uuid4().hex)
     if callback: callback({'invocation_id':_invocation.get(),**data})
     return _invocation.get()

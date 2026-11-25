@@ -13,4 +13,11 @@
 @media(prefers-reduced-motion:reduce){.reasoning-chevron{transition:none}}
 .reasoning-log-body{max-height:none;overflow:visible;overflow-anchor:none}
 .live-thinking-message{min-width:0;width:88%}
+.live-thinking-progress{margin:0 0 10px;color:var(--olcr-text-secondary,#737373)}
+.live-thinking-compression{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 12px;font-size:12px}
+.live-thinking-compression::before,.live-thinking-compression::after{content:"";height:1px;flex:1;background:var(--olcr-border,#ddd)}
+.live-thinking-compression strong{font-weight:500}
+.live-thinking-compression.is-error strong{color:var(--olcr-danger,#a33)}
+.live-thinking-elapsed{font-size:10px;line-height:1.4;padding:0 0 10px;border-bottom:1px solid var(--olcr-border,#ddd)}
+.live-thinking-state{font-size:14px;margin-top:8px}
 .reasoning-log section:has(.reasoning-log-meta) pre{max-height:none}

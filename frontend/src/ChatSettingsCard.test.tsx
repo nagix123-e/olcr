@@ -43,7 +43,7 @@ describe("chat settings", () => {
       return settings;
     });
     render(<ChatSettingsCard api={api}/>);
-    fireEvent.click(await screen.findByRole("checkbox", {name: /プロジェクトをまたいだ|Across-project memory/}));
+    fireEvent.click(await screen.findByRole("switch", {name: /プロジェクトをまたいだ|Across-project memory/}));
     fireEvent.click(screen.getByRole("button", {name: /記憶設定を保存|Save memory settings/}));
     await screen.findByText(/保存しました|Saved. Applies/);
     expect(settings.main_model).toBe("fixture");

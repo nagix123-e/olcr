@@ -37,6 +37,7 @@ from .web import search as web_search, brave_search, brave_news_search, tavily_s
 from .tools import ToolValidationError, registry
 from .evidence_quality import web_source_matches
 from .vision import VisionRouter
+from .git_workspace import workspace_source_files
 
 VISION_SCHEMA_KEYS = ("elements", "text", "relationships", "anomalies", "confidence", "uncertainty")
 VISION_SCHEMA_INSTRUCTION = "Allowed top-level keys are exactly: " + ", ".join(VISION_SCHEMA_KEYS) + ". Use elements for visible UI items, text for visible text, and relationships for spatial relations. An elements[] entry may contain bbox: [x1,y1,x2,y2] normalized to 0..1; the field name is exactly bbox, never bbox_normalized. Omit bbox when location or scale is uncertain."
@@ -1318,6 +1319,8 @@ class Runtime:
                 else:
                     task.transition(TaskState.COMPLETED)
                 disclosure=("対応する知識APIが見つかりませんでした。Brave SearchへのフォールバックにはSettingsでWeb Searchをautoにしてください。" if api_miss_without_evidence and web_mode != "auto" else "Web検索は現在オフになっています。Settings で Web Search を manual または auto にしてください。" if web_mode == "off" else "Web検索プロバイダが設定されていないため、最新情報を確認できませんでした。\n" + setup_guidance("brave" if api_miss_fallback else web_provider_name if web_provider_name != "none" else None) if web_provider_not_ready else "Web検索に失敗したため、最新情報を取得できませんでした。" if web_provider_failed else ("Web検索は実行できましたが、個別記事として確認できるニュースを特定できませんでした。" if news_request else "Web検索は実行できましたが、取得内容を確認できる資料が見つかりませんでした。") if web_raw_result_count > 0 else "Web検索は実行できましたが、該当する結果が見つかりませんでした。")
+                if explicit_web_request:
+                    task.selected_context.append({"explicit_web_lookup_unavailable": final_status})
                 return self._finish(task, disclosure, started)
             if web_evidence:
                 reasoning_policy = (
@@ -2196,8 +2199,7 @@ class Runtime:
         root = workspace_root or (Path(self.settings.allowed_roots[0]) if self.settings.allowed_roots else None)
         if not root: raise PermissionError("an authorized workspace is required for implementation work")
         base = Path(root).resolve()
-        return sorted(str(item.relative_to(base)) for item in base.rglob("*")
-                      if item.is_file() and item.resolve().is_relative_to(base))[:200]
+        return list(workspace_source_files(base))[:200]
 
     def _related_sources(self, target: Path, limit: int = 8, root: Path | None = None) -> dict[Path, str]:
         """Read bounded source context for an existing target and its direct web links."""

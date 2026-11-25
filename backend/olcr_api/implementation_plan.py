@@ -158,6 +158,15 @@ def concrete_artifact_contract(plan: dict[str, Any], requirements: dict[str, Any
     entries = entries if isinstance(entries, list) else []
     explicit_paths = {Path(str(item.get("path")).replace("\\", "/")).as_posix().lstrip("./")
                       for item in entries if isinstance(item, dict) and isinstance(item.get("path"), str)}
+    approved_mutable_paths = {
+        Path(str(item.get("path")).replace("\\", "/")).as_posix().lstrip("./")
+        for item in entries if isinstance(item, dict) and isinstance(item.get("path"), str)
+        and not item.get("read_only")
+        and str(item.get("action") or item.get("operation") or "modify").lower()
+        in {"create", "modify", "delete"}
+        and str(item.get("role") or "").lower().replace("-", "_")
+        not in {"read_only", "readonly", "evidence", "inspection", "verification"}
+    }
     artifacts: dict[str, dict[str, Any]] = {}
 
     def add(path: str, provenance: str, intended_operation: str = "create") -> None:
@@ -207,11 +216,16 @@ def concrete_artifact_contract(plan: dict[str, Any], requirements: dict[str, Any
     text = " ".join(text_parts)
     semantic_requirements: set[str] = set()
     for token in _PATH_TOKEN.findall(text):
+        # Build output and test reports are produced by commands. They do not
+        # belong in the writable source manifest unless explicitly listed in
+        # that manifest above.
+        if _generated_output_path(token):
+            continue
         if _is_semantic_requirement_token(token):
             semantic_requirements.add(token)
             continue
         if not _derived_semantic_path(token, Path(workspace.get("root") or ".")):
-            add(token, "NORMALIZED_PHASE_ARTIFACT")
+            add(_unique_manifest_alias(token, approved_mutable_paths), "NORMALIZED_PHASE_ARTIFACT")
     for path in _planned_component_paths(text):
         add(path, "NORMALIZED_PHASE_ARTIFACT")
 
@@ -355,41 +369,78 @@ def stack_conformance(plan: dict[str, Any], requirements: dict[str, Any] | None 
                 "observed_stack_signals": [], "stack_conflicts": []}
     entries = [item for item in (plan.get("file_manifest") or []) if isinstance(item, dict)]
     paths = {Path(_path_from_entry(item)).as_posix() for item in entries if _path_from_entry(item)}
-    evidence_parts: list[str] = []
-    evidence_parts.extend(str(item.get("path") or "") for item in entries)
-    # A planner can carry dependency/configuration details alongside a
-    # package/config manifest entry.  Include that structured evidence so a
-    # Next dependency cannot evade the stack gate simply because the path is
-    # the generic ``package.json``.
-    evidence_parts.extend(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in entries)
-    for phase in plan.get("phases") or []:
-        if isinstance(phase, dict):
-            evidence_parts.extend(str(phase.get(key) or "") for key in ("goal", "done", "verify"))
-    for task in plan.get("tasks") or []:
-        if isinstance(task, dict):
-            evidence_parts.extend(str(task.get(key) or "") for key in ("goal", "change_scope", "verification", "done_condition"))
-    evidence_parts.extend(str(item) for item in ((plan.get("scope") or {}).get("allowed") or []))
-    text = " ".join(evidence_parts)
-    lower = text.lower()
     observed: list[str] = []
     conflicts: list[str] = []
-    forbidden_matches: list[tuple[str, str]] = [
-        ("Next.js", r"\bnext\.js\b|next/config|next\.config\.|[\"']next[\"']\s*:"),
-        ("GSAP", r"\bgsap\b"),
-        ("Framer Motion", r"\bframer[\s-]+motion\b"),
-        ("Three.js", r"\bthree\.js\b|[\"']three[\"']\s*:"),
-    ]
-    for technology, pattern in forbidden_matches:
-        if technology in forbidden and re.search(pattern, lower):
-            signal = re.sub(r"[^A-Z0-9]+", "_", technology.upper()).strip("_") + "_SIGNAL"
+    forbidden_packages = {
+        "next": ("Next.js", "NEXT_JS_SIGNAL"),
+        "gsap": ("GSAP", "GSAP_SIGNAL"),
+        "framer-motion": ("Framer Motion", "FRAMER_MOTION_SIGNAL"),
+        "three": ("Three.js", "THREE_JS_SIGNAL"),
+    }
+    declared_packages: set[str] = set()
+
+    def add_package_spec(name: Any, version_or_spec: Any = None) -> None:
+        package = str(name or "").strip().lower()
+        if package:
+            declared_packages.add(package)
+        spec = str(version_or_spec or "").strip()
+        if not spec.lower().startswith("npm:"):
+            return
+        target = spec[4:].strip().lower()
+        if target.startswith("@"):  # scoped package: @scope/name@version
+            scope_end = target.find("/")
+            version_start = target.find("@", scope_end + 1) if scope_end >= 0 else -1
+            target = target[:version_start] if version_start >= 0 else target
+        else:
+            target = target.split("@", 1)[0]
+        if target:
+            declared_packages.add(target)
+
+    dependency_fields = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies",
+                         "bundledDependencies", "bundleDependencies")
+    for entry in entries:
+        path = _path_from_entry(entry)
+        if Path(path).name.lower() != "package.json":
+            continue
+        manifest = entry.get("content")
+        if isinstance(manifest, str):
+            try:
+                manifest = json.loads(manifest)
+            except (TypeError, ValueError):
+                continue
+        if not isinstance(manifest, dict):
+            continue
+        for field in dependency_fields:
+            dependencies = manifest.get(field)
+            if isinstance(dependencies, dict):
+                for name, spec in dependencies.items():
+                    add_package_spec(name, spec)
+            elif isinstance(dependencies, list):
+                for name in dependencies:
+                    add_package_spec(name)
+    # The planner schema carries proposed packages on their owning phase.
+    # Treat this canonical channel as the primary dependency evidence; the
+    # package.json content branch above is retained for legacy/direct callers.
+    for phase in plan.get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        for record in phase.get("dependency_requirements") or []:
+            if isinstance(record, dict) and record.get("package"):
+                add_package_spec(record["package"], record.get("version_range"))
+    for package, (technology, signal) in forbidden_packages.items():
+        if technology in forbidden and package in declared_packages:
             observed.append(signal)
-            conflicts.append(
-                "forbidden framework Next.js appears in plan evidence"
-                if technology == "Next.js" else
-                f"forbidden technology {technology} appears in plan evidence")
-    if any(path.startswith("next.config.") for path in paths):
+            conflicts.append(f"forbidden dependency {package} is declared for {technology}")
+    active_next_config_names = {"next.config.js", "next.config.mjs", "next.config.ts",
+                                 "next.config.mts", "next.config.cjs"}
+    active_next_config = any(
+        Path(path).name.lower() in active_next_config_names
+        and (Path(path).parent == Path(".")
+             or (Path(path).parent / "package.json").as_posix() in paths)
+        for path in paths)
+    if active_next_config:
         observed.append("NEXT_CONFIG_PATH")
-        if "forbidden framework Next.js appears in plan evidence" not in conflicts:
+        if "Next.js configuration path is present" not in conflicts:
             conflicts.append("Next.js configuration path is present")
     has_vite_bootstrap = bool({"index.html", "src/main.tsx", "src/App.tsx", "src/index.css"} <= paths)
     has_app_router_pair = {"app/page.tsx", "app/layout.tsx"} <= paths
@@ -1042,6 +1093,33 @@ def _derived_semantic_path(path_value: str, root: Path) -> bool:
     # missing bare token, a leading capital is the generic proper-noun signal;
     # no technology-specific allow/deny list is needed.
     return bool(re.search(r"[A-Z]", stem))
+
+
+_GENERATED_OUTPUT_DIRS = {"dist", "build", "coverage", ".next", ".nuxt", ".output", "target"}
+
+
+def _generated_output_path(path_value: str) -> bool:
+    """Whether a prose path names build/test output rather than a source file."""
+    normalized = path_value.replace("\\", "/").lstrip("./")
+    parts = Path(normalized).parts
+    return len(parts) > 1 and parts[0].lower() in _GENERATED_OUTPUT_DIRS
+
+
+def _unique_manifest_alias(path_value: str, approved_paths: set[str]) -> str:
+    """Resolve a shortened prose filename only when one approved path matches."""
+    normalized = path_value.replace("\\", "/").lstrip("./")
+    target_parts = Path(normalized).parts
+    if not target_parts:
+        return normalized
+    matches = []
+    for approved in approved_paths:
+        approved_normalized = approved.replace("\\", "/").lstrip("./")
+        approved_parts = Path(approved_normalized).parts
+        if (len(approved_parts) >= len(target_parts)
+                and tuple(part.casefold() for part in approved_parts[-len(target_parts):])
+                == tuple(part.casefold() for part in target_parts)):
+            matches.append(approved_normalized)
+    return matches[0] if len(matches) == 1 else normalized
 
 
 def prepare_implementation_plan(task_id: str, plan: dict[str, Any], target_root: str | Path,

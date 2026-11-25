@@ -7,8 +7,8 @@ it('saves only memory settings and explains that turning off sharing retains mem
   const settings = {conversation_memory_enabled: true, conversation_memory_cross_project_enabled: true, conversation_memory_min_relevance: .55};
   const save = vi.fn(async (updates: Record<string, unknown>) => ({...settings, ...updates}));
   render(<MemorySettings settings={settings} save={save}/>);
-  expect(screen.getByText(/保存済みの記憶は削除|stored memories are retained/i)).toBeTruthy();
-  fireEvent.click(screen.getByRole('checkbox', {name: /プロジェクトをまたいだ|Across-project memory/i}));
+  expect(screen.getByText(/記憶の保存と索引作成は続きます|keeps saving and indexing memories/i)).toBeTruthy();
+  fireEvent.click(screen.getByRole('switch', {name: /プロジェクトをまたいだ|Across-project memory/i}));
   fireEvent.change(screen.getByRole('slider'), {target: {value: '.8'}});
   fireEvent.click(screen.getByRole('button', {name: /記憶設定を保存|Save memory settings/i}));
   await screen.findByText(/保存しました|Saved. Applies/);

@@ -5,7 +5,9 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+import sys
 import time
+import traceback
 import uuid
 from .generation_control import Generation, GenerationCancelled
 
@@ -21,15 +23,27 @@ class MobileRuns:
                     id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
                     request_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
                     state TEXT NOT NULL, created_at REAL NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'mobile',
                     UNIQUE(conversation_id, request_id));
                 CREATE TABLE IF NOT EXISTS mobile_run_events (
                     run_id TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL,
                     PRIMARY KEY(run_id, seq));
+                CREATE TABLE IF NOT EXISTS mobile_run_order (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL UNIQUE,
+                    conversation_id TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS mobile_run_order_conversation_seq
+                    ON mobile_run_order(conversation_id,seq);
             ''')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(mobile_runs)')}
+            if 'source' not in columns:
+                db.execute("ALTER TABLE mobile_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'mobile'")
+            db.execute('''INSERT OR IGNORE INTO mobile_run_order (run_id,conversation_id)
+                SELECT id,conversation_id FROM mobile_runs ORDER BY created_at,id''')
             db.execute("UPDATE mobile_runs SET state='interrupted' WHERE state='running'")
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone():
                 db.executescript('''CREATE TRIGGER IF NOT EXISTS mobile_conversation_delete
                     AFTER DELETE ON conversations BEGIN
+                      DELETE FROM mobile_run_order WHERE conversation_id=OLD.id;
                       DELETE FROM mobile_run_events WHERE run_id IN
                         (SELECT id FROM mobile_runs WHERE conversation_id=OLD.id);
                       DELETE FROM mobile_runs WHERE conversation_id=OLD.id;
@@ -37,9 +51,78 @@ class MobileRuns:
 
     def active(self, conversation_id):
         with self.connect() as db:
-            row = db.execute("SELECT * FROM mobile_runs WHERE conversation_id=? AND state='running' ORDER BY created_at DESC LIMIT 1",
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute("SELECT r.* FROM mobile_run_order o JOIN mobile_runs r ON r.id=o.run_id WHERE o.conversation_id=? AND r.state='running' ORDER BY o.seq DESC LIMIT 1",
                              (conversation_id,)).fetchone()
+            if row:
+                last = db.execute('SELECT data FROM mobile_run_events WHERE run_id=? ORDER BY seq DESC LIMIT 1',
+                                  (row['id'],)).fetchone()
+                try:
+                    event = json.loads(last['data']) if last else {}
+                except (TypeError, ValueError):
+                    event = {}
+                terminal_state = self._terminal_state_for_event(event, row['source'])
+                if terminal_state:
+                    self._write_terminal_state(db, row['id'], row['source'], terminal_state)
+                    row = dict(row)
+                    row['state'] = terminal_state
         return dict(row) if row else None
+
+    @staticmethod
+    def _terminal_state_for_event(event, source):
+        kind = event.get('type') if isinstance(event, dict) else None
+        if kind == 'error':
+            return 'failed'
+        if kind == 'cancelled':
+            return 'cancelled'
+        if kind == 'done':
+            task = event.get('task') if isinstance(event.get('task'), dict) else {}
+            if source == 'pc' and task.get('type') == 'coding_task_progress':
+                status = task.get('status')
+                if status in {'QUEUED', 'RUNNING', 'PLANNING', 'FINAL_REPORTING', 'QWEN_REPLANNING'}:
+                    return None
+                if status in {'FAILED', 'BLOCKED'}:
+                    return 'failed'
+                if status == 'CANCELLED':
+                    return 'cancelled'
+            return 'completed'
+        if kind == 'task_update':
+            task = event.get('task') if isinstance(event.get('task'), dict) else {}
+            return {'COMPLETED': 'completed', 'FAILED': 'failed', 'BLOCKED': 'failed',
+                    'CANCELLED': 'cancelled', 'INTERRUPTED': 'interrupted'}.get(task.get('status'))
+        return None
+
+    @staticmethod
+    def _write_terminal_state(db, identifier, source, state):
+        row = db.execute('SELECT state FROM mobile_runs WHERE id=?', (identifier,)).fetchone()
+        if not row or row['state'] != 'running':
+            return
+        if source == 'pc':
+            status = {'completed': 'COMPLETED', 'failed': 'FAILED',
+                      'cancelled': 'CANCELLED', 'interrupted': 'INTERRUPTED'}[state]
+            seq = db.execute('SELECT COALESCE(MAX(seq),0)+1 FROM mobile_run_events WHERE run_id=?',
+                             (identifier,)).fetchone()[0]
+            event = {'type': 'task_update', 'task': {'id': 'pc-run-' + identifier,
+                'status': status, 'activity': 'PC版OLCRの実行'}}
+            db.execute('INSERT INTO mobile_run_events VALUES(?,?,?)',
+                       (identifier, seq, json.dumps(event, ensure_ascii=False)))
+        db.execute('UPDATE mobile_runs SET state=? WHERE id=? AND state=\'running\'', (state, identifier))
+
+    def feed(self, conversation_id, *, after=None):
+        """Read a stable per-conversation run cursor or the runs after it."""
+        with self.connect() as db:
+            db.execute('BEGIN')
+            cursor = db.execute('SELECT COALESCE(MAX(seq),0) FROM mobile_run_order WHERE conversation_id=?',
+                                (conversation_id,)).fetchone()[0]
+            if after is None:
+                rows = db.execute("SELECT o.seq AS cursor,r.* FROM mobile_run_order o JOIN mobile_runs r ON r.id=o.run_id WHERE o.conversation_id=? AND r.state='running' ORDER BY o.seq DESC",
+                                  (conversation_id,)).fetchall()
+                next_cursor = cursor
+            else:
+                rows = db.execute('SELECT o.seq AS cursor,r.* FROM mobile_run_order o JOIN mobile_runs r ON r.id=o.run_id WHERE o.conversation_id=? AND o.seq>? ORDER BY o.seq LIMIT 100',
+                                  (conversation_id, after)).fetchall()
+                next_cursor = rows[-1]['cursor'] if rows else cursor
+        return {'cursor': next_cursor, 'runs': [dict(row) for row in rows]}
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
@@ -68,19 +151,77 @@ class MobileRuns:
                           (body['conversation_id'],)).fetchone():
                 raise ValueError('CONVERSATION_BUSY_USE_NEXT_TURN_QUEUE')
             identifier = uuid.uuid4().hex
-            db.execute('INSERT INTO mobile_runs VALUES(?,?,?,?,?,?)',
-                (identifier, body['conversation_id'], body['request_id'], fingerprint, 'running', time.time()))
+            db.execute('''INSERT INTO mobile_runs
+                (id,conversation_id,request_id,fingerprint,state,created_at,source)
+                VALUES(?,?,?,?,?,?,?)''',
+                (identifier, body['conversation_id'], body['request_id'], fingerprint, 'running', time.time(), 'mobile'))
+            db.execute('INSERT INTO mobile_run_order (run_id,conversation_id) VALUES(?,?)',
+                       (identifier, body['conversation_id']))
         generation = self.generations[identifier] = Generation()
         self.workers[identifier] = asyncio.create_task(self._consume(identifier, body, generation))
         return self.get(identifier)
 
-    def append(self, identifier, event):
+    def register_pc_stream(self, conversation_id, request_id=None, prompt=None):
+        """Reserve a PC-owned chat stream in the shared cursor journal."""
+        request_id = 'pc-' + (request_id or uuid.uuid4().hex)
+        fingerprint = hashlib.sha256(json.dumps(
+            {'conversation_id': conversation_id, 'source': 'pc'}, sort_keys=True
+        ).encode()).hexdigest()
+        identifier = uuid.uuid4().hex
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            active = db.execute("SELECT id FROM mobile_runs WHERE conversation_id=? AND state='running' LIMIT 1",
+                                (conversation_id,)).fetchone()
+            if active:
+                raise ValueError('CONVERSATION_BUSY_USE_NEXT_TURN_QUEUE')
+            db.execute('''INSERT INTO mobile_runs
+                (id,conversation_id,request_id,fingerprint,state,created_at,source)
+                VALUES(?,?,?,?,?,?,?)''',
+                (identifier, conversation_id, request_id, fingerprint, 'running', time.time(), 'pc'))
+            db.execute('INSERT INTO mobile_run_order (run_id,conversation_id) VALUES(?,?)',
+                       (identifier, conversation_id))
+            events = []
+            if isinstance(prompt, str) and prompt:
+                events.append({'type': 'user_message', 'text': prompt})
+            events.append({'type': 'task_update', 'task': {'id': 'pc-run-' + identifier,
+                'status': 'RUNNING', 'activity': 'PC版OLCRで実行中'}})
+            db.executemany('INSERT INTO mobile_run_events VALUES(?,?,?)', [
+                (identifier, index, json.dumps(event, ensure_ascii=False))
+                for index, event in enumerate(events, start=1)])
+        return identifier
+
+    def finish_pc_stream(self, identifier, state):
+        if state not in {'completed', 'failed', 'cancelled', 'interrupted'}:
+            raise ValueError('INVALID_RUN_STATE')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute("SELECT state FROM mobile_runs WHERE id=? AND source='pc'", (identifier,)).fetchone()
+            if not row or row['state'] != 'running':
+                return
+            status = {'completed': 'COMPLETED', 'failed': 'FAILED',
+                      'cancelled': 'CANCELLED', 'interrupted': 'INTERRUPTED'}[state]
+            seq = db.execute('SELECT COALESCE(MAX(seq),0)+1 FROM mobile_run_events WHERE run_id=?',
+                             (identifier,)).fetchone()[0]
+            event = {'type': 'task_update', 'task': {'id': 'pc-run-' + identifier,
+                'status': status, 'activity': 'PC版OLCRの実行'}}
+            db.execute('INSERT INTO mobile_run_events VALUES(?,?,?)',
+                       (identifier, seq, json.dumps(event, ensure_ascii=False)))
+            db.execute('UPDATE mobile_runs SET state=? WHERE id=? AND source=\'pc\'', (state, identifier))
+
+    def append(self, identifier, event, *, terminal_state=None):
+        if terminal_state is not None and terminal_state not in {
+                'completed', 'failed', 'cancelled', 'interrupted'}:
+            raise ValueError('INVALID_RUN_STATE')
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if not db.execute('SELECT 1 FROM mobile_runs WHERE id=?', (identifier,)).fetchone():
                 raise KeyError('RUN_DELETED')
             seq = db.execute('SELECT COALESCE(MAX(seq),0)+1 FROM mobile_run_events WHERE run_id=?', (identifier,)).fetchone()[0]
             db.execute('INSERT INTO mobile_run_events VALUES(?,?,?)', (identifier, seq, json.dumps(event, ensure_ascii=False)))
+            if terminal_state is not None:
+                row = db.execute("SELECT source,state FROM mobile_runs WHERE id=?", (identifier,)).fetchone()
+                if row['state'] == 'running':
+                    self._write_terminal_state(db, identifier, row['source'], terminal_state)
 
     async def _consume(self, identifier, body, generation):
         state = 'failed'
@@ -96,32 +237,53 @@ class MobileRuns:
         try:
             terminal = False
             async for event in self.source(body, generation):
-                self.append(identifier, event)
                 kind = event.get('type')
                 if kind in {'done', 'cancelled', 'error'}:
                     terminal = True
                     state = {'done': 'completed', 'cancelled': 'cancelled', 'error': 'failed'}[kind]
+                    self.append(identifier, event, terminal_state=state)
+                    break
+                else:
+                    self.append(identifier, event)
             if not terminal:
-                self.append(identifier, {'type': 'error', 'code': 'STREAM_ENDED_WITHOUT_TERMINAL_EVENT'})
+                self.append(identifier, {'type': 'error', 'code': 'STREAM_ENDED_WITHOUT_TERMINAL_EVENT'},
+                             terminal_state='failed')
         except KeyError:
             generation.cancel()
             state = 'cancelled'
         except GenerationCancelled:
             state = 'cancelled'
             try:
-                self.append(identifier, {'type': 'cancelled'})
+                self.append(identifier, {'type': 'cancelled'}, terminal_state='cancelled')
             except KeyError:
                 pass
         except asyncio.CancelledError:
             generation.cancel()
             state = 'interrupted'
             raise
-        except Exception:
-            self.append(identifier, {'type': 'error', 'code': 'OLCR_RUN_FAILED'})
+        except Exception as exc:
+            # Keep the mobile-visible error stable, but leave a redacted trace
+            # for diagnosing failures. Exception text can contain prompts,
+            # provider payloads, or credentials, so record only frame names.
+            frames = traceback.extract_tb(exc.__traceback__)
+            locations = '>'.join(
+                f"{frame.filename.rsplit('/', 1)[-1]}:{frame.name}:{frame.lineno}"
+                for frame in frames[-8:]
+            )
+            print(
+                f"OLCR_MOBILE_RUN_FAILURE run_id={identifier} "
+                f"conversation_id={body.get('conversation_id', '')} "
+                f"exception_type={type(exc).__name__} stack={locations}",
+                file=sys.stderr, flush=True,
+            )
+            try:
+                self.append(identifier, {'type': 'error', 'code': 'OLCR_RUN_FAILED'}, terminal_state='failed')
+            except KeyError:
+                pass
         finally:
             watcher.cancel()
             with self.connect() as db:
-                db.execute('UPDATE mobile_runs SET state=? WHERE id=?', (state, identifier))
+                db.execute('UPDATE mobile_runs SET state=? WHERE id=? AND state=\'running\'', (state, identifier))
             self.generations.pop(identifier, None)
             self.workers.pop(identifier, None)
 

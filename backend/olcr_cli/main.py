@@ -46,7 +46,7 @@ def banner(enabled=True, narrow=False):
 ██║   ██║██║     ██║     ██╔══██╗
 ╚██████╔╝███████╗╚██████╗██║  ██║
  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝"""
-    return color(logo,enabled)+"\nOLCR · Ollama Local Cognitive Runtime\nLocal. Private. Context-aware."
+    return color(logo,enabled)+"\nOLCR · Open Local Cognitive Runtime\nLocal. Private. Context-aware."
 
 def api(method, path, body=None):
     data=json.dumps(body).encode() if body is not None else None

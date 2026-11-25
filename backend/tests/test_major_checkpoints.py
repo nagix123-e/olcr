@@ -221,7 +221,8 @@ class MajorCheckpointIntegrationTests(unittest.TestCase):
 
         self.assertIsInstance(saved["plan"], dict)
         self.assertEqual([], validate_plan(saved["plan"], WEBSITE))
-        self.assertEqual({"major-1"}, {item["owner_phase"] for item in saved["plan"]["file_manifest"]})
+        self.assertEqual({"major-1", "major-2"},
+                         {item["owner_phase"] for item in saved["plan"]["file_manifest"]})
 
     def test_checkpoint_survives_restart_and_all_continue_paths_reuse_identity(self):
         saved = self.prepare(goal=WEBSITE+'\npause after each major phase')

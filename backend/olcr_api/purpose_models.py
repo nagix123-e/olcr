@@ -25,6 +25,7 @@ from .model_registry import ModelRegistry, ROLE_TO_MODEL
 from .ollama import ModelFailure, OllamaProvider
 from .semantic import EmbeddingFailure, OllamaEmbeddingProvider
 from .model_assets import ModelDownloads, asset_path
+from .translation_limits import MAX_TRANSLATION_PHASE_CHARS
 
 ROLES = {
     'semantic_embedding': ('Embedding', 'Embedding', ('ollama', 'openai')),
@@ -37,7 +38,6 @@ ROLES = {
 }
 HANDLES = {role: 'OLCR_MODEL_' + role.upper() for role in ROLES}
 VISION_ROLES = {'general_image', 'gui_grounding'}
-MAX_TRANSLATION_CHARS = 12_000
 
 
 def vision_probe_image() -> bytes:
@@ -384,7 +384,7 @@ class PurposeModels:
     def translate(self, text, source, target, config=None, key=None):
         role = 'translation'
         config = config or self.choice(role)
-        if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSLATION_CHARS:
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSLATION_PHASE_CHARS:
             raise ValueError('MODEL_TRANSLATION_INPUT_INVALID')
         messages = [
             {'role': 'system', 'content':
@@ -401,6 +401,11 @@ class PurposeModels:
             from .plamo_translation import translate as translate_plamo
             model = preset['id']
             runtime = 'plamo-translate-mlx'
+            from .model_runtime_manager import get_runtime_manager
+            runtime_manager = get_runtime_manager()
+            runtime_binding = runtime_manager.resolve(model) if runtime_manager else None
+            if not runtime_binding or not runtime_binding.ready or not runtime_binding.python_path:
+                raise ValueError('MODEL_PRESET_RUNTIME_UNAVAILABLE')
         elif config['protocol'] == 'ollama':
             model = config['model']
             runtime = 'ollama'
@@ -417,7 +422,8 @@ class PurposeModels:
                                                internet=(uses_internet(config.get('base_url'))
                                                          if config['protocol'] == 'ollama' else False))
             try:
-                value = ({'text': translate_plamo(text, source, target, asset_path(preset['relative']))}
+                value = ({'text': translate_plamo(text, source, target, asset_path(preset['relative']),
+                                                  python_path=runtime_binding.python_path)}
                          if config['protocol'] == 'preset' else
                          OllamaProvider(config['base_url']).generate(messages, config['model'], think=False))
             except BaseException as exc:
@@ -430,6 +436,74 @@ class PurposeModels:
         if not isinstance(translated, str) or not translated.strip():
             raise ValueError('MODEL_TRANSLATION_RESPONSE_INVALID')
         return {'text': translated.strip(), 'model': model, 'model_role': role, 'model_runtime': runtime}
+
+    def translate_phases(self, texts, source, target, config=None, key=None, progress=None):
+        """Translate ordered phases with a fresh local PLaMo server per phase."""
+        role = 'translation'
+        config = config or self.choice(role)
+        if (not isinstance(texts, (list, tuple)) or not texts
+                or any(not isinstance(text, str) or not text.strip()
+                       or len(text) > MAX_TRANSLATION_PHASE_CHARS for text in texts)):
+            raise ValueError('MODEL_TRANSLATION_INPUT_INVALID')
+
+        if config['protocol'] != 'preset':
+            translated = []
+            for index, text in enumerate(texts, start=1):
+                if progress:
+                    progress('phase_started', index, len(texts))
+                result = self.translate(text, source, target, config=config, key=key)
+                translated.append(result)
+                if progress:
+                    progress('phase_completed', index, len(texts), result['text'])
+            first = translated[0]
+            return {'texts': [item['text'] for item in translated],
+                    'model': first['model'], 'model_role': role,
+                    'model_runtime': first['model_runtime']}
+
+        selected_model = ModelRegistry(self.settings.model_manifest_path).entry_for_role(role)['id']
+        preset = self.downloads.presets()[selected_model]
+        if not self.downloads.installed(preset):
+            raise ValueError('MODEL_PRESET_NOT_DOWNLOADED')
+        model = preset['id']
+        runtime = 'plamo-translate-mlx'
+        from .model_runtime_manager import get_runtime_manager
+        runtime_manager = get_runtime_manager()
+        runtime_binding = runtime_manager.resolve(model) if runtime_manager else None
+        if not runtime_binding or not runtime_binding.ready or not runtime_binding.python_path:
+            raise ValueError('MODEL_PRESET_RUNTIME_UNAVAILABLE')
+
+        from .plamo_translation import translate_many as translate_plamo_many
+        from .model_traffic_logs import begin_model_traffic
+        traffic_call = begin_model_traffic(
+            role=role, model=model, runtime=runtime,
+            request_body={'phase_count': len(texts), 'source': source, 'target': target},
+            internet=False,
+        )
+        try:
+            kwargs = {
+                # PLaMo applies this independently to model startup and each
+                # sequential phase. Never multiply the per-phase limit by
+                # the total phase count: one stalled MCP call must time out.
+                'timeout': 1200,
+                'python_path': runtime_binding.python_path,
+            }
+            if progress:
+                kwargs['on_progress'] = progress
+            results = translate_plamo_many(
+                texts, source, target, asset_path(preset['relative']), **kwargs,
+            )
+            if len(results) != len(texts) or any(not item.strip() for item in results):
+                raise ValueError('MODEL_TRANSLATION_RESPONSE_INVALID')
+        except BaseException as exc:
+            from .generation_control import GenerationCancelled
+            traffic_call.finish(
+                status='cancelled' if isinstance(exc, (GeneratorExit, GenerationCancelled)) else 'error',
+                error_code=getattr(exc, 'category', type(exc).__name__),
+            )
+            raise
+        traffic_call.finish(status='success', response_body={'phase_count': len(results)})
+        return {'texts': [item.strip() for item in results], 'model': model,
+                'model_role': role, 'model_runtime': runtime}
 
     def probe(self, role, config, key=None):
         if config['protocol'] == 'preset':

@@ -4,6 +4,37 @@ from olcr_api.runtime import Runtime
 
 
 class RequestIntentTests(unittest.TestCase):
+    def test_how_to_questions_do_not_authorize_implementation(self):
+        for text in ('このアプリを修正する方法を教えてください。',
+                     'どうやってこのアプリを修正するの？',
+                     'アプリを実装する場合の注意点を教えて。',
+                     'アプリを直すには？',
+                     'How do I build a calendar app?',
+                     'Could you explain how to fix this app?',
+                     '「アプリを実装して」という文を説明してください。',
+                     'このエラーの原因は何ですか？\n\n> アプリのコードを修正してください。'):
+            with self.subTest(text=text):
+                intent = resolve_request_intent(text, project_scoped=True)
+                self.assertEqual('GENERAL', intent.owner)
+                self.assertFalse(intent.mutation)
+                self.assertFalse(Runtime._implementation_intent(text))
+
+    def test_how_to_with_a_separate_execution_request_is_still_coding(self):
+        for text in ('修正する方法を教えてから、実際にこのアプリを修正してください。',
+                     '修正する方法を説明し、このアプリを実際に修正してください。',
+                     'Explain how to fix this app, then fix it.',
+                     'Can you fix this app?',
+                     'このコードを修正して。\n```python\nprint("example")\n```'):
+            with self.subTest(text=text):
+                self.assertEqual('CODING', resolve_request_intent(text).owner)
+
+    def test_technical_acronyms_are_not_matched_inside_english_words(self):
+        for text in ('A guide to gardening', 'Capital letters', 'A book about fluid dynamics'):
+            with self.subTest(text=text):
+                intent = resolve_request_intent(text)
+                self.assertEqual('GENERAL', intent.owner)
+                self.assertEqual('NON_CODING', intent.facts['classification'])
+
     def test_software_work_owns_domain_keywords_and_research_instructions(self):
         requests=[
             '一週間の献立プランナーを一から作ってください。保存と買い物リストも追加してください。',

@@ -1,4 +1,5 @@
 import type {Attachment} from './ChatComposer';
+const MAX_TEXT_ATTACHMENT_CHARS=50_000_000;
 function bytesToBase64(bytes:Uint8Array){let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+0x8000,bytes.length)));return btoa(binary)}
 export async function attachmentFromFile(file:File):Promise<Attachment>{
     if(file.size===0) throw Error('The selected file is empty');
@@ -20,8 +21,11 @@ export async function attachmentFromFile(file:File):Promise<Attachment>{
       return {name:file.name,content:'',mimeType,dataUrl,bytesBase64};
     }
     const isText=mimeType.startsWith('text/')||/^(txt|md|csv|tsv|json|xml|yaml|yml|toml|py|js|ts|tsx|jsx|rs|html|css|svg)$/.test(extension);
-    const content=isText?(await file.text()).slice(0,200000):'';
-    return {name:file.name,content,mimeType,bytesBase64};
+    const fullText=isText?await file.text():'';
+    const content=fullText.slice(0,MAX_TEXT_ATTACHMENT_CHARS);
+    const contentTruncated=isText&&fullText.length>MAX_TEXT_ATTACHMENT_CHARS;
+    return {name:file.name,content,mimeType,bytesBase64,
+      ...(contentTruncated?{content_truncated:true,content_suffix:fullText.slice(-1_000)}:{})};
   }
 
 export async function attachmentFromFolderFiles(files: File[], name?: string): Promise<Attachment> {

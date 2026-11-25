@@ -79,7 +79,7 @@ it('uses shared global switches for YaRN and compression without changing contex
   expect(screen.getByRole('switch', {name: 'Automatic context compression'})).not.toBeChecked();
 });
 
-it('requires local-model warning acknowledgement before enabling coding subagents', async () => {
+it('shows the local-model warning before enabling coding subagents', async () => {
   const api = vi.fn().mockResolvedValue({external_access_enabled: false, tools: []});
   const save = vi.fn().mockResolvedValue({});
   render(<ExternalToolsSettings api={api} settings={{coding_subagents_enabled: false,
@@ -91,8 +91,8 @@ it('requires local-model warning acknowledgement before enabling coding subagent
   expect(dialog).toHaveTextContent(/following fixed roles and combining results/i);
   expect(dialog).toHaveTextContent(/latency/i);
   expect(dialog).toHaveTextContent(/memory and compute/i);
-  expect(screen.getByRole('button', {name: 'Enable coding subagents'})).toBeDisabled();
-  fireEvent.click(screen.getByRole('checkbox', {name: 'I understand this warning'}));
+  expect(dialog.querySelector('.ui-feedback-error')).not.toBeNull();
+  expect(screen.queryByRole('checkbox', {name: 'I understand this warning'})).not.toBeInTheDocument();
   expect(screen.getByRole('button', {name: 'Enable coding subagents'})).toBeEnabled();
   fireEvent.click(screen.getByRole('button', {name: 'Enable coding subagents'}));
   await waitFor(() => expect(save).toHaveBeenCalledWith({coding_subagents_enabled: true,

@@ -130,6 +130,6 @@ class BundledMCPConnectionTests(unittest.TestCase):
                 self.assertGreater(row['tool_count'], 0)
                 if name == 'playwright':
                     self.assertEqual('managed_browser', row['scope'])
-                    self.assertFalse(row['coding_enabled'])
+                    self.assertTrue(row['coding_enabled'])
 
 if __name__ == '__main__': unittest.main()

@@ -24,23 +24,31 @@ function responseLanguageHeaders(){
  const language=typeof localStorage!=="undefined"&&localStorage.getItem("olcr-language")==="en"?"en":"ja";
  return {"X-OLCR-Language":language};
 }
-/** Approval is requested before dispatch; retries reuse the exact request body. */
+/** Confirmations are requested before dispatch; retries reuse the exact request body. */
 export async function permissionFetch(url:string,init:RequestInit):Promise<Response>{
- const response=await fetch(url,init);
- if(response.status!==409)return response;
- let detail:any;
- try{detail=(await response.clone().json()).detail}catch{return response}
- if(detail?.code!=="PERMISSION_CONFIRMATION_REQUIRED"||typeof detail.approval_id!=="string")return response;
- const ja=typeof localStorage==="undefined"||localStorage.getItem("olcr-language")!=="en";
- const approved=window.confirm(ja?detail.summary:"Allow this OLCR request? It may access the internet or modify files.");
  const headers=new Headers(init.headers);
- const result=await fetch(API+"/permissions/approvals/"+encodeURIComponent(detail.approval_id),{
-  method:"POST",headers,body:JSON.stringify({approve:approved}),signal:init.signal,
- });
- if(!result.ok)throw Error("PERMISSION_APPROVAL_EXPIRED");
- if(!approved)throw Error(ja?"操作をキャンセルしました。":"Operation cancelled.");
- headers.set("X-OLCR-Approval",detail.approval_id);
- return fetch(url,{...init,headers});
+ for(let attempt=0;attempt<4;attempt++){
+  const response=await fetch(url,{...init,headers});
+  if(response.status!==409)return response;
+  let detail:any;
+  try{detail=(await response.clone().json()).detail}catch{return response}
+  if(typeof detail?.approval_id!=="string")return response;
+  const approvalHeader=detail.code==="PERMISSION_CONFIRMATION_REQUIRED"?"X-OLCR-Approval":
+   detail.code==="LONG_TEXT_PROCESSING_CONFIRMATION_REQUIRED"?"X-OLCR-Long-Text-Approval":null;
+  if(!approvalHeader)return response;
+  const ja=typeof localStorage==="undefined"||localStorage.getItem("olcr-language")!=="en";
+  const fallback=detail.code==="PERMISSION_CONFIRMATION_REQUIRED"
+   ?(ja?"OLCRの操作を許可しますか？外部アクセスやファイル変更を含む場合があります。":"Allow this OLCR request? It may access the internet or modify files.")
+   :(ja?"この入力は処理に非常に時間がかかる可能性があります。それでも実行しますか？":"This input may take a very long time to process. Do you want to continue?");
+  const approved=window.confirm(typeof detail.summary==="string"?detail.summary:fallback);
+  const result=await fetch(API+"/permissions/approvals/"+encodeURIComponent(detail.approval_id),{
+   method:"POST",headers,body:JSON.stringify({approve:approved}),signal:init.signal,
+  });
+  if(!result.ok)throw Error("PERMISSION_APPROVAL_EXPIRED");
+  if(!approved)throw Error(ja?"操作をキャンセルしました。":"Operation cancelled.");
+  headers.set(approvalHeader,detail.approval_id);
+ }
+ throw Error("REQUEST_CONFIRMATION_LOOP");
 }
 
 export async function api<T=any>(path:string,init:RequestInit={}):Promise<T>{
@@ -50,7 +58,7 @@ export async function api<T=any>(path:string,init:RequestInit={}):Promise<T>{
  const active=payload?beginGeneration(payload.conversation_id||undefined):null;
  try{
  let response:Response|undefined;let lastError:unknown;
- const request={...init,...(active?{signal:init.signal?AbortSignal.any([init.signal,active.state.controller.signal]):active.state.controller.signal}:{}),cache:'no-store' as RequestCache,headers:{...responseLanguageHeaders(),'Content-Type':'application/json',...(sessionToken?{'X-OLCR-Session':sessionToken}:{}),...(active?{'X-OLCR-Generation':active.state.id}:{}),...init.headers}};
+ const request={...init,...(active?{signal:init.signal?AbortSignal.any([init.signal,active.state.controller.signal]):active.state.controller.signal}:{}),cache:'no-store' as RequestCache,headers:{...responseLanguageHeaders(),'Content-Type':'application/json',...(path==='/chat'?{'X-OLCR-Run-Source':'desktop'}:{}),...(sessionToken?{'X-OLCR-Session':sessionToken}:{}),...(active?{'X-OLCR-Generation':active.state.id}:{}),...init.headers}};
  for(let attempt=0;attempt<40;attempt++){
   try{response=await (active?Promise.race([permissionFetch(API+path,request),active.state.stopped]):permissionFetch(API+path,request));break}
   catch(e){lastError=e;if(path!=='/health'||attempt===39)throw Error(`NETWORK_ERROR: ${path} (${e instanceof Error?e.name:'unknown'})`);await new Promise(resolve=>window.setTimeout(resolve,250))}
@@ -119,6 +127,20 @@ export async function saveExportApi(path:string,filename:string):Promise<void>{
  if(saved===null)throw Error('EXPORT_CANCELLED');
 }
 
+/** Save an in-memory text result through the native Save dialog or browser download. */
+export async function saveTextFile(text:string,filename:string):Promise<void>{
+ const bytes=new TextEncoder().encode(text);
+ const bridge=native();
+ if(!bridge){
+  const objectUrl=URL.createObjectURL(new Blob([bytes],{type:'text/plain;charset=utf-8'}));
+  const anchor=document.createElement('a');anchor.href=objectUrl;anchor.download=filename;anchor.style.display='none';document.body.appendChild(anchor);anchor.click();anchor.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);
+  return;
+ }
+ const saved=await bridge.core.invoke<string|null>('save_export_file',{fileName:filename,contents:Array.from(bytes)});
+ if(saved===null)throw Error('EXPORT_CANCELLED');
+}
+
 export type StreamEvent={type:string;task_id?:string;conversation_id?:string;text?:string;message?:string;block?:any;task?:any;reasoning?:import('./ReasoningLog').ReceivedReasoning;model?:string};
 
 /** Each conversation owns its stream and cancellation, including cancellation before meta. */
@@ -128,7 +150,7 @@ export async function streamChat(payload:unknown,onEvent:(event:StreamEvent)=>vo
  let owner=conversationId;
  try{
  let response:Response;
- try{response=await Promise.race([permissionFetch(API+'/chat/stream',{method:'POST',signal:state.controller.signal,cache:'no-store',headers:{...responseLanguageHeaders(),'Content-Type':'application/json','X-OLCR-Generation':state.id,...(sessionToken?{'X-OLCR-Session':sessionToken}:{} )},body:JSON.stringify(payload)}),state.stopped])}
+ try{response=await Promise.race([permissionFetch(API+'/chat/stream',{method:'POST',signal:state.controller.signal,cache:'no-store',headers:{...responseLanguageHeaders(),'Content-Type':'application/json','X-OLCR-Generation':state.id,'X-OLCR-Run-Source':'desktop',...(sessionToken?{'X-OLCR-Session':sessionToken}:{} )},body:JSON.stringify(payload)}),state.stopped])}
  catch(e){throw Error(`NETWORK_ERROR: /chat/stream (${e instanceof Error?e.name:'unknown'})`)}
  if(!response.ok){const body=await response.text();throw Error(`HTTP_${response.status}: ${body}`)}
  if(!response.body)throw Error('STREAM_UNAVAILABLE');

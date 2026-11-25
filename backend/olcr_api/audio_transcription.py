@@ -87,14 +87,13 @@ def audio_model_status(language: str, model_id: str | None = None) -> dict[str, 
         if not descriptor:
             raise ValueError('AUDIO_MODEL_UNSUPPORTED')
         from . import audio_mlx
-        runtime_available = audio_mlx.whisper_enabled()
+        runtime_available = audio_mlx.whisper_enabled(model_id)
         path = asset_path(descriptor['relative'])
-        downloaded = (runtime_available and (path / '.olcr-complete.json').is_file()
+        downloaded = ((path / '.olcr-complete.json').is_file()
                       and (path / 'config.json').is_file()
                       and any((path / name).is_file() for name in ('weights.npz', 'weights.safetensors', 'model.safetensors')))
         return {'language': language, 'model': model_id, 'downloaded': downloaded,
                 'runtime_available': runtime_available}
-    _require_audio_runtime()
     model_id = _MODELS[language]
     try:
         _snapshot(model_id)
@@ -114,7 +113,6 @@ def prepare_audio_model(language: str, model_id: str | None = None) -> dict[str,
         descriptor = _data()['models'].get(model_id)
         if not descriptor:
             raise ValueError('AUDIO_MODEL_UNSUPPORTED')
-        audio_mlx.ensure_whisper_runtime()
         root = Path(os.environ.get('OLCR_MODEL_ASSETS_DIR', str(Path(__file__).resolve().parents[2] / 'models')))
         target = root / descriptor['relative']
         with _download_lock:
@@ -128,7 +126,8 @@ def prepare_audio_model(language: str, model_id: str | None = None) -> dict[str,
                                                  'revision': descriptor['revision']})
             write_asset_record(target, make_asset_record(target, identity))
         return {'language': language, 'model': model_id, 'downloaded': True}
-    _require_audio_runtime()
+    if os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower() == 'torch':
+        _require_audio_runtime()
     from huggingface_hub import snapshot_download
 
     model_id = _MODELS[language]
@@ -218,19 +217,21 @@ def _stream_transcribe_audio_impl(audio_base64: str, language: str, cancelled: t
         descriptor = _data()['models'].get(model_id)
         if not descriptor:
             raise ValueError('AUDIO_MODEL_UNSUPPORTED')
-        if not audio_mlx.whisper_enabled():
+        if not audio_mlx.whisper_enabled(model_id):
             raise RuntimeError('AUDIO_WHISPER_RUNTIME_UNAVAILABLE')
         path = asset_path(descriptor['relative'])
         if not (path / '.olcr-complete.json').is_file():
             raise RuntimeError('AUDIO_MODEL_NOT_DOWNLOADED')
         yield from audio_mlx.stream('transcribe_whisper', language, path, model_id, cancelled,
+                                    runtime_asset_id=model_id,
                                     pcm=base64.b64encode(samples.astype('<f4').tobytes()).decode('ascii'),
                                     sample_rate=sample_rate)
         return
     from . import audio_mlx
-    if audio_mlx.enabled():
+    if audio_mlx.enabled('transcription_' + language):
         yield from audio_mlx.stream('transcribe', language, _snapshot(_MODELS[language]),
                                     _MODELS[language], cancelled,
+                                    runtime_asset_id='transcription_' + language,
                                     pcm=base64.b64encode(samples.astype('<f4').tobytes()).decode('ascii'),
                                     sample_rate=sample_rate)
         return

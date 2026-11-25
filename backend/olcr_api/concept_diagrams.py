@@ -214,6 +214,21 @@ def select_diagram_context(content: str, budget: int) -> tuple[str, str]:
     return selected, ordinary
 
 
+def explicit_concept_diagram_requested(request: str) -> bool:
+    """Return whether the user explicitly asked for a diagram artifact.
+
+    Keep this narrower than general architecture discussion. Coding plans may
+    contain words such as "diagram", "system", and "plan" in unrelated parts
+    of a long prompt; those should not turn an optional diagram into a plan
+    validation requirement.
+    """
+    import re
+    return bool(re.search(
+        r'概念図|構成図|アーキテクチャ図|システム構成図|図解|'
+        r'\b(?:concept|architecture|system)\s+(?:design\s+)?diagram\b',
+        str(request or ''), re.I))
+
+
 def diagram_output_instruction(request: str) -> str:
     """One generation contract shared by chat transports; no extra model call."""
     import re

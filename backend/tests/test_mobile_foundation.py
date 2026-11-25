@@ -8,6 +8,78 @@ from nacl.public import Box, PrivateKey, PublicKey
 from nacl.signing import VerifyKey
 
 
+def test_open_acp_bridge_uses_new_pc_endpoint_after_restart(tmp_path):
+    from olcr_cli.acp import ACPBridge, HostClient, ProtocolError
+
+    descriptor = tmp_path / 'mobile-host.json'
+
+    def start_host(port, token):
+        candidate = tmp_path / 'replacement'
+        candidate.write_text(json.dumps({'api_version': 1,
+            'base_url': f'http://127.0.0.1:{port}/api/mobile/bridge', 'token': token}))
+        candidate.chmod(0o600)
+        candidate.replace(descriptor)
+
+    def host(request):
+        assert request.url.path == '/api/mobile/bridge/projects'
+        expected = {12345: 'before', 12346: 'after'}[request.url.port]
+        assert request.headers['X-OLCR-Bridge'] == expected
+        return httpx.Response(200, json={'projects': [{'id': expected}]})
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(host)) as http:
+            bridge = ACPBridge(HostClient(descriptor, http), lambda _: None, 'directory')
+            start_host(12345, 'before')
+            assert await bridge.directory_operation({'kind': 'projects'}) == {'projects': [{'id': 'before'}]}
+            descriptor.unlink()
+            with pytest.raises(ProtocolError, match='OLCR_HOST_OFFLINE'):
+                await bridge.directory_operation({'kind': 'projects'})
+            start_host(12346, 'after')
+            assert await bridge.directory_operation({'kind': 'projects'}) == {'projects': [{'id': 'after'}]}
+
+    asyncio.run(scenario())
+
+
+def test_directory_accepts_final_command_with_happier_preamble():
+    from olcr_cli.acp import ACPBridge, DIRECTORY_REQUEST, DIRECTORY_RESPONSE, ProtocolError
+
+    async def scenario():
+        command = DIRECTORY_REQUEST + ':' + json.dumps({'kind': 'projects', 'request_id': 'read'})
+        old_command = DIRECTORY_REQUEST + ':' + json.dumps({'kind': 'action',
+            'action': {'type': 'project.delete', 'project_id': 'old'}, 'request_id': 'old'})
+        output, calls = [], []
+
+        def host(request):
+            calls.append((request.method, request.url.path))
+            if request.url.path == '/conversations/existing':
+                return httpx.Response(200, json={'messages': [
+                    {'role': 'user', 'content': 'A saved question'},
+                    {'role': 'tool', 'content': 'Internal result'},
+                    {'role': 'assistant', 'content': 'A saved answer'}]})
+            return httpx.Response(200, json={'projects': []})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(host),
+                                     base_url='http://127.0.0.1') as http:
+            bridge = ACPBridge(http, output.append, 'directory')
+            bridge.initialized = True
+            session = (await bridge.dispatch('session/new', {}))['sessionId']
+            prompt = lambda text: {'sessionId': session, 'prompt': [{'type': 'text', 'text': text}]}
+            await bridge.dispatch('session/prompt', prompt('Happier context\n' + old_command + '\n\n' + command))
+            assert calls == [('GET', '/projects')]
+            response = output[-1]['params']['update']['content']['text']
+            assert json.loads(response.removeprefix(DIRECTORY_RESPONSE))['request_id'] == 'read'
+            with pytest.raises(ProtocolError):
+                await bridge.dispatch('session/prompt', prompt(old_command + '\nOrdinary text'))
+            assert calls == [('GET', '/projects')]
+            history = await bridge.directory_operation({'kind': 'history', 'conversation_id': 'existing'})
+            assert calls[-1] == ('GET', '/conversations/existing')
+            assert history == {'messages': [
+                {'role': 'user', 'text': 'A saved question'},
+                {'role': 'assistant', 'text': 'A saved answer'}], 'truncated': False}
+
+    asyncio.run(scenario())
+
+
 def test_pairing_uses_signed_identity_and_encrypted_account_link():
     from olcr_api.mobile_pairing import HappierPairing, PairingError
 
@@ -263,4 +335,34 @@ def test_acp_cancel_during_run_creation_is_not_lost():
             release.set()
             assert await prompt == {'stopReason':'cancelled'}
             assert cancelled == [True]
+    asyncio.run(scenario())
+
+
+def test_happier_adapter_registration_preserves_encrypted_catalog_on_conflict():
+    from nacl.secret import SecretBox
+    from olcr_api.mobile_daemon import account_settings_box, register_adapter
+
+    class Relay:
+        seed = bytes(range(32))
+        def __init__(self):
+            self.writes = []
+        async def _request(self, method, path, **kwargs):
+            assert path == '/v2/account/settings'
+            if method == 'GET':
+                original = {'theme':'light', 'acpCatalogSettingsV1':{'v':2, 'backends':[{'id':'existing'}]}}
+                ciphertext = base64.b64encode(bytes(SecretBox(self.seed).encrypt(json.dumps(original).encode()))).decode()
+                return {'content':{'t':'encrypted','c':ciphertext}, 'version':len(self.writes)}
+            self.writes.append(kwargs['json'])
+            return {'success':len(self.writes)>1,'error':'version-mismatch'}
+
+    async def scenario():
+        relay = Relay()
+        await register_adapter(relay, {'id':'olcr','command':'/private/example/olcr-acp'})
+        assert [item['expectedVersion'] for item in relay.writes] == [0,1]
+        data = base64.b64decode(relay.writes[-1]['content']['c'])
+        assert data[:2] == b'\xa1\x01'
+        settings = json.loads(account_settings_box(relay.seed).decrypt(data[2:]))
+        assert settings['theme'] == 'light'
+        assert [item['id'] for item in settings['acpCatalogSettingsV1']['backends']] == ['existing','olcr']
+
     asyncio.run(scenario())

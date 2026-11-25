@@ -3,7 +3,9 @@ from __future__ import annotations
 from .permissions import capability_enabled
 from .generation_control import check_cancelled, interrupt_response, GenerationCancelled, open_provider_response
 import base64
+import socket
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -15,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlsplit, urlencode, parse_qs, quote
 from urllib import request, error
 from .ollama import ModelFailure, provider_timeout_seconds as model_timeout_seconds, model_concurrency_failure
+from .config import REMOTE_PROVIDER_CONNECT_TIMEOUT_SECONDS, REMOTE_PROVIDER_READ_TIMEOUT_SECONDS
 from .structured_output import OutputMode, prompted_json_payload, resolve_output_mode, schema_instruction
 
 HANDLES = {p: 'OLCR_BRAIN_' + p.upper() for p in ('openai','google','anthropic','nvidia_nim','huggingface','ollama_cloud','openai_oauth')}
@@ -267,12 +270,21 @@ class NoRedirect(request.HTTPRedirectHandler):
         # Never forward a credential to a redirected origin.
         return None
 
-def call_json(url: str, payload: dict, headers: dict, *, form=False) -> dict:
+def provider_request_timed_out(exc: BaseException) -> bool:
+    reason = exc.reason if isinstance(exc, error.URLError) else None
+    return isinstance(exc, (TimeoutError, socket.timeout)) or isinstance(reason, (TimeoutError, socket.timeout))
+
+def call_json(url: str, payload: dict, headers: dict, *, form=False, response_timeout=120) -> dict:
     check_cancelled()
     data = urlencode(payload).encode() if form else json.dumps(payload).encode()
     req = request.Request(url, data=data, headers={'Content-Type': 'application/x-www-form-urlencoded' if form else 'application/json', **headers})
     try:
-        with open_provider_response(req, timeout=model_timeout_seconds(120), handlers=(NoRedirect(),)) as response, interrupt_response(response):
+        with open_provider_response(
+                req,
+                timeout=model_timeout_seconds(response_timeout),
+                connect_timeout=model_timeout_seconds(REMOTE_PROVIDER_CONNECT_TIMEOUT_SECONDS),
+                read_timeout=model_timeout_seconds(response_timeout),
+                handlers=(NoRedirect(),)) as response, interrupt_response(response):
             result = json.load(response)
             if not isinstance(result, dict): raise ValueError()
             # Keep only standard rate-limit headers; never persist arbitrary
@@ -282,7 +294,9 @@ def call_json(url: str, payload: dict, headers: dict, *, form=False) -> dict:
     except error.HTTPError as exc:
         from .provider_errors import provider_http_failure
         raise provider_http_failure(exc) from None
-    except (error.URLError, OSError, ValueError):
+    except (error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
+        if provider_request_timed_out(exc):
+            raise ModelFailure('timeout', 'Brain provider response timed out') from None
         raise ModelFailure('provider_unavailable', 'Brain provider returned no usable response') from None
 
 def rate_limit_snapshot(headers) -> dict:
@@ -691,9 +705,11 @@ class BrainProviders:
 
     def generate(self, provider: str, model: str, messages: list, schema, external_enabled: bool,
                  effort: str | None = None, quick: bool = False,
-                 role: str = 'normal_chat', max_tokens: int | None = None) -> dict:
+                 role: str = 'normal_chat', max_tokens: int | None = None,
+                 allow_unadvertised_effort: bool = False) -> dict:
         return self.with_model_accounts(provider, model, lambda metadata: self._generate_account(
             provider, model, messages, schema, external_enabled, effort=effort,
+            allow_unadvertised_effort=allow_unadvertised_effort,
             account_id=metadata.get('account_id', 1), role=role,
             **({'max_tokens':max_tokens} if type(max_tokens) is int and max_tokens>0 else {}),
             **({'quick':True} if quick else {})),external_enabled=external_enabled)
@@ -761,7 +777,8 @@ class BrainProviders:
 
     def _generate_account(self, provider: str, model: str, messages: list, schema, external_enabled: bool,
                           effort: str | None = None, account_id: int = 1, quick: bool = False,
-                          role: str = 'normal_chat', max_tokens: int | None = None) -> dict:
+                          role: str = 'normal_chat', max_tokens: int | None = None,
+                          allow_unadvertised_effort: bool = False) -> dict:
         metadata=self.metadata(provider, account_id)
         if not metadata or model not in metadata['model_ids']:raise ModelFailure('configuration','Brain provider model is not configured')
         profile = reasoning_profile(provider, model, metadata['base_url'])
@@ -769,10 +786,12 @@ class BrainProviders:
         if effort is not None and effort not in profile['effort_levels']:
             if profile['effort_levels']:
                 raise ModelFailure('configuration', 'The selected effort is not supported by this model')
-            # Compatible endpoints often implement only the common chat schema.
-            # Do not fail the whole request because a model-name heuristic lacks
-            # enough evidence to safely send a reasoning-control extension.
-            effort = None
+            # Unknown OpenAI-compatible endpoints are conservative by default.
+            # After a structured response is truncated, allow one negotiated
+            # low-effort retry; unsupported controls are removed by the normal
+            # compatibility path and cached for this endpoint/model.
+            if not (allow_unadvertised_effort and provider == 'openai' and effort == 'low'):
+                effort = None
         toggle=profile['effort_transport'] in {'google_thinking_toggle','anthropic_thinking_toggle'}
         toggle_decision=None
         if toggle:
@@ -863,7 +882,9 @@ class BrainProviders:
             wire_payload=json.loads(json.dumps(payload))
             wire_headers=dict(headers)
             apply_quick(wire_payload, wire_headers, disabled_parameters)
-            return tracked_call(lambda:call_json(url,wire_payload,wire_headers),
+            return tracked_call(lambda:call_json(
+                                    url,wire_payload,wire_headers,
+                                    response_timeout=REMOTE_PROVIDER_READ_TIMEOUT_SECONDS),
                                 request_body=wire_payload,endpoint_path=urlsplit(url).path)
 
         def call_with_compatibility(url: str, payload: dict, headers: dict, *, style: str) -> dict:
@@ -1129,10 +1150,15 @@ class BrainProviders:
         summary_truncated = False
         final_reasoning = None
         try:
-            with open_provider_response(req, timeout=model_timeout_seconds(120), handlers=(NoRedirect(),)) as response, interrupt_response(response):
+            with open_provider_response(
+                    req,
+                    timeout=model_timeout_seconds(REMOTE_PROVIDER_READ_TIMEOUT_SECONDS),
+                    connect_timeout=model_timeout_seconds(REMOTE_PROVIDER_CONNECT_TIMEOUT_SECONDS),
+                    read_timeout=model_timeout_seconds(REMOTE_PROVIDER_READ_TIMEOUT_SECONDS),
+                    handlers=(NoRedirect(),)) as response, interrupt_response(response):
                 rate_limits=rate_limit_snapshot(response.headers)
                 for raw in response:
-                    model_timeout_seconds(120)
+                    model_timeout_seconds(REMOTE_PROVIDER_READ_TIMEOUT_SECONDS)
                     line=raw.decode('utf-8','replace').strip()
                     if not line.startswith('data:'): continue
                     data=line[5:].strip()
@@ -1186,7 +1212,9 @@ class BrainProviders:
             failure.model_traffic_partial={'text':''.join(pieces),'usage':usage}
             raise failure from None
         except (error.URLError, OSError, ValueError, json.JSONDecodeError) as exc:
-            failure=ModelFailure('provider_unavailable','ChatGPT returned no usable response')
+            category='timeout' if provider_request_timed_out(exc) else 'provider_unavailable'
+            message='ChatGPT response timed out' if category=='timeout' else 'ChatGPT returned no usable response'
+            failure=ModelFailure(category,message)
             failure.model_traffic_partial={'text':''.join(pieces),'usage':usage}
             raise failure from exc
         except BaseException as exc:
@@ -1194,9 +1222,46 @@ class BrainProviders:
             except (AttributeError,TypeError): pass
             raise
 
+    def _issued_oauth_client_id(self, account_id: int) -> str | None:
+        key=account_key('openai_oauth',account_id)
+        with self.db.connect() as con:
+            row=con.execute('SELECT metadata_json FROM brain_providers WHERE id=?',(key,)).fetchone()
+        if not row:return None
+        try:stored=json.loads(row[0])
+        except (TypeError,ValueError):return None
+        current=(stored.get('base_url') in {CHATGPT_RESOURCE,'https://chatgpt.com/backend-api/codex'}
+                 and stored.get('authorization_url')==CHATGPT_AUTHORIZATION_URL
+                 and stored.get('token_url')==CHATGPT_TOKEN_URL)
+        client_id=stored.get('issued_client_id')
+        return client_id if current and isinstance(client_id,str) and client_id and client_id!='dynamic_agent_client' else None
+
+    def _persist_issued_oauth_client_id(self, account_id: int, metadata: dict, client_id: str) -> None:
+        if not isinstance(client_id,str) or not client_id or client_id=='dynamic_agent_client':
+            raise ValueError('ChatGPT sign-in did not return its issued client ID. Please retry.')
+        key=account_key('openai_oauth',account_id)
+        with self.db.connect() as con:
+            row=con.execute('SELECT metadata_json FROM brain_providers WHERE id=?',(key,)).fetchone()
+            try:stored=json.loads(row[0]) if row else {}
+            except (TypeError,ValueError):stored={}
+            current=(stored.get('base_url') in {CHATGPT_RESOURCE,'https://chatgpt.com/backend-api/codex'}
+                     and stored.get('authorization_url')==CHATGPT_AUTHORIZATION_URL
+                     and stored.get('token_url')==CHATGPT_TOKEN_URL)
+            previous=stored.get('issued_client_id') if current else None
+            if isinstance(previous,str) and previous and previous!=client_id:
+                raise ValueError('ChatGPT account registration did not match. Please retry.')
+            updated={**metadata,**(stored if current else {}),'issued_client_id':client_id}
+            con.execute('INSERT OR REPLACE INTO brain_providers VALUES(?,?)',(key,json.dumps(updated)))
+
     def start_oauth(self, account_id: int = 1) -> dict:
         provider='openai_oauth';key=account_key(provider, account_id);metadata=self.metadata(provider, account_id)
         if not metadata:raise ValueError('ChatGPT sign-in is unavailable')
+        if not metadata.get('host_id'):
+            metadata['host_id']='urn:uuid:'+str(uuid.uuid4())
+            with self.db.connect() as con:
+                con.execute('INSERT OR REPLACE INTO brain_providers VALUES(?,?)',(key,json.dumps(metadata)))
+        registered=self.credentials.get(key,{})
+        issued_client_id=self._issued_oauth_client_id(account_id)
+        client_id=registered.get('client_id') or issued_client_id or 'dynamic_agent_client'
         attempt_id=secrets.token_urlsafe(32);state=secrets.token_urlsafe(32);verifier=secrets.token_urlsafe(48)
         nonce=secrets.token_urlsafe(32)
         challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
@@ -1208,20 +1273,30 @@ class BrainProviders:
                 parsed=urlsplit(self.path);params=parse_qs(parsed.query)
                 if parsed.path!='/auth/callback' or not secrets.compare_digest(params.get('state',[''])[0],state):
                     self.send_error(400);return
+                phase='authorization_response'
                 try:
                     code=params.get('code',[''])[0]
                     if not code or params.get('error'):raise ValueError()
                     registered=owner.credentials.get(key,{})
                     callback_client_id=params.get('client_id',[''])[0]
                     registered_client_id=registered.get('client_id')
+                    issued_client_id=owner._issued_oauth_client_id(attempt['account_slot'])
                     if callback_client_id and registered_client_id and callback_client_id!=registered_client_id:
                         raise ValueError('ChatGPT account registration did not match. Please retry.')
-                    client_id=callback_client_id or registered_client_id
+                    if callback_client_id and issued_client_id and callback_client_id!=issued_client_id:
+                        raise ValueError('ChatGPT account registration did not match. Please retry.')
+                    client_id=callback_client_id or registered_client_id or issued_client_id
                     if not isinstance(client_id,str) or not client_id:raise ValueError()
+                    if callback_client_id:
+                        phase='client_registration_persistence'
+                        owner._persist_issued_oauth_client_id(attempt['account_slot'],metadata,callback_client_id)
+                    phase='token_exchange'
                     result=call_json(CHATGPT_TOKEN_URL,{'grant_type':'authorization_code','code':code,'redirect_uri':redirect,'client_id':client_id,
                                      'code_verifier':verifier,'resource':CHATGPT_RESOURCE},{},form=True)
                     if not isinstance(result.get('access_token'),str) or not isinstance(result.get('id_token'),str):raise ValueError()
+                    phase='id_token_validation'
                     claims=decode_chatgpt_id_token(result['id_token'],client_id,nonce)
+                    phase='scope_validation'
                     granted=set(str(result.get('scope') or params.get('scope',[''])[0]).split())
                     if 'chatgpt.tokens.use.direct' not in granted:raise ValueError('ChatGPTプランの利用権限が許可されませんでした。')
                     if registered.get('subject') and claims['sub']!=registered['subject']:
@@ -1235,6 +1310,7 @@ class BrainProviders:
                                       host_id=metadata['host_id'])
                     if isinstance(account_id,str) and account_id:credential['account_id']=account_id
                     credential['expires_at']=time.time()+int(result.get('expires_in',3600))
+                    phase='credential_persistence'
                     with owner.lock:
                         owner.availability_store.clear(provider,attempt['account_slot'])
                         owner.credentials[key]=credential
@@ -1245,7 +1321,19 @@ class BrainProviders:
                         attempt.update(status='complete',credential=credential)
                     body=b'OLCR sign-in complete. You can close this window.'
                 except Exception as exc:
-                    attempt.update(status='failed',message=str(exc) if isinstance(exc,ValueError) and str(exc) else 'ChatGPT sign-in could not be completed. Please retry from OLCR.')
+                    if isinstance(exc,ModelFailure):failure_category=exc.category
+                    elif isinstance(exc,ValueError):failure_category='oauth_validation_failed'
+                    else:failure_category='callback_internal_error'
+                    if not re.fullmatch(r'[a-z0-9_]{1,64}',str(failure_category)):
+                        failure_category='provider_failure'
+                    exception_type=type(exc).__name__
+                    if not re.fullmatch(r'[A-Za-z0-9_]{1,64}',exception_type):
+                        exception_type='unknown'
+                    print(f'CHATGPT_OAUTH_CALLBACK_FAILED STAGE={phase} CATEGORY={failure_category} EXCEPTION_TYPE={exception_type}',
+                          file=__import__('sys').stderr,flush=True)
+                    message=(str(exc) if isinstance(exc,ValueError) and str(exc)
+                             else 'ChatGPT sign-in could not be completed. Please retry from OLCR.')
+                    attempt.update(status='failed',message=message,failure_stage=phase,failure_category=failure_category)
                     body=b'OLCR sign-in could not be completed. Return to OLCR and retry.'
                 self.send_response(200);self.send_header('Content-Type','text/plain');self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)
         server=HTTPServer(('127.0.0.1',0),Callback);server.timeout=1
@@ -1260,19 +1348,18 @@ class BrainProviders:
             if len(self.oauth_attempts)>=4 or any(a.get('account_slot',1)==account_id and a['status']=='pending' for a in self.oauth_attempts.values()):
                 server.server_close();raise ValueError('An OAuth sign-in is already pending for this account')
             self.oauth_attempts[attempt_id]=attempt
-        if not metadata.get('host_id'):
-            metadata['host_id']='urn:uuid:'+str(uuid.uuid4())
-            with self.db.connect() as con:
-                con.execute('INSERT OR REPLACE INTO brain_providers VALUES(?,?)',(key,json.dumps(metadata)))
-        registered=self.credentials.get(key,{})
-        client_id=registered.get('client_id') or 'dynamic_agent_client'
         parameters={'response_type':'code','client_id':client_id,'redirect_uri':redirect,'scope':CHATGPT_SCOPE,
                     'resource':CHATGPT_RESOURCE,'ext_agent_host_id':metadata['host_id'],'state':state,'nonce':nonce,
                     'code_challenge':challenge,'code_challenge_method':'S256'}
         if client_id=='dynamic_agent_client':parameters['agent_name_hint']='OLCR'
         elif registered.get('id_token'):parameters['id_token_hint']=registered['id_token']
         query=urlencode(parameters)
-        threading.Thread(target=receive,daemon=True).start()
+        try:
+            threading.Thread(target=receive,daemon=True).start()
+        except Exception:
+            with self.lock:self.oauth_attempts.pop(attempt_id,None)
+            server.server_close()
+            raise
         return {'attempt_id':attempt_id,'authorization_url':CHATGPT_AUTHORIZATION_URL+'?'+query}
 
     def poll_oauth(self, attempt_id: str) -> dict:
@@ -1285,6 +1372,8 @@ class BrainProviders:
                 self.oauth_attempts.pop(attempt_id,None)
             elif attempt['status']=='failed':
                 result['message']=attempt.get('message','ChatGPT sign-in could not be completed. Please retry from OLCR.')
+                result['failure_stage']=attempt.get('failure_stage')
+                result['failure_category']=attempt.get('failure_category')
                 self.oauth_attempts.pop(attempt_id,None)
             return result
 

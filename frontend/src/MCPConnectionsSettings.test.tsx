@@ -37,6 +37,15 @@ it('explains disabled servers and keeps managed-browser scope explicit', async (
   expect(screen.getByText(/Direct exposure to coding tasks is disabled/)).toBeVisible();
 });
 
+it('shows when Playwright is available for coding task verification', async () => {
+  const api = vi.fn().mockResolvedValue({servers:[
+    {...server, server:'playwright', display_name:'Playwright MCP', scope:'managed_browser',
+      coding_enabled:true, connection_status:'CONNECTED', reason:'READY'},
+  ]});
+  render(<MCPConnectionsSettings api={api}/>);
+  expect(await screen.findByText('Available for requested local browser checks in coding tasks.')).toBeVisible();
+});
+
 it('shows failure cause and allows another check', async () => {
   const api = vi.fn().mockResolvedValueOnce({servers:[server]})
     .mockResolvedValueOnce({...server, connection_status:'FAILED', reason:'REQUEST_TIMEOUT'});

@@ -181,12 +181,12 @@ def _context_controls(model, config: dict, context: dict | None) -> dict:
     return result
 
 
-def _bonsai(messages: list[dict[str, str]], max_tokens: int, schema: dict | None = None, context: dict | None = None, think: bool = False, *, bounded_reasoning: bool = False) -> dict:
+def _bonsai(messages: list[dict[str, str]], max_tokens: int, schema: dict | None = None, context: dict | None = None, think: bool = False, *, bounded_reasoning: bool = False, model_path: str | None = None) -> dict:
     import mlx.core as mx
     from mlx_lm.sample_utils import make_sampler
     from tokenizers import Tokenizer
 
-    pack = _asset('bonsai/Ternary-Bonsai-2-27B-mlx-2bit')
+    pack = Path(model_path).expanduser().resolve() if model_path else _asset('bonsai/Ternary-Bonsai-2-27B-mlx-2bit')
     sys.path.insert(0, str(pack / "runtime"))
     from vision_artifact import load_vl_model  # type: ignore
 
@@ -507,6 +507,28 @@ def _bonsai_vlm(model_path: str, model_id: str, messages: list[dict[str, str]], 
             **({'finish_reason':getattr(last,'finish_reason',None)} if last else {})}
 
 
+def _validate_model(payload: dict) -> dict:
+    """Load one selected local artifact and require a small real response."""
+    loader = str(payload.get('loader_id') or '')
+    asset_id = str(payload.get('asset_id') or '')
+    path = str(payload.get('model_path') or '')
+    prompt = [{'role': 'user', 'content': 'Reply with exactly OK.'}]
+    if loader == 'bonsai-vision-artifact':
+        result = _bonsai(prompt, 8, model_path=path)
+    elif loader == 'mlx-lm':
+        result = _generic_mlx(path, asset_id, prompt, 8)
+    elif loader == 'mlx-vlm' and asset_id.startswith('ternary_bonsai_2_27b_'):
+        result = _bonsai_vlm(path, 'mlx:' + asset_id, prompt, 8)
+    elif loader == 'mlx-vlm':
+        result = {'text': _vision(asset_id, str(payload['image']), 'Describe this image in one word.', 8)}
+    else:
+        raise ValueError('MODEL_RUNTIME_VALIDATION_LOADER_UNSUPPORTED')
+    text = result.get('text') if isinstance(result, dict) else result
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError('MODEL_RUNTIME_VALIDATION_EMPTY_RESPONSE')
+    return {'valid': True}
+
+
 def _serve_vision() -> None:
     """Keep the selected visual model loaded while handling bounded requests."""
     for line in sys.stdin:
@@ -525,7 +547,7 @@ def _serve_vision() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--operation", choices=("bonsai", "bonsai_vlm", "ornith", "generic", "vision"))
+    parser.add_argument("--operation", choices=("bonsai", "bonsai_vlm", "ornith", "generic", "vision", "validate"))
     parser.add_argument("--payload")
     parser.add_argument("--serve-vision", action="store_true")
     args = parser.parse_args()
@@ -535,6 +557,9 @@ def main() -> None:
     if not args.operation or not args.payload:
         parser.error("--operation and --payload are required unless --serve-vision is set")
     payload = json.loads(Path(args.payload).read_text(encoding="utf-8"))
+    if args.operation == 'validate':
+        print(json.dumps(_validate_model(payload), ensure_ascii=False), flush=True)
+        return
     if args.operation == "bonsai":
         result = _bonsai(payload["messages"], int(payload.get("max_tokens", 1024)), payload.get('format'), payload.get('context'), bool(payload.get('think')),
                          bounded_reasoning=bool(payload.get('bounded_reasoning')))

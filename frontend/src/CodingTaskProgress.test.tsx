@@ -26,6 +26,19 @@ function renderProgress(value: CodingTask){return render(<CodingTaskProgress tas
 afterEach(() => { cleanup(); locale.language = "en"; request.mockClear(); });
 
 describe("CodingTaskProgress",()=>{
+  it("discloses the unavailable work and sends consent for the displayed proposal",async()=>{
+    request.mockClear();
+    renderProgress(task({status:"WAITING_FOR_USER",pending_authorization:{
+      type:"CONSTRAINED_CONTINUATION",id:"proposal-1",reason:"The tool is disabled",unmet_criteria:["Playwright MCP"],
+    }}));
+    expect(screen.getByText("Playwright MCP")).toBeTruthy();
+    expect(screen.getByText("The tool is disabled")).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Stop here"})).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:"Continue with limitations"}));
+    await waitFor(()=>expect(request).toHaveBeenCalledWith("/coding-tasks/task",{
+      method:"PATCH",body:JSON.stringify({continuation_id:"proposal-1",continuation_choice:"accept"}),
+    }));
+  });
   it('shows the observed failure during a retry and does not cap the displayed attempt',()=>{
     const value=task({retry_count:4});
     value.subtask_progress![1].failure_summary='history contains latest draws';
@@ -67,6 +80,13 @@ describe("CodingTaskProgress",()=>{
     expect(screen.queryByLabelText('承認が必要')).toBeNull();
     expect(screen.queryByText('Phase replan did not change the failing phase structure.')).toBeNull();
     fireEvent.click(screen.getByRole('button',{name:'失敗情報を使ってこの工程を再実行'}));
+    expect(onResume).toHaveBeenCalledOnce();
+  });
+  it('labels oversized recovery as a bounded host-side split',()=>{
+    locale.language='ja';const onResume=vi.fn();
+    render(<CodingTaskProgress task={task({status:'WAITING_FOR_USER',activity:'NONE',recovery_reason:'REPLAN_INEFFECTIVE',pending_authorization:{type:'REPLAN_INEFFECTIVE',recovery_mode:'deterministic_phase_slice'}})} reports={[]} loading={false} error="" pausePending={false} onPause={vi.fn()} onResume={onResume} onArchive={vi.fn()}/>);
+    expect(screen.getByLabelText('再試行方法')).toHaveTextContent('自動で小さな工程に分けて再開');
+    fireEvent.click(screen.getByRole('button',{name:'失敗情報を使って工程を分割し再開'}));
     expect(onResume).toHaveBeenCalledOnce();
   });
   it("offers explicit bounded recovery only for narrative-only retry exhaustion",()=>{

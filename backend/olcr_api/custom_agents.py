@@ -79,7 +79,7 @@ class AgentStore:
             children.append(child)
         snapshot={**agent,'subagents':children}
         with self.db.connect() as con:
-            con.execute('INSERT INTO conversations(id,project_id,title,created_at,updated_at) VALUES(?,?,?,?,?)',(cid,project_id,agent['name'],now,now))
+            con.execute('INSERT INTO conversations(id,project_id,title,created_at,updated_at,title_auto_pending) VALUES(?,?,?,?,?,1)',(cid,project_id,agent['name'],now,now))
             con.execute('INSERT INTO custom_agent_conversations VALUES(?,?,?)',(cid,agent['id'],json.dumps(snapshot,ensure_ascii=False)))
         return self.db.conversation(cid)
 

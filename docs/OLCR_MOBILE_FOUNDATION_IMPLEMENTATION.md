@@ -1,5 +1,7 @@
 # OLCR mobile foundation implementation
 
+**Connection update:** the sibling client now implements the authenticated Happier text session path. See the [connection and Xcode instructions](../../olcr-mobile/README.md#connect-to-the-pc). The UI-only scope and verification below describe the original foundation stage.
+
 Scope: PC-side authenticated ACP bridge, PC-owned durable event runs, Happier QR pairing UI; then an Expo mobile UI shell with explicit demo state and no server, model weights, relay client, or TTS runtime.
 
 The approved release design is [OLCR_HAPPIER_MOBILE_RELEASE_PLAN.md](OLCR_HAPPIER_MOBILE_RELEASE_PLAN.md). Work is in the existing feature checkout because its current implementation includes extensive uncommitted changes that a HEAD-based worktree would omit. Only task-specific files and small integration points are changed.

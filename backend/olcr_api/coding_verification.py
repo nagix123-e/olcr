@@ -83,6 +83,10 @@ def verification_budget_stop_reason(budget: dict, kind: str, author_limit: int,
 class VerificationExecutorError(RuntimeError):
     """The host verifier cannot run; no application defect was observed."""
 
+    def __init__(self, message: str, *, startup_failed: bool = False):
+        super().__init__(message)
+        self.startup_failed = startup_failed
+
 
 class VerificationScenarioCapabilityGap(ValueError):
     """A required UI scenario has no source-backed setup path to execute."""

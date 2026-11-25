@@ -20,6 +20,14 @@ from .model_runtime_profiles import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+_SAFE_RUNTIME_ERRORS = {
+    'MODEL_RUNTIME_MANAGER_UNAVAILABLE', 'MODEL_RUNTIME_PROFILE_MISMATCH',
+    'MODEL_RUNTIME_PLATFORM_UNSUPPORTED', 'MODEL_RUNTIME_LOCK_UNAVAILABLE',
+    'MODEL_RUNTIME_LOCK_INVALID', 'MODEL_RUNTIME_LOCK_PROFILE_SET_MISMATCH',
+    'MODEL_RUNTIME_LOCK_PROFILE_MISMATCH', 'EXTERNAL_RUNTIME_CANNOT_BE_MODIFIED',
+    'MODEL_RUNTIME_PREPARATION_FAILED', 'MODEL_RUNTIME_VALIDATION_FAILED',
+    'MODEL_DOWNLOAD_INCOMPLETE',
+}
 
 
 def _size_bytes(entry):
@@ -43,6 +51,10 @@ def asset_path(relative: str) -> Path:
 class ModelDownloads:
     def __init__(self, settings):
         self.settings = settings
+        from .model_runtime_manager import get_runtime_manager
+        self.runtime_manager = get_runtime_manager()
+        if self.runtime_manager is not None:
+            self.runtime_manager.attach_downloads(self)
         self.root = Path(settings.db_path).parent / 'models'
         os.environ.setdefault('OLCR_MODEL_ASSETS_DIR', str(self.root))
         os.environ.setdefault('OLCR_AUDIO_MODEL_CACHE', str(self.root / 'audio/hub'))
@@ -200,25 +212,48 @@ class ModelDownloads:
         """Return whether downloaded model files are ready for this runtime."""
         if not self.downloaded(entry):
             return False
-        if entry['id'].startswith('transcription_') or str(entry.get('repo') or '').startswith('ollama/'):
+        if str(entry.get('repo') or '').startswith('ollama/'):
             return True
-        if entry['id'].startswith('whisper_'):
-            from .audio_mlx import whisper_enabled
-            if not whisper_enabled(): return False
-        uses_mlx_vlm = (entry.get('id') in {'ui_venus_mlx_6bit', 'fastvlm_mlx_bf16'}
-                        or 'MLX-VLM' in str(entry.get('runtime') or ''))
-        uses_mlx_text = (entry.get('id') == 'ternary_bonsai_2_27b'
-                         or (entry.get('managed') and 'MLX' in str(entry.get('runtime') or '')))
-        if uses_mlx_vlm:
-            from .mlx_vlm_runtime import available as mlx_vlm_available
-            if not mlx_vlm_available(): return False
-        elif uses_mlx_text:
-            from .mlx_profile_runtime import available as mlx_profile_available
-            if not mlx_profile_available(): return False
-        if entry.get('id', '').startswith('plamo_3_translate_'):
-            from .mlx_profile_runtime import available as mlx_profile_available
-            from .plamo_translation import runtime_available, runtime_python
-            if not mlx_profile_available() or not runtime_available(str(runtime_python())): return False
+        if entry['id'].startswith('transcription_'):
+            engine = os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower()
+            if engine == 'torch':
+                return True
+            try:
+                from .audio_mlx import enabled as audio_mlx_enabled
+                if not audio_mlx_enabled(entry['id']):
+                    return engine != 'mlx'
+            except RuntimeError:
+                if engine == 'mlx':
+                    return False
+                return True
+        if self.runtime_manager is not None:
+            try:
+                identity = asset_identity_for_entry(entry)
+                binding = self.runtime_manager.resolve(identity.asset_id)
+                if not binding.ready:
+                    return False
+                # A prior immutable profile remains runnable, but the catalog
+                # marks it as needing a runtime migration until the current
+                # generation has passed model-load validation.
+                if binding.profile_id != identity.runtime_profile_id:
+                    return False
+            except (ValueError, OSError):
+                return False
+        else:
+            uses_mlx_vlm = (entry.get('id') in {'ui_venus_mlx_6bit', 'fastvlm_mlx_bf16'}
+                            or 'MLX-VLM' in str(entry.get('runtime') or ''))
+            uses_mlx_text = (entry.get('id') == 'ternary_bonsai_2_27b'
+                             or (entry.get('managed') and 'MLX' in str(entry.get('runtime') or '')))
+            if uses_mlx_vlm:
+                from .mlx_vlm_runtime import available as mlx_vlm_available
+                if not mlx_vlm_available(): return False
+            elif uses_mlx_text:
+                from .mlx_profile_runtime import available as mlx_profile_available
+                if not mlx_profile_available(): return False
+            if entry.get('id', '').startswith('plamo_3_translate_'):
+                from .mlx_profile_runtime import available as mlx_profile_available
+                from .plamo_translation import runtime_available, runtime_python
+                if not mlx_profile_available() or not runtime_available(str(runtime_python())): return False
         if entry['id'] == 'ternary_bonsai_2_27b':
             path = self._asset_directory_with_files(entry)
             if path is None or not (path / 'runtime').is_dir(): return False
@@ -227,19 +262,38 @@ class ModelDownloads:
     def catalog(self):
         with self.lock:
             jobs = [dict(value) for value in self.jobs.values()]
-        return {'presets': [{**entry, 'downloaded': self.downloaded(entry)}
-                            for entry in self.presets().values()], 'jobs': jobs}
+        presets = []
+        for entry in self.presets().values():
+            downloaded = self.downloaded(entry)
+            installed = self.installed(entry) if downloaded else False
+            runtime_ready = installed
+            if downloaded and self.runtime_manager is not None and entry.get('runtime_profile_id'):
+                try:
+                    identity = asset_identity_for_entry(entry)
+                    binding = self.runtime_manager.resolve(identity.asset_id)
+                    runtime_ready = (os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower() == 'torch'
+                                     if identity.asset_id.startswith('transcription_') else
+                                     binding.ready and not binding.legacy
+                                     and binding.profile_id == identity.runtime_profile_id)
+                except (ValueError, OSError):
+                    runtime_ready = False
+            presets.append({**entry, 'downloaded': downloaded, 'installed': installed,
+                            'runtime_ready': runtime_ready,
+                            'needs_runtime_preparation': bool(downloaded and not runtime_ready
+                                and entry.get('runtime_profile_id'))})
+        return {'presets': presets, 'jobs': jobs}
 
-    def start(self, ids, consent):
+    def start(self, ids, consent, prepare_runtime=False):
         if consent is not True: raise ValueError('MODEL_DOWNLOAD_CONSENT_REQUIRED')
         presets = self.presets()
         if not isinstance(ids, list) or not ids or any(model not in presets for model in ids):
             raise ValueError('MODEL_DOWNLOAD_UNKNOWN_PRESET')
         ids = list(dict.fromkeys(ids))
         with self.lock:
-            if any(job['status'] in {'queued', 'downloading'} for job in self.jobs.values()):
+            if any(job['status'] in {'queued', 'downloading', 'preparing_runtime'} for job in self.jobs.values()):
                 raise ValueError('MODEL_DOWNLOAD_IN_PROGRESS')
-            job = {'id': uuid.uuid4().hex, 'models': ids, 'status': 'queued', 'completed': [], 'current': None, 'error': None}
+            job = {'id': uuid.uuid4().hex, 'models': ids, 'status': 'queued', 'completed': [], 'current': None, 'error': None,
+                   'prepare_runtime': bool(prepare_runtime)}
             self.cancel_events[job['id']] = threading.Event()
             self.jobs[job['id']] = job
         threading.Thread(target=self._run, args=(job, presets), daemon=True, name='olcr-model-download').start()
@@ -248,7 +302,7 @@ class ModelDownloads:
     def cancel(self, job_id):
         with self.lock:
             job = self.jobs.get(job_id)
-            if not job or job['status'] not in {'queued', 'downloading'}:
+            if not job or job['status'] not in {'queued', 'downloading', 'preparing_runtime'}:
                 return False
             self.cancel_events[job_id].set()
             job['status'] = 'cancelling'
@@ -263,25 +317,32 @@ class ModelDownloads:
                     return
                 with self.lock: job.update(status='downloading', current=model)
                 entry = presets[model]
-                if not self.installed(entry):
-                    if self.downloaded(entry):
-                        payload_path = self._asset_directory_with_files(entry)
-                        if payload_path is not None and self._is_user_asset_path(payload_path):
-                            self._record_asset_payload(entry, payload_path)
-                        self._prepare_runtime(entry)
-                        if entry['id'] == 'ternary_bonsai_2_27b':
-                            self._copy_bonsai_runtime(entry, self._asset_directory_with_files(entry))
-                    else:
-                        self._download(entry)
+                if not self.downloaded(entry):
+                    with self.lock: job.update(status='downloading', current=model)
+                    self._download(entry)
+                if self.downloaded(entry):
+                    payload_path = self._entry_payload_path(entry)
+                    if payload_path is not None and self._is_user_asset_path(payload_path):
+                        self._record_asset_payload(entry, payload_path)
+                    if entry['id'] == 'ternary_bonsai_2_27b':
+                        self._copy_bonsai_runtime(entry, payload_path)
+                if job.get('prepare_runtime') or not self.installed(entry):
+                    with self.lock: job.update(status='preparing_runtime', current=model)
+                    self._prepare_runtime(entry)
                 if not self.installed(entry): raise RuntimeError('MODEL_DOWNLOAD_INCOMPLETE')
                 with self.lock: job['completed'].append(model)
                 if cancelled.is_set():
                     with self.lock: job.update(status='cancelled', current=None)
                     return
             with self.lock: job.update(status='complete', current=None)
-        except Exception:
+        except Exception as exc:
             # Provider bodies and filesystem errors can contain private details.
-            with self.lock: job.update(status='failed', error='MODEL_DOWNLOAD_FAILED')
+            message = str(exc)
+            if job.get('status') == 'preparing_runtime':
+                error = message if message in _SAFE_RUNTIME_ERRORS else 'MODEL_RUNTIME_PREPARATION_FAILED'
+            else:
+                error = 'MODEL_DOWNLOAD_FAILED'
+            with self.lock: job.update(status='failed', error=error)
 
     def _download(self, entry):
         if entry['id'] == 'laya_multilingual':
@@ -300,7 +361,6 @@ class ModelDownloads:
             with self.lock:
                 self._ollama_inventory_at = 0.0
             return
-        self._prepare_runtime(entry)
         from huggingface_hub import snapshot_download
         target = self.root / entry['relative']
         if entry['id'] == 'laya_multilingual':
@@ -321,24 +381,48 @@ class ModelDownloads:
             os.environ['OLCR_LAYA_CACHE'] = str(target.parent)
 
     def _prepare_runtime(self, entry):
+        if (entry['id'].startswith('transcription_')
+                and os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower() == 'torch'):
+            return None
+        if self.runtime_manager is None:
+            raise RuntimeError('MODEL_RUNTIME_MANAGER_UNAVAILABLE')
+        identity = asset_identity_for_entry(entry)
+        profile = runtime_profile_for_asset(identity.asset_id, identity.revision)
+        current = self.runtime_manager.resolve(identity.asset_id)
+        if current.ready and not current.managed:
+            return current
+        prepared = self.runtime_manager.prepare(profile.id, identity.asset_id)
+        if prepared.status != 'ready' or prepared.binding is None:
+            raise RuntimeError(prepared.error or 'MODEL_RUNTIME_PREPARATION_FAILED')
+        if not prepared.binding.managed:
+            return prepared.binding
+        payload_path = self._entry_payload_path(entry)
+        if payload_path is None:
+            raise RuntimeError('MODEL_DOWNLOAD_INCOMPLETE')
+        from .model_provider import validate_runtime_candidate
+        if not validate_runtime_candidate(self.settings, entry, payload_path, prepared.binding):
+            raise RuntimeError('MODEL_RUNTIME_VALIDATION_FAILED')
+        self.runtime_manager.commit_binding(identity.asset_id, prepared.binding)
+        self.runtime_manager.cleanup_unreferenced()
+        self.runtime_manager.cleanup_legacy_if_unused(self)
+        return prepared.binding
+
+    def _entry_payload_path(self, entry):
+        if entry['id'].startswith('transcription_'):
+            from .audio_transcription import _MODELS, _snapshot
+            try:
+                return _snapshot(_MODELS[entry['id'][-2:]])
+            except (KeyError, RuntimeError, ImportError):
+                return None
         if entry['id'].startswith('whisper_'):
-            from .audio_mlx import ensure_whisper_runtime
-            ensure_whisper_runtime()
-        uses_mlx_vlm = (entry.get('id') in {'ui_venus_mlx_6bit', 'fastvlm_mlx_bf16'}
-                        or 'MLX-VLM' in str(entry.get('runtime') or ''))
-        uses_mlx_text = (entry.get('id') == 'ternary_bonsai_2_27b'
-                         or (entry.get('managed') and 'MLX' in str(entry.get('runtime') or '')))
-        if uses_mlx_vlm:
-            from .mlx_vlm_runtime import ensure as ensure_mlx_vlm
-            ensure_mlx_vlm()
-        elif uses_mlx_text:
-            from .mlx_profile_runtime import ensure as ensure_mlx_profile
-            ensure_mlx_profile()
-        if entry['id'].startswith('plamo_3_translate_'):
-            from .mlx_profile_runtime import ensure as ensure_mlx_profile
-            from .plamo_translation import ensure_runtime
-            ensure_mlx_profile()
-            ensure_runtime()
+            from .model_profiles import _data
+            descriptor = _data()['models'].get(entry['id'])
+            return Path(os.environ.get('OLCR_MODEL_ASSETS_DIR', str(self.root))) / str(descriptor['relative']) if descriptor else None
+        if str(entry.get('repo') or '').startswith('ollama/'):
+            return None
+        if entry['id'] == 'laya_multilingual':
+            return Path(os.environ.get('OLCR_LAYA_CACHE', str(self.root / 'laya'))) / 'multilingual'
+        return self._asset_directory_with_files(entry)
 
     @staticmethod
     def _copy_bonsai_runtime(entry, target):

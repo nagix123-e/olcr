@@ -99,6 +99,11 @@ def runtime_profiles() -> tuple[RuntimeProfile, ...]:
     return tuple(_PROFILES.values())
 
 
+def runtime_profile_by_id(profile_id: str) -> RuntimeProfile | None:
+    """Return a retained immutable profile by generation ID."""
+    return _PROFILES.get(str(profile_id or ""))
+
+
 def validate_runtime_lock() -> dict[str, Any]:
     """Reject a stale package-lock document before preparing an environment."""
     try:

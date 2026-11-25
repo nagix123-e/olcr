@@ -75,6 +75,16 @@ class CodingTaskDatabaseTests(unittest.TestCase):
         self.assertEqual(["p1:added_verification_criterion"], changes)
         self.assertEqual([], phase_execution_contract_errors(value["phases"][0]))
 
+    def test_phase_complexity_repair_returns_unchanged_plan_when_no_repair_is_needed(self):
+        source = {"phases": [{"id": "p1", "execution_mode": "IMPLEMENTATION",
+                              "done": ["The approved implementation is complete"], "verify": [],
+                              "required_mcp": ["animejs"]}]}
+
+        repaired, changes = repair_phase_complexity(source)
+
+        self.assertEqual(source, repaired)
+        self.assertEqual([], changes)
+
     def test_plan_prompt_declares_exact_file_manifest_contract(self):
         prompt = plan_prompt("Build a componentized Vite React site", task_size="LARGE")
         self.assertIn("MUTATION_SCOPE_MODEL=EXACT_FILE_MANIFEST", prompt)
@@ -153,6 +163,9 @@ class CodingTaskDatabaseTests(unittest.TestCase):
     def test_plan_prompt_supplies_complete_task_graph_skeleton_and_namespaces(self):
         prompt = plan_prompt("Fix a small bug and run focused verification", mutation_mode="FIX")
         self.assertIn('"task_id":"p1-task","phase_id":"p1"', prompt)
+        self.assertNotIn('"original_goal":"<goal>"', prompt)
+        self.assertIn("original_goal` is host-owned", prompt)
+        self.assertNotIn("original_goal", plan_schema()["properties"])
         for field in ("goal", "domain", "depends_on", "required_context", "required_mcp",
                       "change_scope", "verification", "done_condition", "retry_state"):
             self.assertIn(f'"{field}"', prompt)
@@ -1089,7 +1102,10 @@ class CodingTaskApiTests(unittest.TestCase):
         request=("Plan only; do not create, edit, or delete any files. Design a Python function format_total(items) "
                  "for /tmp/OLCR_E2E_PLAN_R13.py and document the design in /tmp/OLCR_E2E_PLAN_R13.md. "
                  "Show the plan in this chat and wait for my approval before implementation.")
-        before=sorted(path.name for path in Path(self.tmp.name).iterdir())
+        # The chat request legitimately writes its task to SQLite. Transient
+        # journal sidecars are not project artifacts produced by the planner.
+        db_files = {"api.sqlite", "api.sqlite-wal", "api.sqlite-shm"}
+        before = {path.name for path in Path(self.tmp.name).iterdir()} - db_files
         with patch.object(api._coding_scheduler_wake,"set") as wake, \
              patch.object(api.runtime,"execute",side_effect=AssertionError("stream plan-only request must not use Normal Brain")), \
              patch.object(api.runtime.model,"generate",side_effect=AssertionError("stream plan-only request must not generate prose")):
@@ -1102,7 +1118,7 @@ class CodingTaskApiTests(unittest.TestCase):
         task_id=done["task"]["task_id"]
         self.assertEqual("QUEUED",api.db.coding_task(task_id)["status"])
         self.assertTrue(api.db.coding_task(task_id)["requirements"]["planning_only"])
-        self.assertEqual(before,sorted(path.name for path in Path(self.tmp.name).iterdir()))
+        self.assertEqual(before, {path.name for path in Path(self.tmp.name).iterdir()} - db_files)
         self.assertTrue(wake.called)
 
     def test_existing_named_file_update_routes_identically_for_chat_and_stream(self):
@@ -1355,7 +1371,7 @@ class CodingTaskApiTests(unittest.TestCase):
                                                               "message": "コーディングはしないでください。ただしコードを修正してください"})
         self.assertEqual(200, response.status_code)
         self.assertNotIn("coding_task_id", response.json())
-        self.assertIn("明確ではありません", response.json()["response"])
+        self.assertIn("矛盾", response.json()["response"])
         self.assertEqual([], api.db.coding_tasks(response.json()["conversation_id"]))
         wake.assert_not_called()
 
@@ -1710,7 +1726,6 @@ class CodingTaskApiTests(unittest.TestCase):
         finally: api.runtime=old_runtime
         self.assertEqual([],validate_plan(parsed,goal))
         expected=plan_schema()
-        expected['properties']['original_goal']['const']='fix sample'
         self.assertEqual(2,len(fake.model.calls));self.assertEqual(expected,fake.model.calls[0]);self.assertEqual(expected,fake.model.calls[1])
 
     def test_planning_discards_malformed_advisory_task_rows_when_phase_plan_is_valid(self):
@@ -1942,7 +1957,7 @@ class CodingTaskApiTests(unittest.TestCase):
         api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
         replacement=plan(goal)  # p1 is incorrectly reopened as pending.
         class Model:
-            def generate(self,messages,model,think=False): return {"text":__import__("json").dumps(replacement)}
+            def generate(self,messages,model,think=False,format=None,max_tokens=None): return {"text":__import__("json").dumps(replacement)}
         class Runtime: model=Model()
         old_runtime=api.runtime;api.runtime=Runtime()
         try:
@@ -2077,7 +2092,7 @@ class CodingTaskApiTests(unittest.TestCase):
         replacement["phases"][0]["status"]="pending"
         replacement["phases"][1]["status"]="pass"
         class Model:
-            def generate(self,messages,model,think=False): return {"text":__import__("json").dumps(replacement)}
+            def generate(self,messages,model,think=False,format=None,max_tokens=None): return {"text":__import__("json").dumps(replacement)}
         class Runtime: model=Model()
         old_runtime=api.runtime; api.runtime=Runtime()
         try:
@@ -2153,7 +2168,7 @@ class CodingTaskApiTests(unittest.TestCase):
         task_id="ineffective-replan"; goal="fix sample"; current=plan(goal)
         api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
         class Model:
-            def generate(self,messages,model,think=False):
+            def generate(self,messages,model,think=False,format=None,max_tokens=None):
                 return {"text":__import__("json").dumps(current)}
         class Runtime: model=Model()
         old_runtime=api.runtime;api.runtime=Runtime()
@@ -2172,7 +2187,7 @@ class CodingTaskApiTests(unittest.TestCase):
         task_id="ineffective-non-structural-replan"; goal="fix sample"; current=plan(goal)
         api.db.create_coding_task(task_id,conversation,goal,"QUEUED","NONE",current,time.time())
         class Model:
-            def generate(self,messages,model,think=False): return {"text":__import__("json").dumps(current)}
+            def generate(self,messages,model,think=False,format=None,max_tokens=None): return {"text":__import__("json").dumps(current)}
         class Runtime: model=Model()
         old_runtime=api.runtime; api.runtime=Runtime()
         try:
@@ -2183,6 +2198,25 @@ class CodingTaskApiTests(unittest.TestCase):
         self.assertEqual("WAITING_FOR_USER",saved["status"])
         self.assertEqual("p1",saved["current_phase_id"])
         self.assertEqual("REPLAN_INEFFECTIVE",saved["recovery_reason"])
+
+    def test_replan_of_later_phase_does_not_requeue_unchanged_failing_phase(self):
+        conversation = self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
+        task_id = "only-later-phase-changed"
+        goal = "Fix sample"
+        current = plan(goal)
+        api.db.create_coding_task(task_id, conversation, goal, "RUNNING", "NONE", current, time.time())
+        api.db.update_coding_task(task_id, current_phase_id="p1")
+        replacement = plan(goal)
+        replacement["phases"][0]["risks"] = ["Review generated files carefully"]
+        replacement["phases"][1]["goal"] = "Update the later screen"
+        with patch.object(api, "_generate_plan", return_value=(replacement, None)):
+            api._replan_task(task_id, api.db.coding_task(task_id), set(), "retry limit reached",
+                             {"unmet_done": ["the current artifact is incomplete"]})
+        saved = api.db.coding_task(task_id)
+        self.assertEqual("WAITING_FOR_USER", saved["status"])
+        self.assertEqual("REPLAN_INEFFECTIVE", saved["recovery_reason"])
+        self.assertEqual(0, saved["plan_revision"])
+        self.assertIn("the current artifact is incomplete", saved["pending_authorization"]["unmet_criteria"])
 
     def test_repeated_zero_write_scope_rejection_terminates_without_replanning(self):
         conversation=self.client.post(f"/api/projects/{self.project}/conversations").json()["id"]
@@ -2251,7 +2285,9 @@ class CodingTaskApiTests(unittest.TestCase):
             checkpoint=api.db.coding_task(_task_id)
             captured["checkpoint"]=(checkpoint.get("activity"), checkpoint.get("recovery_action"),
                                     checkpoint.get("recovery_reason"))
-            return plan(goal), "{}"
+            repaired = plan(goal)
+            repaired["phases"][0]["goal"] = "Repair the current artifact using concise typed evidence"
+            return repaired, "{}"
         with patch.object(api,"_generate_plan",side_effect=capture_prompt):
             result=api._replan_task(task_id,api.db.coding_task(task_id),set(),"retry after model failure")
         self.assertEqual("Coding Task was replanned and requeued.",result)

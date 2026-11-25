@@ -18,7 +18,10 @@ from olcr_api.coding_tasks import (evaluate_phase, frontend_stack_acceptance,
                                    marketing_design_structure_acceptance,
                                    canonical_coding_requirements, normalize_task_graph,
                                    required_mcp_contract, required_verification_contract, task_profile,
-                                   normalize_coding_requirements, verification_requested_by_user)
+                                   normalize_coding_requirements, verification_requested_by_user,
+                                   MAX_HOST_EXECUTION_PHASES, bound_oversized_plan_phases,
+                                   derive_task_graph, plan_schema)
+from olcr_api.continuation import major_phase_plan
 from olcr_api.mcp_manifest import server_definition
 from olcr_api.db import Database
 from olcr_api.models import Route, Task, TaskState
@@ -134,19 +137,111 @@ class BenchmarkProfileTests(unittest.TestCase):
         self.assertEqual(["shadcn"], normalized["tasks"][0]["required_mcp"])
         self.assertEqual(["playwright"], normalized["tasks"][-1]["required_mcp"])
 
+    def test_frontend_normalization_preserves_distinct_implementation_boundaries(self):
+        source = plan()
+        implementation = []
+        for index in range(1, 7):
+            implementation.append({
+                "id": f"section-{index}", "goal": f"Implement approved sections {index}",
+                "status": "pending", "done": [f"Approved section {index} is implemented"],
+                "verify": [], "dependencies": [] if index == 1 else [f"section-{index - 1}"],
+                "risks": [], "execution_mode": "IMPLEMENTATION",
+            })
+        verification = {
+            "id": "browser-checks", "goal": "Consolidated browser verification",
+            "status": "pending", "done": ["The requested website checks are complete"],
+            "verify": [f"Browser criterion {index} passes" for index in range(7)],
+            "dependencies": ["section-6"], "risks": [],
+            "execution_mode": "VERIFICATION_ONLY", "required_mcp": ["playwright"],
+        }
+        source["phases"] = [*implementation, verification]
+        source["file_manifest"] = [
+            {"path": f"src/sections/Section{index}.tsx", "action": "create",
+             "role": "approved frontend section", "required": True,
+             "owner_phase": f"section-{((index - 1) % 6) + 1}"}
+            for index in range(1, 29)
+        ]
+
+        normalized = normalize_task_graph(
+            source, "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"],
+            verification_requested=True)
+
+        implementation_phases = [phase for phase in normalized["phases"]
+                                 if phase.get("execution_mode") != "VERIFICATION_ONLY"]
+        self.assertEqual(6, len(implementation_phases))
+        self.assertEqual([f"section-{index}" for index in range(1, 7)],
+                         [phase["id"] for phase in implementation_phases])
+        self.assertEqual(28, len(normalized["file_manifest"]))
+        self.assertEqual({f"section-{index}" for index in range(1, 7)},
+                         {entry["owner_phase"] for entry in normalized["file_manifest"]})
+
+    def test_host_slicing_accepts_expansion_beyond_model_plan_limit(self):
+        source = plan()
+        implementation = [{
+            "id": f"section-{index}", "goal": f"Implement requested section {index}",
+            "status": "pending", "done": [f"Requested section {index} is implemented"],
+            "verify": [], "dependencies": [] if index == 1 else [f"section-{index - 1}"],
+            "risks": [], "execution_mode": "IMPLEMENTATION",
+        } for index in range(1, 8)]
+        browser = {
+            "id": "browser-checks", "goal": "Consolidated browser verification",
+            "status": "pending", "done": ["Requested browser checks are complete"],
+            "verify": [f"Browser criterion {index} passes" for index in range(7)],
+            "dependencies": ["section-7"], "risks": [],
+            "execution_mode": "VERIFICATION_ONLY", "required_mcp": ["playwright"],
+        }
+        source["phases"] = [*implementation, browser]
+        source["file_manifest"] = [
+            {"path": f"src/sections/Section{index}.tsx", "action": "create",
+             "role": "approved frontend section", "required": True,
+             "owner_phase": f"section-{((index - 1) % 7) + 1}"}
+            for index in range(1, 29)
+        ]
+
+        normalized = normalize_task_graph(
+            source, "FRONTEND_ONLY_MARKETING_SITE", ["animejs", "shadcn", "playwright"],
+            verification_requested=True)
+        major = major_phase_plan(normalized, {"task_size": "LARGE"}, verification_requested=True)
+        major, _, graph = api.reconcile_graph_references(
+            major, major.get("graph_replacement_map"))
+        self.assertTrue(graph["valid"])
+        bounded, changes = bound_oversized_plan_phases(
+            major, max_total_phase_count=MAX_HOST_EXECUTION_PHASES)
+        bounded = derive_task_graph(bounded, ["animejs", "shadcn", "playwright"])
+
+        self.assertIn("deterministic_phase_slicing", changes)
+        self.assertEqual(9, len(bounded["phases"]))
+        self.assertGreater(len(bounded["phases"]), plan_schema()["properties"]["phases"]["maxItems"])
+        self.assertLessEqual(len(bounded["phases"]), MAX_HOST_EXECUTION_PHASES)
+        self.assertEqual([], api.validate_plan(
+            bounded, BENCHMARK, max_phase_count=MAX_HOST_EXECUTION_PHASES))
+        self.assertIn("phases must contain 1 to 8 entries", api.validate_plan(bounded, BENCHMARK))
+        for phase in bounded["phases"]:
+            self.assertLessEqual(len(phase["done"]) + len(phase["verify"]), 6)
+        self.assertCountEqual(
+            [f"Browser criterion {index} passes" for index in range(7)],
+            [criterion for phase in bounded["phases"] for criterion in phase["verify"]
+             if criterion.startswith("Browser criterion ")])
+        self.assertCountEqual(
+            [f"src/sections/Section{index}.tsx" for index in range(1, 29)],
+            [str(item["path"]) for item in bounded["file_manifest"]])
+
     def test_preflight_only_phase_is_removed_before_the_implementation_executor(self):
         normalized = normalize_task_graph(plan(), "FRONTEND_ONLY_MARKETING_SITE", ["shadcn", "playwright"], verification_requested=True)
         self.assertEqual(2, len(normalized["phases"]))
-        self.assertEqual("p1", normalized["phases"][0]["id"])
+        self.assertEqual("p2", normalized["phases"][0]["id"])
         self.assertIn("UI implementation", normalized["phases"][0]["goal"])
         self.assertNotIn("repo inspection", normalized["phases"][0]["goal"].lower())
+        self.assertEqual([], normalized["phases"][0]["dependencies"])
         self.assertNotIn("mcp", normalized["phases"][0]["goal"].lower())
         self.assertEqual("implementation", normalized["tasks"][0]["domain"])
 
     def test_static_html_does_not_satisfy_stack_or_design_contract(self):
         with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
             root = Path(directory)
-            (root / "index.html").write_text("<header>Header</header><main>Hero Features Workflow Development Tools CTA Links product visual</main><footer>Footer</footer>")
+            (root / "index.html").write_text(
+                '<header>製品</header><main><section>概要</section></main><footer><a href="/docs">資料</a></footer>',
+                encoding="utf-8")
             self.assertFalse(frontend_stack_acceptance(str(root)))
             self.assertTrue(marketing_design_structure_acceptance(str(root)))
 
@@ -289,7 +384,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
              patch.object(api, "_generate_plan", side_effect=AssertionError("planner must not run")):
             api._run_coding_planning(task)
         saved = api.db.coding_task("required-mcp")
-        self.assertEqual("BLOCKED", saved["status"])
+        self.assertEqual("WAITING_FOR_USER", saved["status"])
         self.assertEqual("FRONTEND_ONLY_MARKETING_SITE", saved["task_profile"])
         self.assertEqual(["shadcn", "playwright"], saved["required_mcp"])
         self.assertTrue(saved["mcp_evidence"])
@@ -396,7 +491,7 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         saved = api.db.coding_task("fresh-preflight-plan")
         self.assertEqual("QUEUED", saved["status"])
         self.assertEqual(0, saved["plan_revision"])
-        self.assertEqual(["p1", "p2"], [phase["id"] for phase in saved["plan"]["phases"]])
+        self.assertEqual(["p2", "p3"], [phase["id"] for phase in saved["plan"]["phases"]])
         self.assertIn("UI implementation", saved["plan"]["phases"][0]["goal"])
         self.assertEqual("implementation", saved["plan"]["tasks"][0]["domain"])
         self.assertEqual(["shadcn"], saved["plan"]["tasks"][0]["required_mcp"])
@@ -486,10 +581,11 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
             api._run_coding_planning(api.db.coding_task(task_id))
             saved = api.db.coding_task(task_id)
             self.assertIsNotNone(saved)
-            self.assertEqual("BLOCKED", saved["status"])
+            self.assertEqual("WAITING_FOR_USER", saved["status"])
             self.assertEqual("FRONTEND_ONLY_MARKETING_SITE", saved["task_profile"])
             self.assertIsNone(saved["plan"])
-            self.assertEqual("REQUIRED_MCP_UNAVAILABLE", saved["recovery_reason"])
+            self.assertEqual("CONSTRAINED_CONTINUATION", saved["recovery_reason"])
+            self.assertEqual("shadcn", saved["pending_authorization"]["mcp"])
             self.assertEqual("BLOCKED", saved["mcp_evidence"][0]["status"])
 
     def test_required_mcp_runs_initialize_list_and_allowlisted_tool(self):
@@ -558,26 +654,39 @@ class IdempotencyAndContinuationTests(unittest.TestCase):
         self.assertIn("MCP_NOT_REGISTERED", message)
         self.assertNotIn("Anime.js MCP は利用できません", message)
 
-    def test_required_playwright_calls_its_allowlisted_navigation_tool(self):
+    def test_required_playwright_opens_and_closes_the_owned_project_origin(self):
         api.db.create_coding_task("playwright-lifecycle", "conversation", "verify", "RUNNING", "NONE", plan("verify"), time.time())
-        calls = []
-
-        class FakeMCP:
-            def __init__(self, *args, **kwargs): pass
-            def start(self): return "STARTING"
-            def initialize(self): return {"status": "AVAILABLE", "response": {"result": {}}}
-            def tools_list(self): return {"status": "AVAILABLE", "response": {"result": {"tools": [{"name": "browser_navigate"}]}}}
-            def call(self, tool, arguments):
-                calls.append((tool, arguments)); return {"status": "AVAILABLE", "response": {"result": "navigated"}}
-            def close(self): pass
-
-        definition = {"enabled_by_policy": True, "allowed_tools": ["browser_navigate"]}
-        with patch.object(api, "server_definition", return_value=definition), \
-             patch.object(api, "node_mcp_launch_command", return_value=["fake-mcp"]), \
-             patch.object(api, "MCPRuntime", FakeMCP):
+        origin = "http://127.0.0.1:62819"
+        with patch.object(api.local_e2e, "start", return_value={"id": "run", "origin": origin, "owned_process": True}) as start, \
+             patch.object(api.local_e2e, "stop") as stop, \
+             patch.object(api.browser_sessions, "open_local", return_value={"status": "READY", "session_id": "browser"}) as open_browser, \
+             patch.object(api.browser_sessions, "navigate", return_value={"status": "AVAILABLE", "url": origin + "/", "title": "Project"}) as navigate, \
+             patch.object(api.browser_sessions, "close") as close:
             item, error = api._run_required_mcp("playwright-lifecycle", "playwright", self.tmp.name, "browser verification")
-        self.assertIsNone(error); self.assertEqual("PASS", item["status"])
-        self.assertEqual([("browser_navigate", {"url": "http://127.0.0.1:5173"})], calls)
+        self.assertIsNone(error)
+        self.assertEqual("PASS", item["status"])
+        self.assertEqual("browser_navigate", item["tool_name"])
+        start.assert_called_once()
+        self.assertEqual(self.tmp.name, start.call_args.args[0])
+        open_browser.assert_called_once_with(origin)
+        navigate.assert_called_once_with("browser", origin + "/")
+        close.assert_called_once_with("browser")
+        stop.assert_called_once_with("run")
+
+    def test_required_playwright_does_not_pass_a_failed_navigation_and_cleans_up(self):
+        api.db.create_coding_task("playwright-failure", "conversation", "verify", "RUNNING", "NONE", plan("verify"), time.time())
+        origin = "http://127.0.0.1:62819"
+        with patch.object(api.local_e2e, "start", return_value={"id": "run", "origin": origin, "owned_process": True}), \
+             patch.object(api.local_e2e, "stop") as stop, \
+             patch.object(api.browser_sessions, "open_local", return_value={"status": "READY", "session_id": "browser"}), \
+             patch.object(api.browser_sessions, "navigate", return_value={"status": "FAILED", "error": "BROWSER_SNAPSHOT_FAILED"}), \
+             patch.object(api.browser_sessions, "close") as close:
+            item, error = api._run_required_mcp("playwright-failure", "playwright", self.tmp.name, "browser verification")
+        self.assertIsNone(item)
+        self.assertEqual("BROWSER_SNAPSHOT_FAILED", error)
+        self.assertEqual("FAILED", api.db.coding_task("playwright-failure")["mcp_evidence"][-1]["status"])
+        close.assert_called_once_with("browser")
+        stop.assert_called_once_with("run")
 
     def test_shadcn_network_failure_is_not_reported_as_runtime_unavailable(self):
         api.db.create_coding_task("network-block", "conversation", "implement", "RUNNING", "NONE", plan("implement"), time.time())

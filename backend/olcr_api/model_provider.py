@@ -27,7 +27,9 @@ ROLE_TOKENS = {f"role:{role}": role for role in (
 
 PLANNER_REPLANNER_MAX_TOKENS = 2048
 SHORT_CODING_FIX_MAX_TOKENS = 4096
-MAX_STRUCTURED_OUTPUT_RETRY_TOKENS = 32768
+MIN_OUTPUT_RETRY_TOKENS = 16_384
+MAX_OUTPUT_RETRY_TOKENS = 32_000
+MAX_OUTPUT_BUDGET_RETRIES = 2
 
 
 class RoleAwareModelProvider(ModelProvider):
@@ -47,6 +49,8 @@ class RoleAwareModelProvider(ModelProvider):
         self.repo_root = Path(__file__).resolve().parents[2]
         self._vision_worker_lock = threading.Lock()
         self._vision_worker: subprocess.Popen[str] | None = None
+        self._vision_runtime_id: str | None = None
+        self._vision_lease = None
         atexit.register(self.close)
 
     def _binding(self, model: str, *, vision: bool = False) -> ModelBinding:
@@ -81,12 +85,27 @@ class RoleAwareModelProvider(ModelProvider):
         except ModelRegistryError as exc:
             raise ModelFailure("configuration", str(exc)) from exc
 
-    def _mlx_python(self) -> Path:
-        value = os.environ.get("OLCR_MLX_PYTHON")
-        python = Path(value).expanduser() if value else self.repo_root / ".venv-mlx" / "bin" / "python"
-        if not python.is_file():
-            raise ModelFailure("configuration", f"MLX runtime unavailable: {python}")
-        return python
+    @staticmethod
+    def _runtime_asset(binding: ModelBinding) -> str | None:
+        if binding.model_id == "ternary_bonsai_2_27b":
+            return "ternary_bonsai_2_27b"
+        if binding.model_id.startswith("mlx:"):
+            return binding.model_id.removeprefix("mlx:")
+        if binding.deployment_model == "ornith-ai/Ornith-1.5-9B-MLX-8bit":
+            return "ornith_1_5_9b_8bit"
+        return None
+
+    def _runtime_binding(self, asset_id: str | None):
+        if not asset_id:
+            return None, None
+        from .model_runtime_manager import get_runtime_manager
+        manager = get_runtime_manager()
+        if manager is None:
+            raise ModelFailure("configuration", "Model runtime manager is unavailable")
+        binding = manager.resolve(asset_id)
+        if not binding.ready or not binding.python_path:
+            raise ModelFailure("mlx_runtime", "This model's runtime needs preparation in Settings")
+        return manager, binding
 
     @staticmethod
     def _mlx_worker_environment() -> dict[str, str]:
@@ -103,16 +122,28 @@ class RoleAwareModelProvider(ModelProvider):
         return worker_env
 
     def _run_mlx(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
+        asset_id = str(payload.pop("runtime_asset_id", "") or "") or None
+        manager, runtime_binding = self._runtime_binding(asset_id)
+        python = (Path(runtime_binding.python_path) if runtime_binding else
+                  Path(os.environ.get("OLCR_MLX_PYTHON") or self.repo_root / ".venv-mlx" / "bin" / "python"))
+        if not python.is_file():
+            raise ModelFailure("configuration", f"MLX runtime unavailable: {python}")
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False)
             payload_path = Path(handle.name)
         live_path=payload_path.with_suffix('.live.jsonl')
         live_stop=threading.Event();live_thread=None
+        lease = manager.worker_lease(runtime_binding) if manager and runtime_binding else None
         try:
-            command = [str(self._mlx_python()), str(self.repo_root / "backend" / "olcr_api" / "mlx_worker.py"),
+            if lease:
+                lease.__enter__()
+            command = [str(python), str(self.repo_root / "backend" / "olcr_api" / "mlx_worker.py"),
                        "--operation", operation, "--payload", str(payload_path)]
             started = time.perf_counter()
             worker_env = self._mlx_worker_environment()
+            if runtime_binding:
+                worker_env['OLCR_MLX_RUNTIME_PROFILE_ID'] = runtime_binding.profile_id
+                worker_env['OLCR_MLX_RUNTIME_ID'] = runtime_binding.runtime_id
             worker_env['OLCR_MLX_PROGRESS_PATH'] = str(Path(self.settings.db_path).resolve().parent / 'model-progress.jsonl')
             from .model_progress import model_progress_active,model_progress
             if model_progress_active():
@@ -172,6 +203,13 @@ class RoleAwareModelProvider(ModelProvider):
                 value = json.loads(completed.stdout.strip().splitlines()[-1])
             except (ValueError, IndexError) as exc:
                 raise ModelFailure("mlx_response", "MLX runtime returned invalid JSON") from exc
+            if manager and runtime_binding and runtime_binding.legacy and asset_id:
+                try:
+                    manager.commit_binding(asset_id, runtime_binding)
+                except (ValueError, OSError):
+                    # A successful generation remains usable; persistence is
+                    # retried on the next request if the legacy profile changed.
+                    pass
             value["latency_ms"] = (time.perf_counter() - started) * 1000
             value["model_runtime"] = "dedicated_mlx"
             return value
@@ -186,6 +224,8 @@ class RoleAwareModelProvider(ModelProvider):
                   file=__import__("sys").stderr, flush=True)
             raise ModelFailure("timeout", f"dedicated MLX runtime timed out; {progress_summary}") from exc
         finally:
+            if lease:
+                lease.__exit__(*__import__('sys').exc_info())
             live_stop.set()
             if live_thread:live_thread.join(timeout=2)
             live_path.unlink(missing_ok=True)
@@ -194,24 +234,49 @@ class RoleAwareModelProvider(ModelProvider):
             except OSError:
                 pass
 
-    def _start_vision_worker(self) -> subprocess.Popen[str]:
-        command = [str(self._mlx_python()), str(self.repo_root / "backend" / "olcr_api" / "mlx_worker.py"),
+    def _start_vision_worker(self, python: Path, worker_env: dict[str, str]) -> subprocess.Popen[str]:
+        command = [str(python), str(self.repo_root / "backend" / "olcr_api" / "mlx_worker.py"),
                    "--serve-vision"]
-        return subprocess.Popen(command, cwd=str(self.repo_root), env=self._mlx_worker_environment(), stdin=subprocess.PIPE,
+        return subprocess.Popen(command, cwd=str(self.repo_root), env=worker_env, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 text=True, bufsize=1)
 
     def _run_mlx_vision(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Reuse one dedicated MLX process so perception does not reload weights per frame."""
+        asset_id = str(payload.pop("runtime_asset_id", "") or "") or None
+        manager, runtime_binding = self._runtime_binding(asset_id)
+        python = (Path(runtime_binding.python_path) if runtime_binding else
+                  Path(os.environ.get("OLCR_MLX_PYTHON") or self.repo_root / ".venv-mlx" / "bin" / "python"))
+        if not python.is_file():
+            raise ModelFailure("configuration", f"MLX runtime unavailable: {python}")
+        worker_env = self._mlx_worker_environment()
+        if runtime_binding:
+            worker_env['OLCR_MLX_RUNTIME_PROFILE_ID'] = runtime_binding.profile_id
+            worker_env['OLCR_MLX_RUNTIME_ID'] = runtime_binding.runtime_id
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False)
             payload_path = Path(handle.name)
         try:
             with self._vision_worker_lock:
                 worker = self._vision_worker
+                runtime_id = (runtime_binding.runtime_id + ':' + str(python)) if runtime_binding else str(python)
+                if worker is not None and self._vision_runtime_id != runtime_id:
+                    self._stop_vision_worker_locked()
+                    worker = None
                 if worker is None or worker.poll() is not None:
-                    worker = self._start_vision_worker()
+                    if manager and runtime_binding:
+                        self._vision_lease = manager.worker_lease(runtime_binding)
+                        self._vision_lease.__enter__()
+                    try:
+                        worker = self._start_vision_worker(python, worker_env)
+                    except BaseException:
+                        lease, self._vision_lease = self._vision_lease, None
+                        self._vision_runtime_id = None
+                        if lease:
+                            lease.__exit__(*__import__('sys').exc_info())
+                        raise
                     self._vision_worker = worker
+                    self._vision_runtime_id = runtime_id
                 if worker.stdin is None or worker.stdout is None:
                     raise ModelFailure("mlx_runtime", "dedicated MLX vision worker pipes unavailable")
                 try:
@@ -251,7 +316,11 @@ class RoleAwareModelProvider(ModelProvider):
 
     def _stop_vision_worker_locked(self) -> None:
         worker, self._vision_worker = self._vision_worker, None
+        lease, self._vision_lease = self._vision_lease, None
+        self._vision_runtime_id = None
         if worker is None:
+            if lease:
+                lease.__exit__(None, None, None)
             return
         if worker.stdin:
             try:
@@ -268,6 +337,8 @@ class RoleAwareModelProvider(ModelProvider):
         for pipe in (worker.stdout, worker.stderr):
             if pipe:
                 pipe.close()
+        if lease:
+            lease.__exit__(None, None, None)
 
     def close(self) -> None:
         """Stop the optional visual worker during backend shutdown."""
@@ -297,7 +368,8 @@ class RoleAwareModelProvider(ModelProvider):
                  think: bool | None = None, format: Any | None = None,
                  max_tokens: int | None = None, _fallback_allowed: bool = True,
                  thinking_text: str | None = None, force_no_thinking: bool = False,
-                 _output_limit_retry: bool = False) -> Any:
+                 _output_limit_retry_count: int = 0,
+                 _recovery_enabled: bool = True) -> Any:
         check_cancelled()
         requested_think=think
         from .response_language import with_language_instruction
@@ -349,18 +421,49 @@ class RoleAwareModelProvider(ModelProvider):
         context_report = None
         local_controls = None
         response_reserve = None
+        local_effective_output_budget = None
+        local_output_ceiling = None
         if runtime in {'mlx', 'ollama'}:
             local_controls = {key: getattr(self.settings, key) for key in
                               ('yarn_enabled', 'yarn_target_tokens', 'local_context_tokens', 'context_auto_compress')}
+            window = self.settings.yarn_target_tokens if self.settings.yarn_enabled and runtime == 'mlx' else self.settings.local_context_tokens
+            default_reserve = 8192 if inference_is_unbounded() else (2048 if runtime == 'ollama' else 4096)
+            requested_reserve = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else default_reserve
             if self.settings.context_auto_compress:
+                local_output_ceiling = max(1, window // 2)
+                local_effective_output_budget = min(requested_reserve, local_output_ceiling)
                 from .context_extension import compress_messages
-                window = self.settings.yarn_target_tokens if self.settings.yarn_enabled and runtime == 'mlx' else self.settings.local_context_tokens
-                default_reserve = 8192 if inference_is_unbounded() else (2048 if runtime == 'ollama' else 4096)
-                requested_reserve = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else default_reserve
+                from .model_progress import model_progress
                 # Leave prompt space even at the smallest supported window.
                 # MLX later adjusts the response limit using its real tokenizer.
-                response_reserve = min(requested_reserve, window // 2)
-                messages, context_report = compress_messages(messages, window, response_reserve)
+                response_reserve = local_effective_output_budget
+                compression_started = False
+                def report_compression_started():
+                    nonlocal compression_started
+                    compression_started = True
+                    model_progress(state='context_compression', phase='started', method='extractive',
+                                   window_tokens=window)
+                try:
+                    messages, context_report = compress_messages(
+                        messages, window, response_reserve,
+                        on_compression_start=report_compression_started)
+                except Exception:
+                    if compression_started:
+                        model_progress(state='context_compression', phase='failed', method='extractive')
+                    raise
+                if compression_started:
+                    model_progress(state='context_compression',
+                                   phase='completed' if context_report['compressed'] else 'not_needed',
+                                   method='extractive',
+                                   estimated_tokens_before=context_report['estimated_tokens_before'],
+                                   estimated_tokens_after=context_report['estimated_tokens_after'],
+                                   window_tokens=window)
+            elif isinstance(max_tokens, int) and max_tokens > 0:
+                # Without automatic context management, the local runtime's
+                # configured output request is already the safe ceiling OLCR
+                # can prove; do not silently increase it on retry.
+                local_output_ceiling = max_tokens
+                local_effective_output_budget = max_tokens
         print(f"MODEL_ROLE_BINDING_REQUESTED={model} MODEL_ROLE_RESOLVED={role} "
               f"MODEL_DEPLOYMENT_EXPECTED={binding.deployment_model} MODEL_RUNTIME_EXPECTED={runtime}",
               file=__import__("sys").stderr, flush=True)
@@ -371,6 +474,7 @@ class RoleAwareModelProvider(ModelProvider):
             role=role, model=binding.deployment_model, runtime=runtime,
             request_body={"messages": messages, "stream": stream, "think": think,
                           "format": format, "max_tokens": max_tokens,
+                          "effective_max_tokens": local_effective_output_budget if local_effective_output_budget is not None else max_tokens,
                           "context": local_controls, "context_compression": context_report,
                           "response_reserve": response_reserve},
             record=not binding.model_id.startswith("api:"),
@@ -383,6 +487,17 @@ class RoleAwareModelProvider(ModelProvider):
             invocation_id=model_progress(state='model_skipped',role=role,model=original_selected_model,reason=state['reason'],retry_at=state.get('retry_at'))
         else:
             invocation_id=model_progress(state='request_started',role=role,model=binding.deployment_model,runtime=runtime)
+        effective_output_budget = (local_effective_output_budget
+            if local_effective_output_budget is not None else max_tokens)
+        if (effective_output_budget is not None and not
+                (resolution_failure and resolution_failure.category == 'preflight_unavailable')):
+            model_progress(state='worker_progress',
+                event='output_budget_resolved' if runtime in {'mlx', 'ollama'} else 'output_budget_requested',
+                model=binding.deployment_model, runtime=runtime, requested_max_tokens=max_tokens,
+                effective_max_tokens=effective_output_budget,
+                reason=('local context window caps the requested per-call output budget'
+                        if max_tokens is not None and effective_output_budget < max_tokens
+                        else 'per-call output budget prepared before provider invocation; remote provider cap is unconfirmed'))
         coding_plan = inference_is_unbounded() and isinstance(format, dict) and 'phases' in format.get('properties', {})
         coding_operations = inference_is_unbounded() and isinstance(format, dict) and bool(
             {'operations','edits'} & format.get('properties', {}).keys())
@@ -448,63 +563,123 @@ class RoleAwareModelProvider(ModelProvider):
             detail = str(errors[-1]) if errors[-1].category == 'model_concurrency_limit' else 'All configured fallback models are unavailable'
             raise ModelFailure(errors[-1].category, detail) from errors[-1]
 
-        def retry_structured_without_thinking(failure: ModelFailure) -> Any | None:
-            if (force_no_thinking or stream or format is None or think is not True
-                    or runtime not in {'mlx', 'ollama'}
+        def can_reduce_reasoning(failure: ModelFailure) -> tuple[bool, bool]:
+            if (force_no_thinking or stream or format is None
                     or failure.category not in {'reasoning_budget', 'output_limit'}):
-                return None
-            traffic_call.finish(status="error", response_body=traffic_response,
-                                error_code=failure.category)
-            model_progress(state='worker_progress', event='structured_no_thinking_retry',
-                           model=binding.deployment_model, failure=failure.category,
-                           reason='retrying structured output on the same local model with thinking disabled')
-            print(f"STRUCTURED_OUTPUT_NO_THINK_RETRY=YES MODEL={binding.deployment_model} "
-                  f"FAILURE={failure.category}", file=__import__('sys').stderr, flush=True)
-            try:
-                retried = self.generate(source_messages, model, False, False, format, max_tokens, False,
-                                        thinking_text=thinking_text, force_no_thinking=True)
-            except ModelFailure as retry_failure:
-                if retry_failure.category in {'reasoning_budget', 'output_limit'}:
-                    raise
-                return try_fallback(retry_failure)
-            if isinstance(retried, dict) and str(retried.get('text') or '').strip():
-                retried['structured_no_thinking_retry'] = {'after_failure': failure.category}
-                return retried
-            return try_fallback(ModelFailure('invalid_response',
-                'Same-model no-thinking retry returned no structured output'))
+                return False, False
+            local_retry = runtime in {'mlx', 'ollama'} and think is True
+            api_retry = False
+            if binding.model_id.startswith('api:') and self.brain_models is not None:
+                _, provider_name, selected_model = binding.model_id.split(':', 2)
+                metadata = self.brain_models.providers.model_metadata(provider_name, selected_model)
+                from .brain_providers import reasoning_profile
+                profile = reasoning_profile(provider_name, selected_model, (metadata or {}).get('base_url'))
+                api_retry = any(level in {'off', 'none', 'minimal', 'low'}
+                                for level in profile.get('effort_levels', []))
+            return local_retry or api_retry, api_retry
 
-        def retry_structured_with_larger_output_budget(failure: ModelFailure) -> Any | None:
-            if (_output_limit_retry or stream or format is None
-                    or failure.category != 'output_limit'
-                    or runtime in {'mlx', 'ollama'}
-                    or type(max_tokens) is not int or max_tokens <= 0
-                    or max_tokens >= MAX_STRUCTURED_OUTPUT_RETRY_TOKENS):
+        def same_model_attempt(*, budget: int | None, reduced_reasoning: bool) -> dict[str, Any]:
+            retry_think = False if reduced_reasoning else requested_think
+            with brain_scope(request_configuration):
+                retried = self.generate(
+                    source_messages, model, False, retry_think, format, budget, False,
+                    thinking_text=thinking_text,
+                    force_no_thinking=force_no_thinking or reduced_reasoning,
+                    _output_limit_retry_count=_output_limit_retry_count,
+                    _recovery_enabled=False,
+                )
+            if not isinstance(retried, dict) or not str(retried.get('text') or '').strip():
+                raise ModelFailure('invalid_response', 'Same-model retry returned no text')
+            return retried
+
+        def next_output_budget(current_budget: int | None) -> int | None:
+            if runtime in {'mlx', 'ollama'} and local_output_ceiling is None:
                 return None
-            retry_budget=min(MAX_STRUCTURED_OUTPUT_RETRY_TOKENS,max_tokens*2)
-            if retry_budget <= max_tokens:
+            ceiling = min(MAX_OUTPUT_RETRY_TOKENS, local_output_ceiling) if local_output_ceiling else MAX_OUTPUT_RETRY_TOKENS
+            if current_budget is not None and current_budget >= ceiling:
                 return None
-            model_progress(state='worker_progress',event='structured_output_budget_retry',
-                model=original_selected_model or binding.deployment_model,
-                previous_max_tokens=max_tokens,retry_max_tokens=retry_budget,
-                reason='retrying truncated structured output on the same selected model')
-            print(f"STRUCTURED_OUTPUT_BUDGET_RETRY=YES MODEL={original_selected_model or binding.deployment_model} "
-                  f"PREVIOUS_MAX_TOKENS={max_tokens} RETRY_MAX_TOKENS={retry_budget}",
-                  file=__import__('sys').stderr,flush=True)
-            try:
-                retried=self.generate(source_messages,model,False,requested_think,format,retry_budget,False,
-                    thinking_text=thinking_text,force_no_thinking=force_no_thinking,
-                    _output_limit_retry=True)
-            except ModelFailure as retry_failure:
-                # A second truncation means the selected endpoint's structured
-                # response budget is exhausted. Don't fan the same request out
-                # to unrelated providers; only fail over if the retry reveals
-                # a genuine connection/availability failure.
-                if retry_failure.category=='output_limit':
-                    raise
-                return try_fallback(retry_failure)
-            if isinstance(retried,dict) and str(retried.get('text') or '').strip():
-                return retried
-            raise ModelFailure('invalid_response','Same-model larger-budget retry returned no structured output')
+            retry_budget = min(ceiling, max(MIN_OUTPUT_RETRY_TOKENS, current_budget * 2)) if current_budget else ceiling
+            return retry_budget if current_budget is None or retry_budget > current_budget else None
+
+        def recover_failure(failure: ModelFailure) -> Any:
+            """Run bounded same-model recovery before considering provider fallback.
+
+            Recovery attempts disable nested recovery so each output-limit and
+            reasoning failure is handled once by this state machine.
+            """
+            if not _recovery_enabled:
+                if failure.category == 'output_limit':
+                    raise failure
+                return try_fallback(failure)
+
+            current_failure = failure
+            reduced_reasoning = force_no_thinking
+            can_retry_reasoning, api_reasoning_retry = can_reduce_reasoning(current_failure)
+            if can_retry_reasoning:
+                traffic_call.finish(status="error", response_body=traffic_response,
+                                    error_code=current_failure.category)
+                model_progress(state='worker_progress', event='structured_no_thinking_retry',
+                    model=binding.deployment_model, runtime=runtime, failure=current_failure.category,
+                    reason='retrying structured output on the same model with reduced reasoning effort')
+                print(f"STRUCTURED_OUTPUT_NO_THINK_RETRY=YES MODEL={binding.deployment_model} "
+                      f"FAILURE={current_failure.category}", file=__import__('sys').stderr, flush=True)
+                try:
+                    retried = same_model_attempt(budget=max_tokens, reduced_reasoning=True)
+                except ModelFailure as retry_failure:
+                    if (api_reasoning_retry and retry_failure.category in {'provider_rejected', 'configuration'}):
+                        # The endpoint declined the optional effort override;
+                        # keep the original error and continue its normal path.
+                        pass
+                    elif retry_failure.category == 'output_limit':
+                        current_failure = retry_failure
+                        reduced_reasoning = True
+                    else:
+                        return try_fallback(retry_failure)
+                else:
+                    retried['structured_no_thinking_retry'] = {'after_failure': current_failure.category}
+                    return retried
+
+            if current_failure.category == 'output_limit' and not stream:
+                current_budget = max_tokens if type(max_tokens) is int and max_tokens > 0 else None
+                if local_effective_output_budget is not None:
+                    current_budget = local_effective_output_budget
+                retries_used = max(0, int(_output_limit_retry_count or 0))
+                while retries_used < MAX_OUTPUT_BUDGET_RETRIES:
+                    retry_budget = next_output_budget(current_budget)
+                    if retry_budget is None:
+                        break
+                    attempt = retries_used + 1
+                    model_progress(state='worker_progress', event='output_budget_retry',
+                        model=original_selected_model or binding.deployment_model, runtime=runtime,
+                        previous_max_tokens=current_budget, retry_max_tokens=retry_budget,
+                        attempt=attempt, max_attempts=MAX_OUTPUT_BUDGET_RETRIES,
+                        reason='retrying truncated response on the same selected model with a larger per-request output budget')
+                    print(f"OUTPUT_BUDGET_RETRY=YES MODEL={original_selected_model or binding.deployment_model} "
+                          f"PREVIOUS_MAX_TOKENS={current_budget or 'provider_default'} RETRY_MAX_TOKENS={retry_budget} "
+                          f"ATTEMPT={attempt}/{MAX_OUTPUT_BUDGET_RETRIES}", file=__import__('sys').stderr, flush=True)
+                    try:
+                        retried = same_model_attempt(budget=retry_budget, reduced_reasoning=reduced_reasoning)
+                    except ModelFailure as retry_failure:
+                        if retry_failure.category == 'output_limit':
+                            current_failure = retry_failure
+                            current_budget = retry_budget
+                            retries_used += 1
+                            continue
+                        return try_fallback(retry_failure)
+                    retried['output_budget_retry'] = {
+                        'previous_max_tokens': current_budget,
+                        'effective_max_tokens': retry_budget,
+                        'attempt': attempt,
+                    }
+                    return retried
+            if current_failure.category == 'output_limit':
+                try:
+                    return try_fallback(current_failure)
+                except ModelFailure as fallback_failure:
+                    if fallback_failure is current_failure:
+                        raise
+                    raise current_failure from fallback_failure
+            return try_fallback(current_failure)
 
         try:
           if resolution_failure is not None:
@@ -524,11 +699,13 @@ class RoleAwareModelProvider(ModelProvider):
                 # below that request. Keep the same finite implementation cap.
                 role_budget = max(role_budget,min(16384,max_tokens))
             token_budget = min(role_budget, max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else role_budget
-            result = self._run_mlx("bonsai", {"messages": messages, "max_tokens": token_budget, "format": format, "context": local_controls, "think": think,
+            result = self._run_mlx("bonsai", {"runtime_asset_id": "ternary_bonsai_2_27b",
+                                              "messages": messages, "max_tokens": token_budget, "format": format, "context": local_controls, "think": think,
                                               "bounded_reasoning": inference_is_unbounded() and isinstance(format,dict)})
           elif binding.model_id == "mlx:ornith_1_5_9b_8bit":
             token_budget = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else (8192 if coding_plan else 2048)
-            result = self._run_mlx("ornith", {"messages": messages, "max_tokens": token_budget,
+            result = self._run_mlx("ornith", {"runtime_asset_id": "ornith_1_5_9b_8bit",
+                                               "messages": messages, "max_tokens": token_budget,
                                                "think": think, "format": format, "context": local_controls,
                                                "bounded_reasoning": inference_is_unbounded() and isinstance(format,dict)})
           elif binding.model_id.removeprefix('mlx:').startswith('ternary_bonsai_2_27b_') and runtime == 'mlx':
@@ -541,7 +718,8 @@ class RoleAwareModelProvider(ModelProvider):
             if coding_operations and isinstance(max_tokens, int) and max_tokens > 0:
                 role_budget = max(role_budget, min(16384, max_tokens))
             token_budget = min(role_budget, max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else role_budget
-            result = self._run_mlx('bonsai_vlm', {'model_path': binding.local_path,
+            result = self._run_mlx('bonsai_vlm', {'runtime_asset_id': self._runtime_asset(binding),
+                'model_path': binding.local_path,
                 'model_id': binding.model_id, 'messages': messages, 'max_tokens': token_budget,
                 'think': think, 'format': format, 'context': local_controls})
           elif runtime == "ollama":
@@ -557,12 +735,14 @@ class RoleAwareModelProvider(ModelProvider):
             result = self.ollama.generate(messages, binding.deployment_model, stream=stream, think=think, format=format, **ollama_options)
           elif runtime == 'mlx':
             token_budget = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else (8192 if coding_plan else 2048)
-            result = self._run_mlx('generic', {'model_path': binding.local_path,
+            result = self._run_mlx('generic', {'runtime_asset_id': self._runtime_asset(binding),
+                'model_path': binding.local_path,
                 'model_id': binding.model_id, 'messages': messages, 'max_tokens': token_budget,
                 'think': think, 'format': format, 'context': local_controls})
           elif self.brain_models is not None and binding.model_id.startswith("api:"):
             _, provider, selected_model = binding.model_id.split(":", 2)
             effort = self.brain_models.effort_for_role(role)
+            allow_unadvertised_effort = False
             from .brain_providers import reasoning_profile
             metadata=self.brain_models.providers.model_metadata(provider,selected_model)
             profile = reasoning_profile(provider, selected_model, (metadata or {}).get('base_url'))
@@ -575,6 +755,7 @@ class RoleAwareModelProvider(ModelProvider):
             result = self.brain_models.providers.generate(provider, selected_model, messages, format,
                                                           capability_enabled(self.settings, "external_access_enabled"), effort=effort,
                                                           role=role,
+                                                          allow_unadvertised_effort=allow_unadvertised_effort,
                                                           **({'max_tokens':max_tokens} if type(max_tokens) is int and max_tokens>0 else {}),
                                                           **({"quick":True} if self.brain_models.quick_for_model(binding.model_id) else {}))
             from .model_progress import current_model_invocation
@@ -584,15 +765,7 @@ class RoleAwareModelProvider(ModelProvider):
         except ModelFailure as failure:
             traffic_call.finish(status="error", response_body=traffic_response,
                                 error_code=failure.category)
-            retried = retry_structured_without_thinking(failure)
-            if retried is not None:
-                return retried
-            retried=retry_structured_with_larger_output_budget(failure)
-            if retried is not None:
-                return retried
-            if failure.category=='output_limit':
-                raise
-            return try_fallback(failure)
+            return recover_failure(failure)
         except (OSError, TimeoutError, ValueError) as failure:
             traffic_call.finish(status="error", response_body=traffic_response,
                                 error_code=type(failure).__name__)
@@ -614,6 +787,12 @@ class RoleAwareModelProvider(ModelProvider):
                                    f"but provider returned {actual_model}")
             if context_report is not None:
                 value["context_compression"] = context_report
+            if effective_output_budget is not None:
+                value['output_budget'] = {
+                    'requested_max_tokens': max_tokens,
+                    'effective_max_tokens': effective_output_budget,
+                    'context_limited': bool(max_tokens is not None and effective_output_budget < max_tokens),
+                }
             value["model"] = actual_model
             value["model_role"] = role
             value["model_revision"] = binding.deployment_revision
@@ -712,10 +891,9 @@ class RoleAwareModelProvider(ModelProvider):
                 if result.get('finish_reason') in {'length','max_tokens'}:
                     failure = ModelFailure('output_limit',
                         'Model exhausted its output budget before returning the required answer or JSON')
-                    retried = retry_structured_without_thinking(failure)
-                    if retried is not None:
-                        return retried
-                    return try_fallback(failure)
+                    traffic_call.finish(status="error", response_body=result,
+                                        error_code=failure.category)
+                    return recover_failure(failure)
                 return try_fallback(ModelFailure('invalid_response', 'Selected model returned no text'))
             if (format is not None and result.get('finish_reason') in {'length', 'max_tokens'}
                     and runtime in {'mlx', 'ollama'}):
@@ -724,10 +902,9 @@ class RoleAwareModelProvider(ModelProvider):
                 except (TypeError, ValueError):
                     failure = ModelFailure('output_limit',
                         'Model exhausted its output budget before completing structured JSON')
-                    retried = retry_structured_without_thinking(failure)
-                    if retried is not None:
-                        return retried
-                    return try_fallback(failure)
+                    traffic_call.finish(status="error", response_body=result,
+                                        error_code=failure.category)
+                    return recover_failure(failure)
             try:
                 annotated = annotate(result)
                 traffic_call.finish(status="success", response_body=result)
@@ -788,7 +965,8 @@ class RoleAwareModelProvider(ModelProvider):
                     handle.write(image_bytes)
                     image_path = Path(handle.name)
                 try:
-                    vision_request = {"model": binding.model_id, "image": str(image_path),
+                    vision_model_id = binding.model_id.removeprefix('mlx:')
+                    vision_request = {"runtime_asset_id": vision_model_id, "model": vision_model_id, "image": str(image_path),
                                       "prompt": prompt, "max_tokens": 512}
                     result = (self._run_mlx_vision(vision_request) if binding.role == "gui_grounding"
                               else self._run_mlx("vision", vision_request))
@@ -810,3 +988,100 @@ class RoleAwareModelProvider(ModelProvider):
             traffic_call.finish(status="cancelled" if isinstance(failure, GenerationCancelled) else "error",
                                 error_code=getattr(failure, "category", type(failure).__name__))
             raise
+
+
+def validate_runtime_candidate(settings: Settings, entry: dict[str, Any],
+                               model_path: Path, runtime_binding) -> bool:
+    """Boundedly load a downloaded artifact before switching its runtime binding."""
+    import base64
+    import struct
+
+    from .model_runtime_manager import get_runtime_manager
+    from .model_runtime_profiles import asset_identity_for_entry, runtime_profile_for_asset
+
+    manager = get_runtime_manager()
+    if manager is None or not runtime_binding.python_path:
+        return False
+    identity = asset_identity_for_entry(entry)
+    profile = runtime_profile_for_asset(identity.asset_id, identity.revision)
+    if not Path(model_path).is_dir():
+        return False
+    if profile.loader_id == 'plamo-translate-cli':
+        try:
+            from .plamo_translation import translate
+            with manager.worker_lease(runtime_binding):
+                return bool(translate('Hello', 'en', 'ja', Path(model_path), timeout=240,
+                                      python_path=Path(runtime_binding.python_path)).strip())
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            return False
+
+    worker_env = RoleAwareModelProvider._mlx_worker_environment()
+    worker_env.update(
+        OLCR_MODEL_ASSETS_DIR=str(Path(settings.db_path).expanduser().parent / 'models'),
+        OLCR_MLX_RUNTIME_PROFILE_ID=runtime_binding.profile_id,
+        OLCR_MLX_RUNTIME_ID=runtime_binding.runtime_id,
+        HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', TOKENIZERS_PARALLELISM='false',
+    )
+    if profile.loader_id in {'mlx-audio', 'mlx-whisper'}:
+        request_payload = {
+            'operation': 'transcribe_whisper' if profile.loader_id == 'mlx-whisper' else 'transcribe',
+            'language': 'ja',
+            'path': str(model_path),
+            'model': identity.asset_id,
+            'sample_rate': 16000,
+            'pcm': base64.b64encode(struct.pack('<' + 'f' * 8192, *([0.0] * 8192))).decode('ascii'),
+        }
+        if profile.loader_id == 'mlx-whisper':
+            request_payload['language'] = 'en'
+        worker = Path(__file__).with_name('audio_mlx_worker.py')
+        try:
+            with manager.worker_lease(runtime_binding):
+                completed = subprocess.run(
+                    [runtime_binding.python_path, str(worker)], input=json.dumps(request_payload) + '\n',
+                    cwd=str(Path(__file__).resolve().parents[2]), capture_output=True,
+                    text=True, timeout=300, check=False, env=worker_env)
+            if completed.returncode:
+                return False
+            events = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+            return any(event.get('type') == 'done' for event in events)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return False
+
+    worker = Path(__file__).with_name('mlx_worker.py')
+    payload: dict[str, Any] = {
+        'loader_id': profile.loader_id,
+        'asset_id': identity.asset_id,
+        'model_path': str(model_path),
+    }
+    if profile.loader_id == 'mlx-vlm' and not identity.asset_id.startswith('ternary_bonsai_2_27b_'):
+        try:
+            from .purpose_models import vision_probe_image
+            with tempfile.NamedTemporaryFile('wb', suffix='.png', delete=False) as image_file:
+                image_file.write(vision_probe_image())
+                image_path = Path(image_file.name)
+            payload['image'] = str(image_path)
+        except (ImportError, OSError):
+            return False
+    else:
+        image_path = None
+    try:
+        with tempfile.NamedTemporaryFile('w', suffix='.json', encoding='utf-8', delete=False) as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+            payload_file = Path(handle.name)
+        try:
+            with manager.worker_lease(runtime_binding):
+                completed = subprocess.run(
+                    [runtime_binding.python_path, str(worker), '--operation', 'validate',
+                     '--payload', str(payload_file)], cwd=str(Path(__file__).resolve().parents[2]),
+                    capture_output=True, text=True, timeout=300, check=False, env=worker_env)
+            if completed.returncode:
+                return False
+            value = json.loads(completed.stdout.strip().splitlines()[-1])
+            return value.get('valid') is True
+        finally:
+            payload_file.unlink(missing_ok=True)
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return False
+    finally:
+        if image_path is not None:
+            image_path.unlink(missing_ok=True)

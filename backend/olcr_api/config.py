@@ -12,6 +12,11 @@ DEFAULT_ROUTER_MODEL = "laya-choice"
 DEFAULT_LAYA_MODEL_REVISION = "052592a15d198d9ad47da779604259b10b47b7aa"
 DEFAULT_LAYA_ENGLISH_MODEL_REVISION = "1c5edc17a7acd8701df6fc341c0d179f1c62c982"
 MODEL_REQUEST_TIMEOUT_SECONDS = 750
+# Remote inference providers may spend several minutes generating a single
+# answer. Keep connection setup short while allowing their full processing
+# window and response delivery time.
+REMOTE_PROVIDER_CONNECT_TIMEOUT_SECONDS = 20
+REMOTE_PROVIDER_READ_TIMEOUT_SECONDS = 330
 CODING_SUBAGENTS_WARNING_VERSION = "2026-11-v1"
 MODEL_NAME_FIELDS = frozenset({"main_model", "vision_model", "router_model", "embedding_model", "semantic_judge_model",
                                "planner_model", "short_coding_model", "long_implementation_model",
@@ -57,7 +62,7 @@ class Settings:
     conversation_memory_min_relevance: float = 0.55
     yarn_enabled: bool = False
     yarn_target_tokens: int = 524288
-    context_auto_compress: bool = False
+    context_auto_compress: bool = True
     local_context_tokens: int = 32768
     context_budget: int = 8000
     rag_min_relevance: float = 0.55

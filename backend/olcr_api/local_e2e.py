@@ -44,7 +44,8 @@ def _package_script_runner(root: Path, package: dict) -> list[str]:
 
 
 def _package_dev_command(root: Path, expected_origin: str | None,
-                         requested_script: str | None = None) -> dict | None:
+                         requested_script: str | None = None, *,
+                         allow_installed_vite: bool = False) -> dict | None:
     package_path = root / _PROJECT_PACKAGE_PATH
     if not package_path.exists():
         return None
@@ -54,14 +55,16 @@ def _package_dev_command(root: Path, expected_origin: str | None,
         package = json.loads(package_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ValueError("LOCAL_E2E_PACKAGE_CONFIG_INVALID") from exc
-    if not isinstance(package, dict) or not isinstance(package.get("scripts"), dict):
+    if not isinstance(package, dict):
         return None
+    scripts = package.get("scripts")
+    scripts = scripts if isinstance(scripts, dict) else {}
 
     candidates: list[tuple[str, str]] = []
     for name in ("dev", "start", "serve"):
         if requested_script and name != requested_script:
             continue
-        script = package["scripts"].get(name)
+        script = scripts.get(name)
         if not isinstance(script, str) or len(script) > 2000:
             continue
         try:
@@ -93,9 +96,25 @@ def _package_dev_command(root: Path, expected_origin: str | None,
         elif executable in {"webpack", "webpack.cmd"} and len(tokens) > 1 and tokens[1] == "serve":
             candidates.append((name, "webpack"))
 
+    direct_vite = None
     if not candidates:
-        return None
-    if len(candidates) != 1:
+        if allow_installed_vite and not requested_script and not any(scripts.get(k) for k in ("dev", "start", "serve")) and any(
+            isinstance(package.get(key), dict) and "vite" in package[key] for key in ("dependencies", "devDependencies")
+        ):
+            try:
+                vite = (root / "node_modules/vite/bin/vite.js").resolve(strict=True)
+                vite.relative_to(root)
+            except (OSError, ValueError):
+                raise ValueError("LOCAL_E2E_VITE_DEPENDENCY_NOT_INSTALLED") from None
+            from .package_manager import _prepared_node_bin
+            node_bin = _prepared_node_bin()
+            node = shutil.which("node") or (str(node_bin / "node") if node_bin else None)
+            if not vite.is_file() or not node:
+                raise ValueError("LOCAL_E2E_NODE_OR_VITE_UNAVAILABLE")
+            direct_vite = [node, str(vite)]
+        else:
+            return None
+    if len(candidates) > 1:
         names = ", ".join(name for name, _ in candidates)
         raise ValueError(f"LOCAL_E2E_SCRIPT_AMBIGUOUS: {names}")
 
@@ -110,6 +129,10 @@ def _package_dev_command(root: Path, expected_origin: str | None,
         host, port = "127.0.0.1", _available_loopback_port()
         normalized_origin = f"http://127.0.0.1:{port}"
 
+    if direct_vite:
+        return {"workspace": str(root), "origin": normalized_origin, "host": host, "port": port,
+                "command": [*direct_vite, "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
+                "manifest": None, "source": "installed_vite", "script": None}
     script_name, framework = candidates[0]
     runner = _package_script_runner(root, package)
     if runner[0].endswith("npm") or Path(runner[0]).name == "npm":
@@ -250,7 +273,7 @@ def _workspace_in_roots(workspace: str | Path, allowed_roots: tuple[str, ...] | 
 def load_project_e2e_spec(workspace: str | Path, allowed_roots: tuple[str, ...] | list[str],
                           *, expected_origin: str | None = None,
                           requested_script: str | None = None,
-                          requested_command: str | None = None) -> dict:
+                          requested_command: str | None = None, coding_task: bool = False) -> dict:
     root = _workspace_in_roots(workspace, allowed_roots)
     if requested_command is not None:
         return _chat_command_spec(root, requested_command, expected_origin)
@@ -300,7 +323,8 @@ def load_project_e2e_spec(workspace: str | Path, allowed_roots: tuple[str, ...] 
         return {"workspace": str(root), "origin": origin, "host": host, "port": port,
                 "command": list(command), "manifest": str(manifest), "source": "manifest"}
 
-    discovered = _package_dev_command(root, expected_origin, requested_script)
+    discovered = _package_dev_command(root, expected_origin, requested_script,
+                                      allow_installed_vite=coding_task)
     if discovered:
         return discovered
     raise ValueError("LOCAL_E2E_MANIFEST_NOT_FOUND; no unambiguous supported package dev script")
@@ -356,10 +380,10 @@ class LocalE2EManager:
     def start(self, workspace: str | Path, allowed_roots: tuple[str, ...] | list[str],
               *, expected_origin: str | None = None,
               requested_script: str | None = None,
-              requested_command: str | None = None) -> dict:
+              requested_command: str | None = None, coding_task: bool = False) -> dict:
         spec = load_project_e2e_spec(workspace, allowed_roots, expected_origin=expected_origin,
                                     requested_script=requested_script,
-                                    requested_command=requested_command)
+                                    requested_command=requested_command, coding_task=coding_task)
         if _port_is_open(spec["port"]):
             raise ValueError("LOCAL_E2E_PORT_IN_USE; use an explicit attach request to an existing local server")
         try:

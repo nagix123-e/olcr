@@ -1,8 +1,10 @@
 import io
+import http.client
 import json
 import tempfile
 import time
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qs,urlencode
 from urllib.request import urlopen
@@ -10,7 +12,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 from olcr_api.db import Database
 from olcr_api.brain_models import BrainModels, brain_scope, INITIAL
-from olcr_api.brain_providers import endpoint, decode_chatgpt_id_token, reasoning_profile, rate_limit_snapshot
+from olcr_api.brain_providers import call_json, endpoint, decode_chatgpt_id_token, reasoning_profile, rate_limit_snapshot
 from olcr_api.config import Settings
 from olcr_api.model_provider import RoleAwareModelProvider
 from olcr_api.ollama import ModelFailure
@@ -230,6 +232,32 @@ class BrainProviderTests(unittest.TestCase):
                                     'Set-Cookie':'session=private'})
         self.assertEqual({'x-ratelimit-limit-tokens':'9000',
                           'x-ratelimit-remaining-tokens':'8123','retry-after':'2'},values)
+    def test_call_json_normalizes_truncated_http_body_without_exposing_partial_payload(self):
+        class TruncatedResponse(io.BytesIO):
+            headers = {}
+            def read(self, *args, **kwargs):
+                raise http.client.IncompleteRead(b'partial-sensitive-body', 32)
+
+        response=TruncatedResponse()
+        with patch('olcr_api.brain_providers.open_provider_response',return_value=response), \
+             patch('olcr_api.brain_providers.interrupt_response',return_value=nullcontext()):
+            with self.assertRaises(ModelFailure) as raised:
+                call_json('https://auth.example/token',{}, {})
+        self.assertEqual('provider_unavailable',raised.exception.category)
+        self.assertNotIn('partial-sensitive-body',str(raised.exception))
+    def test_call_json_normalizes_truncated_http_error_body_without_exposing_partial_payload(self):
+        class TruncatedBody:
+            def read(self, *args, **kwargs):
+                raise http.client.IncompleteRead(b'partial-sensitive-body', 32)
+            def close(self):
+                return None
+
+        response=HTTPError('https://auth.example/token',400,'Bad Request',{},TruncatedBody())
+        with patch('olcr_api.brain_providers.open_provider_response',side_effect=response):
+            with self.assertRaises(ModelFailure) as raised:
+                call_json('https://auth.example/token',{}, {})
+        self.assertEqual('provider_rejected',raised.exception.category)
+        self.assertNotIn('partial-sensitive-body',str(raised.exception))
     def test_registration_has_no_network_no_secret_in_database_and_auxiliary_models_rejected(self):
         with patch('olcr_api.brain_providers.call_json') as call:
             self.register('openai');call.assert_not_called()
@@ -510,6 +538,40 @@ class BrainProviderTests(unittest.TestCase):
         self.assertEqual({'credential':None},self.providers.pending_credential())
         with self.db.connect() as db:
             self.assertNotIn('synthetic-access',str(db.execute('SELECT metadata_json FROM brain_providers').fetchall()[0][0]))
+
+    def test_chatgpt_oauth_retains_issued_client_id_when_code_exchange_fails(self):
+        started=self.providers.start_oauth();query=parse_qs(urlsplit(started['authorization_url']).query)
+        issued_client_id='oaiapp_retry-client'
+        callback=query['redirect_uri'][0]+'?'+urlencode({'state':query['state'][0],'code':'synthetic-code',
+            'client_id':issued_client_id,'scope':query['scope'][0]})
+        client_ids_seen_during_exchange=[]
+
+        def fail_exchange(*args,**kwargs):
+            with self.db.connect() as db:
+                row=db.execute('SELECT metadata_json FROM brain_providers WHERE id=?',('openai_oauth',)).fetchone()
+            metadata=json.loads(row[0]) if row else {}
+            client_ids_seen_during_exchange.append(metadata.get('issued_client_id'))
+            raise ModelFailure('provider_rejected','synthetic expired authorization code')
+
+        with patch('olcr_api.brain_providers.call_json',side_effect=fail_exchange):
+            with urlopen(callback) as response:
+                self.assertIn(b'could not be completed',response.read())
+
+        self.assertEqual([issued_client_id],client_ids_seen_during_exchange)
+        failed=self.providers.poll_oauth(started['attempt_id'])
+        self.assertEqual('failed',failed['status'])
+        self.assertEqual('token_exchange',failed['failure_stage'])
+        self.assertEqual('provider_rejected',failed['failure_category'])
+        self.assertNotIn('synthetic expired authorization code',json.dumps(failed))
+        retried=self.providers.start_oauth();retry_query=parse_qs(urlsplit(retried['authorization_url']).query)
+        self.assertEqual([issued_client_id],retry_query['client_id'])
+        self.assertNotIn('agent_name_hint',retry_query)
+
+    def test_chatgpt_oauth_setup_failure_does_not_leave_a_pending_attempt(self):
+        with patch.object(self.providers,'_issued_oauth_client_id',side_effect=RuntimeError('synthetic database failure')):
+            with self.assertRaisesRegex(RuntimeError,'synthetic database failure'):
+                self.providers.start_oauth()
+        self.assertEqual({},self.providers.oauth_attempts)
 
     def test_chatgpt_id_token_verifies_signature_audience_issuer_and_nonce(self):
         import jwt

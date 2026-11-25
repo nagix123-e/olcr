@@ -9,6 +9,7 @@ import time
 import weakref
 from uuid import uuid4
 from .generation_control import check_cancelled
+from .db import finalize_pending_conversation_title
 
 _LOCK=threading.RLock()
 _LOCKS=weakref.WeakValueDictionary()
@@ -162,6 +163,7 @@ class AssistantWorkflows:
             for offset,(role,content,blocks) in enumerate([('user',text,None),('assistant',result['response'],result['blocks'])]):
                 con.execute('INSERT INTO messages(id,conversation_id,role,content,ordinal,created_at,blocks_json) VALUES(?,?,?,?,?,?,?)',
                     (uuid4().hex if role=='assistant' else ident,cid,role,content,ordinal+offset,time.time(),json.dumps(blocks,ensure_ascii=False) if blocks else None))
+                if role=='user':finalize_pending_conversation_title(con,cid,content)
                 if role=='assistant':assistant_id=con.execute('SELECT id FROM messages WHERE conversation_id=? AND ordinal=?',(cid,ordinal+offset)).fetchone()[0]
             con.execute('UPDATE conversations SET updated_at=? WHERE id=?',(time.time(),cid))
             con.execute('INSERT OR REPLACE INTO assistant_workflow_turns VALUES(?,?,?,?,?,?)',(cid,ident,digest,json.dumps(result,ensure_ascii=False),json.dumps(state,ensure_ascii=False) if state else None,assistant_id))

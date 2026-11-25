@@ -4,7 +4,7 @@ from .verification_diagnostics import (is_project_test_command, is_project_test_
     node_test_run, project_test_failure_diagnosis, project_test_runtime_source_diagnosis,
     project_test_review_cases,
     reviewed_project_test_paths)
-from .request_intent import resolve_request_intent
+from .request_intent import RequestIntent, resolve_request_intent
 from .permissions import RequestApprovals, requires_request_approval, full_access, capability_enabled, request_approved
 
 import asyncio
@@ -32,6 +32,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import sys
 import traceback
 import plistlib
 from urllib import request as urllib_request
@@ -53,7 +54,7 @@ from .coding_verification import (normalize_static_verification, inherit_owned_v
     layout_browser_criteria, multi_scenario_browser_criteria, VerificationScenarioCapabilityGap,
     verify_required_scenario_capabilities, retained_semantic_review_ids, scope_verification_candidate, verification_budget_stop_reason, verification_source_excerpts,
     run_acceptance, VerificationExecutorError, execution_command as acceptance_command)
-from .git_workspace import coding_git_intent, GitError
+from .git_workspace import coding_git_intent, GitError, workspace_source_files
 
 stackoverflow_debug = StackOverflowDebug()
 from . import regional_statistics
@@ -106,7 +107,14 @@ from .external_tools import (ExternalToolError, REGISTRY, execute as execute_ext
     normalize_research_arguments, normalize_wiki_arguments, status as external_tool_status,
     credential_setup as external_tool_credential_setup, configure_credentials as configure_external_credentials,
     restore_credentials as restore_external_credentials,
+    translation_request_with_attachment,
     NEW_TOOL_IDS, RUNTIME_REGISTRY, CANONICAL_ALIASES)
+from .text_processing import (LONG_TEXT_CONFIRMATION_CHARS,
+                              MAX_TEXT_PHASE_OUTPUT_TOKENS,
+                              MAX_TEXT_PROCESSING_CHARS,
+                              process_text_phases, split_text_into_phases)
+from .translation_limits import (MAX_TRANSLATION_INLINE_CHARS,
+                                 MAX_TRANSLATION_PHASE_CHARS)
 from .api_capability_cards import API_CAPABILITY_CARDS
 from .analysis_coverage import evidence_needs, required_sources as analysis_required_sources, missing_coverage
 from .evidence_quality import filter_provider_evidence, has_observations, recovery_query
@@ -128,6 +136,7 @@ VERIFICATION_MAX_SAME_SOURCE_MANUAL_RETRIES = 1
 VERIFICATION_AUTHORING_BATCH_SIZE = 2
 VERIFICATION_PROJECT_TEST_CASE_LIMIT = 3
 from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TASK, MAX_BLOCKER_REOPEN_EPOCHS,
+                           MAX_HOST_EXECUTION_PHASES,
                            MAX_HUMAN_RECOVERY_REPLAN_EPOCHS, TASK_GLOBAL_REPLAN_LIMIT,
                             TASK_GLOBAL_PLAN_REPAIR_LIMIT, TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT,
                             PHASE_EXECUTION_MODES, coding_candidate,
@@ -138,8 +147,10 @@ from .coding_tasks import (MAX_RETRIES_PER_PHASE, MAX_SUBSTANTIAL_REPLANS_PER_TA
     evaluate_phase, classify_waiting_input, classify_execution_mode,
     compact_normal_plan, execution_mode_diagnostics, resumable_continuation_eligible,
     workspace_mutation_count, zero_mutation_retry_instruction, patch_preimage_retry_instruction, task_profile,
-    required_mcp_contract, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, detect_release_intent, canonical_dependency_requirements, dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements, animejs_project_version, animejs_version_compatibility,
-    normalize_replan_graph, normalize_replanned_phase_ids, graph_validation_diagnostics, reconcile_graph_references,
+    required_mcp_contract, coding_mcp_ids, normalize_task_graph, derive_task_graph, canonical_coding_requirements, normalize_coding_requirements, detect_release_intent, canonical_dependency_requirements, dependency_requirement_specs, dependency_install_operations, associate_dependency_requirements, animejs_project_version, animejs_version_compatibility,
+    normalize_replan_graph, normalize_replanned_phase_ids, normalize_automatic_replan_phases,
+    deterministic_phase_slicing, bound_oversized_plan_phases,
+    graph_validation_diagnostics, reconcile_graph_references,
     ensure_explicit_phase_execution_modes, phase_executor_capability,
     phase_has_observable_deliverable, coding_classification_diagnostics, classify_mutation_mode,
     explicitly_requests_plan_only,
@@ -156,6 +167,7 @@ from .node_mcp_runtime import (launch_command as node_mcp_launch_command,
 from .interactive_planning import parse_pending_questions, resolve_short_reply
 from .planning_policy import planning_policy, planning_instruction, lean_plan_prompt, validate_definition_steps
 from .coding_progress import stop_progress
+from . import constrained_continuation as continuation_consent
 from .implementation_plan import (PlanPathValidationError, PlanManifestCoverageError, PlanStackConformanceError, path_validation_code,
                                    deterministic_manifest_completion, manifest_coverage, manifest_coverage_message,
                                    reconstruct_legacy_file_manifest,
@@ -263,7 +275,7 @@ class ComputerUseEventInput(BaseModel):
 
 
 class ChatInput(BaseModel):
-    message: str = Field(min_length=1, max_length=100_000)
+    message: str = Field(min_length=1, max_length=MAX_TEXT_PROCESSING_CHARS)
     client_time_zone: str | None = Field(default=None,max_length=128)
     agent_builder: bool = False
     conversation_id: Optional[str] = None
@@ -432,6 +444,8 @@ class CodingTaskUpdate(BaseModel):
     pause_requested: Optional[bool] = None
     archived: Optional[bool] = None
     resume: bool = False
+    continuation_id: str | None = None
+    continuation_choice: Literal["accept", "decline"] | None = None
 
 class CodingSubagentDecisionInput(BaseModel):
     action: Literal["APPROVE_DELEGATION", "DECLINE_DELEGATION"]
@@ -601,11 +615,15 @@ def _load_persisted_runtime_settings():
 persisted, non_runtime_state_count=_load_persisted_runtime_settings()
 print(f"SETTINGS_LOAD_COUNT={len(persisted)} SETTINGS_NON_RUNTIME_STATE_IGNORED={non_runtime_state_count} LEGACY_PROJECT_CONTEXT_ROWS={context_migration['legacy_rows']} PROJECT_CONTEXT_MIGRATED={context_migration['migrated']} PROJECT_CONTEXT_MALFORMED={context_migration['malformed']} PROJECT_CONTEXT_STORE=conversation_project_contexts", file=__import__('sys').stderr, flush=True)
 if persisted: settings=settings.with_overrides(persisted)
+from .model_runtime_manager import RuntimeManager, set_runtime_manager
+model_runtime_manager = RuntimeManager(db, support_root=Path(settings.db_path).parent)
+set_runtime_manager(model_runtime_manager)
 from .purpose_models import PurposeModels, PurposeEmbeddingProvider, PurposeDecisionProvider
 from .model_profiles import (HardwareProfile, ModelProfileCatalog, detect_hardware,
                              normalize_selection, tier_for_memory)
 from .model_registry import set_effective_role_map
 purpose_models = PurposeModels(db, settings)
+model_runtime_manager.cleanup_legacy_if_unused(purpose_models.downloads)
 saved_profile_roles = db.load_settings().get('effective_model_role_map')
 set_effective_role_map(saved_profile_roles if isinstance(saved_profile_roles, dict) else None)
 model_profile_catalog = ModelProfileCatalog()
@@ -721,7 +739,7 @@ def get_service_connectors():
 app.include_router(connector_router(get_service_connectors))
 from .attachment_previews import image_preview, register_preview_routes
 register_preview_routes(app, lambda: db)
-from .live_model_logs import record_model_log, register_model_log_routes
+from .live_model_logs import clear_model_logs, record_model_log, register_model_log_routes
 from .model_traffic_logs import register_model_traffic_routes, traffic_scope
 from .model_progress import observe_model_progress
 register_model_log_routes(app,lambda:db)
@@ -1173,21 +1191,77 @@ async def gui_session_guard(request: Request, call_next):
     if _gui_session_token and request.method != "OPTIONS" and request.url.path != "/api/health" and not public_player:
         if request.headers.get("X-OLCR-Session") != _gui_session_token and not mobile_bridge_access.permits(request):
             return __import__("fastapi").responses.JSONResponse({"detail":"missing or invalid GUI session credential"}, status_code=401)
+    chat_text_request = (request.method == 'POST'
+                         and request.url.path in {'/api/chat', '/api/chat/stream'}
+                         and 'application/json' in request.headers.get('content-type', '').lower())
+    request_body = await request.body() if chat_text_request else None
+    request_data = None
+    text_size = 0
+    if request_body is not None:
+        try:
+            candidate = json.loads(request_body)
+            if isinstance(candidate, dict):
+                request_data = candidate
+        except (ValueError, TypeError):
+            pass
+    if request_data is not None:
+        message_text = request_data.get('message')
+        attachment = request_data.get('attachment')
+        attachment_text = attachment.get('content') if isinstance(attachment, dict) else None
+        text_size = (len(message_text) if isinstance(message_text, str) else 0) + (
+            len(attachment_text) if isinstance(attachment_text, str) else 0)
+        if text_size > MAX_TEXT_PROCESSING_CHARS:
+            message = ('入力が共通処理の上限 50,000,000 文字を超えています。'
+                       if request.headers.get('X-OLCR-Language', 'ja') == 'ja'
+                       else 'The input exceeds the shared processing limit of 50,000,000 characters.')
+            return __import__('fastapi').responses.JSONResponse({'detail': message}, status_code=413)
     approved_request = False
     if settings.permission_level == 'confirm' and requires_request_approval(request.method, request.url.path):
-        fingerprint = request_approvals.fingerprint(request.method, str(request.url), await request.body())
+        body = request_body if request_body is not None else await request.body()
+        fingerprint = request_approvals.fingerprint(request.method, str(request.url), body)
         if not request_approvals.consume(request.headers.get('X-OLCR-Approval', ''), fingerprint):
             token = request_approvals.issue(fingerprint)
+            ja = request.headers.get('X-OLCR-Language', 'ja') == 'ja'
+            if ja:
+                summary = ('OLCRの操作を許可しますか？外部アクセスやファイル変更を含む場合があります。')
+                if text_size > LONG_TEXT_CONFIRMATION_CHARS:
+                    summary = (f'この入力は約{text_size:,}文字です。処理に非常に時間がかかる可能性があります。'
+                               f'それでも実行しますか？\n\n{summary}')
+            else:
+                summary = 'Allow this OLCR request? It may access the internet or modify files.'
+                if text_size > LONG_TEXT_CONFIRMATION_CHARS:
+                    summary = (f'This input contains about {text_size:,} characters and may take a very long time to process. '
+                               f'Do you want to continue?\n\n{summary}')
             return __import__('fastapi').responses.JSONResponse({'detail': {
                 'code': 'PERMISSION_CONFIRMATION_REQUIRED', 'approval_id': token,
-                'summary': 'OLCRの操作を許可しますか？外部アクセスやファイル変更を含む場合があります。',
+                'summary': summary,
             }}, status_code=409)
         approved_request = True
+    if (text_size > LONG_TEXT_CONFIRMATION_CHARS
+            and not (settings.permission_level == 'confirm'
+                     and requires_request_approval(request.method, request.url.path))):
+        body = request_body if request_body is not None else await request.body()
+        fingerprint = request_approvals.fingerprint(request.method, str(request.url), body)
+        if not request_approvals.consume(
+                request.headers.get('X-OLCR-Long-Text-Approval', ''), fingerprint):
+            token = request_approvals.issue(fingerprint)
+            ja = request.headers.get('X-OLCR-Language', 'ja') == 'ja'
+            summary = (
+                f'この入力は約{text_size:,}文字です。処理に非常に時間がかかる可能性があります。それでも実行しますか？'
+                if ja else
+                f'This input contains about {text_size:,} characters and may take a very long time to process. Do you want to continue?'
+            )
+            return __import__('fastapi').responses.JSONResponse({'detail': {
+                'code': 'LONG_TEXT_PROCESSING_CONFIRMATION_REQUIRED',
+                'approval_id': token,
+                'summary': summary,
+            }}, status_code=409)
     conversation_id = request.query_params.get("conversation_id")
     project_id = request.query_params.get("project_id")
     if request.method in {"POST", "PUT", "PATCH"} and "application/json" in request.headers.get("content-type", "").lower():
         try:
-            request_data = await request.json()
+            if request_data is None:
+                request_data = await request.json()
             if isinstance(request_data, dict):
                 requested_conversation_id = request_data.get("conversation_id")
                 requested_project_id = request_data.get("project_id")
@@ -1236,7 +1310,7 @@ async def gui_session_guard(request: Request, call_next):
     return response
 
 # CORS must wrap permission challenges as well as successfully dispatched requests.
-app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "tauri://localhost", "http://tauri.localhost"], allow_methods=["GET","POST","PUT","PATCH","DELETE"], allow_headers=["Content-Type","X-OLCR-Session","X-OLCR-Language","X-OLCR-Approval","X-OLCR-Generation"])
+app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "tauri://localhost", "http://tauri.localhost"], allow_methods=["GET","POST","PUT","PATCH","DELETE"], allow_headers=["Content-Type","X-OLCR-Session","X-OLCR-Language","X-OLCR-Approval","X-OLCR-Long-Text-Approval","X-OLCR-Generation","X-OLCR-Run-Source"])
 
 MEMORY_OFF_CONSTRAINT = (
     "[MEMORY_DISABLED]\n"
@@ -2035,6 +2109,102 @@ def _render_pending_questions(questions: list[dict]) -> str:
         for question in questions)
 
 
+def _coding_requirement_conflict_questions(conflict: dict, index: int, total: int) -> list[str]:
+    """Explain one real requirement collision and ask for a typed priority choice."""
+    ja = response_language() == "ja"
+    key = str(conflict.get("semantic_key") or "requirement")
+    ja_labels = {
+        "backend": "バックエンド",
+        "database": "データベース",
+        "frontend": "フロントエンド",
+        "dependencies": "依存パッケージ",
+        "full_stack": "フルスタック構成",
+        "new_application": "新規アプリケーション",
+    }
+    label = ja_labels.get(key, key.replace("_", " "))
+
+    def source(side: str) -> str:
+        item = conflict.get(side) if isinstance(conflict.get(side), dict) else {}
+        excerpt = " ".join(str(item.get("source_text") or "").split())
+        section = " > ".join(str(part) for part in (item.get("section_path") or []) if str(part).strip())
+        line = item.get("line_start")
+        location = section or ("line " + str(line) if line else "source")
+        if line and section:
+            location += f" / line {line}"
+        return f'“{excerpt or label}” ({location})'
+
+    required = source("required_source")
+    forbidden = source("forbidden_source")
+    if ja:
+        return [
+            f"矛盾 {index}/{total} — {label}に関する条件が両立しません。",
+            f"必須条件: {required}",
+            f"除外条件: {forbidden}",
+            f"A. 必須条件を優先し、{label}を含める。除外条件よりこの要件を優先します。",
+            f"B. 除外条件を優先し、{label}を含めない。可能な範囲で代替し、主要要件を満たせない場合は実装前に再確認します。",
+            "推奨: まずBを選び、除外条件を保った代替を探す方法が変更範囲を小さくできます。主要な目的を損なう場合はAを選んでください。",
+            "計画生成・実装にはまだ進んでいません。A、B、または「おすすめ」と返信してください。",
+        ]
+    return [
+        f"Conflict {index}/{total} — these requirements for {label} cannot both be satisfied.",
+        f"Required: {required}",
+        f"Excluded: {forbidden}",
+        f"A. Prioritize the required condition and include {label}; this overrides the exclusion.",
+        f"B. Prioritize the exclusion and omit {label}; seek an alternative, then ask again before implementation if the main goal cannot be met.",
+        "Recommendation: choose B first to preserve the narrower scope and look for an alternative. Choose A if that would defeat the main goal.",
+        "Planning and implementation have not started. Reply A, B, or “recommendation”.",
+    ]
+
+
+def _coding_requirement_conflict_choice(message: str) -> str | None:
+    value = re.sub(r"[。.!！?？\s]+$", "", str(message or "").strip()).casefold()
+    compact = re.sub(r"\s+", "", value)
+    if compact in {"おすすめ", "おすすめ案", "おすすめで", "おすすめで進めて", "おすすめでお願いします",
+                   "おすすめでいいです", "おすすめの方", "おすすめの方で", "おすすめの方でお願いします",
+                   "推奨", "推奨案", "推奨で", "推奨でお願いします", "推奨案で進めて", "推奨どおり", "推奨通り",
+                   "recommend", "recommendation", "therecommendation", "recommended", "recommendedoption",
+                   "usetherecommendation"}:
+        return "forbidden"
+    if compact in {"a", "a案", "aを選択", "aを選んで", "aを優先", "aを取る", "aを取ります", "aにします", "aで進めて",
+                   "aでお願いします", "aでいいです", "aでよいです", "必須", "必須条件", "必須を優先",
+                   "必須条件を優先", "必須条件を取る", "必須を取る", "required", "prioritizerequired"}:
+        return "required"
+    if compact in {"b", "b案", "bを選択", "bを選んで", "bを優先", "bを取る", "bを取ります", "bにします", "bで進めて",
+                   "bでお願いします", "bでいいです", "bでよいです", "除外", "除外条件", "禁止", "除外を優先",
+                   "除外条件を優先", "forbidden", "prioritizeexclusion", "prioritizetheexclusion"}:
+        return "forbidden"
+    return None
+
+
+def _coding_requirement_conflict_pending(requirements: dict[str, Any]) -> dict[str, Any] | None:
+    """Build an actionable clarification for the next unresolved requirement pair."""
+    diagnostics = requirements.get("normalization_diagnostics") or {}
+    conflicts = diagnostics.get("conflict_details") or []
+    if not conflicts:
+        keys = diagnostics.get("conflicting_semantic_keys") or []
+        if not keys:
+            return None
+        conflicts = [{
+            "semantic_key": keys[0],
+            "required_source": diagnostics.get("required_source") or {},
+            "forbidden_source": diagnostics.get("forbidden_source") or {},
+        }]
+    resolved = diagnostics.get("resolved_conflict_details") or []
+    all_conflicts = diagnostics.get("all_conflict_details") or []
+    total = max(len(all_conflicts), len(conflicts) + len(resolved), 1)
+    index = min(len(resolved) + 1, total)
+    conflict = conflicts[0]
+    return {
+        "type": "REQUIREMENTS_CLARIFICATION",
+        "reason": "CONFLICTING_REQUIREMENTS",
+        "questions": _coding_requirement_conflict_questions(conflict, index, total),
+        "conflict_details": conflicts,
+        "current_conflict_key": str(conflict.get("semantic_key") or ""),
+        "conflict_index": index,
+        "conflict_total": total,
+    }
+
+
 def _resolve_interactive_planning_reply(conversation_id: str, message: str) -> tuple[dict | None, str | None]:
     session = db.active_interactive_planning(conversation_id)
     resolution = resolve_short_reply(message, list(session.get("pending_questions") or [])) if session else resolve_short_reply(message, [])
@@ -2150,6 +2320,113 @@ def _supersede_effective_replan_authorization(task: dict[str, Any]) -> bool:
 _coding_resume_lock = threading.RLock()
 
 
+_CONTINUATION_DECLINED = "CONSTRAINED_CONTINUATION_DECLINED"
+_UNAVAILABLE_PLAYWRIGHT = "Playwright MCP is disabled by the Coding Task policy; browser verification was not run"
+
+
+def _coding_omission_label(item: str, *, ja: bool) -> str:
+    if not ja:
+        return item
+    labels = {
+        "required tests were not executed": "必須テストの実行",
+        "required build verification": "必須のビルド確認",
+        "required typecheck verification": "必須の型チェック",
+        "required browser verification": "必須のブラウザー検証",
+    }
+    if item.startswith("required MCP used: "):
+        return f"必須のMCP利用：{item.removeprefix('required MCP used: ')}"
+    return labels.get(item, item)
+
+
+def _coding_constraint_prompt(task_id: str, *, item: str, reason: str, mcp: str | None = None,
+                              phase: dict | None = None, skip_phase: bool = False,
+                              gaps: list[str] | None = None) -> str:
+    task = db.coding_task(task_id) or {}
+    ja = task.get("response_language", "ja") == "ja"
+    if ja and reason == _UNAVAILABLE_PLAYWRIGHT:
+        reason = "コーディングタスクの設定でPlaywright MCPが無効のため、ブラウザー検証を実行できません。"
+    remaining = ("完了済みの作業を保持し、未実行の項目を結果に明記して残りの工程を進めます。"
+                 if ja else "Keep completed work, continue the remaining phases, and list the omitted item in the result.")
+    items = list(dict.fromkeys(([item] if item else []) + [_coding_omission_label(gap, ja=ja) for gap in gaps or []]))
+    proposal = {"type": continuation_consent.PENDING, "state": "PENDING",
+                "id": str(uuid.uuid4()), "plan_revision": task.get("plan_revision", 0),
+                "reason": reason, "unmet_criteria": items, "mcp": mcp,
+                "phase_id": phase.get("id") if phase else None, "skip_phase": skip_phase,
+                "verification_gaps": list(gaps or [])}
+    proposal["message"] = continuation_consent.prompt(items, reason, remaining, ja=ja)
+    db.update_coding_task(task_id, status="WAITING_FOR_USER", activity="NONE", queue_order=None,
+                          pending_user_confirmation=1, pending_authorization=proposal,
+                          recovery_action="NONE", recovery_reason=continuation_consent.PENDING)
+    _add_task_message_once(task["conversation_id"], task_id, proposal["message"])
+    return proposal["message"]
+
+
+def _coding_constraint_choice(task_id: str, proposal_id: str, decision: str) -> dict:
+    with _coding_resume_lock:
+        task = db.coding_task(task_id)
+        pending = (task or {}).get("pending_authorization") or {}
+        if (not task or task.get("archived") or task["status"] != "WAITING_FOR_USER"
+                or pending.get("type") != continuation_consent.PENDING or pending.get("id") != proposal_id
+                or pending.get("plan_revision") != task["plan_revision"]):
+            raise HTTPException(409, "CONTINUATION_PROPOSAL_CHANGED")
+        ja = task.get("response_language", "ja") == "ja"
+        plan = task.get("plan")
+        requirements = None
+        current_phase_id = task.get("current_phase_id")
+        recovery_action = "NONE"
+        if decision == "decline":
+            message = "省略せず、ここで停止しました。" if ja else "Stopped here without omitting any requirements."
+        else:
+            plan = copy.deepcopy(plan)
+            mcp = pending.get("mcp")
+            removed = pending.get("phase_id") if pending.get("skip_phase") else None
+            if plan and (removed or mcp):
+                if removed and not any(phase["id"] == removed for phase in plan["phases"]):
+                    raise HTTPException(409, "CONTINUATION_PROPOSAL_CHANGED")
+                plan["phases"] = [phase for phase in plan["phases"] if phase["id"] != removed]
+                removed_tasks = {row["task_id"] for row in plan.get("tasks") or [] if row.get("phase_id") == removed}
+                if plan.get("tasks") is not None:
+                    plan["tasks"] = [row for row in plan["tasks"] if row["task_id"] not in removed_tasks]
+                for phase in plan["phases"]:
+                    phase["dependencies"] = [dep for dep in phase.get("dependencies") or [] if dep != removed]
+                for row in plan.get("tasks") or []:
+                    row["depends_on"] = [dep for dep in row.get("depends_on") or [] if dep not in removed_tasks]
+                for row in [*plan["phases"], *(plan.get("tasks") or [])]:
+                    for field in ("required_mcp", "selected_mcp"):
+                        if mcp and field in row:
+                            row[field] = [name for name in coding_mcp_ids(row[field]) if name != mcp]
+            requirements = dict(task.get("requirements") or {})
+            receipt = {key: pending[key] for key in ("id", "reason", "unmet_criteria", "mcp", "phase_id", "skip_phase", "verification_gaps")}
+            requirements["accepted_omissions"] = [*(requirements.get("accepted_omissions") or []), receipt]
+            if pending.get("verification_gaps") and not removed:
+                recovery_action = "FINAL_REPORT"
+            if removed:
+                current_phase_id = None
+            message = ("同意した項目を未実行として記録し、残りの作業を再開します。" if ja
+                       else "Resuming the remaining work. The agreed omissions will be recorded as not run.")
+        if not db.resolve_coding_continuation(task_id, proposal_id, plan=plan, requirements=requirements,
+                current_phase_id=current_phase_id, recovery_action=recovery_action, decline_reason=_CONTINUATION_DECLINED):
+            raise HTTPException(409, "CONTINUATION_PROPOSAL_CHANGED")
+        db.record_coding_event(task_id, "CONSTRAINED_CONTINUATION_DECISION", {"proposal_id": proposal_id, "decision": decision})
+        db.add_message(task["conversation_id"], "assistant", message, time.time(), str(uuid.uuid4()), task_id)
+        if decision == "accept":
+            _coding_scheduler_wake.set()
+        return {"conversation_id": task["conversation_id"], "coding_task_id": task_id, "response": message, "sources": []}
+
+
+def _omit_unavailable_verifier(task_id: str, phase: dict, plan: dict, reason: str) -> str | None:
+    """Offer a read-only omission only when it cannot discard file work."""
+    manifest = (plan.get("implementation_plan_artifact") or {}).get("file_manifest") or plan.get("file_manifest") or []
+    if (phase.get("execution_mode") != "VERIFICATION_ONLY"
+            or any(entry.get("owner_phase") == phase["id"] for entry in manifest if isinstance(entry, dict))):
+        return None
+    ja = (db.coding_task(task_id) or {}).get("response_language", "ja") == "ja"
+    criteria = list(dict.fromkeys([phase["goal"], *(phase.get("done") or []), *(phase.get("verify") or [])]))
+    label = "検証" if ja else "Verification"
+    return _coding_constraint_prompt(task_id, item=f"{label}: {' / '.join(criteria)}",
+                                     phase=phase, skip_phase=True, reason=reason)
+
+
 def _resume_coding_task_control(task: dict, *, source: str) -> dict:
     # UI clicks and chat commands can arrive together. Serialize the small
     # control transition and reload its authoritative state before reserving
@@ -2167,12 +2444,104 @@ def _resume_coding_task_control(task: dict, *, source: str) -> dict:
         return _resume_coding_task_control_locked(current, source=source)
 
 
+def _recheck_invalid_requirements_task(task: dict, *, source: str) -> dict:
+    """Re-evaluate a pre-planning task stopped by an older requirement parser."""
+    previous = task.get("requirements") or {}
+    answers = list(previous.get("definition_answers") or [])
+    raw = str(task.get("original_goal") or "")
+    if answers:
+        raw += "\n" + "\n".join(str(answer) for answer in answers)
+    request = {
+        "current_user_text": raw,
+        "attachment_evidence": previous.get("attachment_evidence") or {},
+    }
+    requirements = normalize_coding_requirements(
+        request, constraint_resolutions=previous.get("constraint_resolutions") or {})
+    for control in ("planning_only", "prior_task_goal", "prior_task_id", "followup_instruction_ids",
+                    "explicit_skill", "working_folder_id"):
+        if control in previous:
+            requirements[control] = previous[control]
+    if answers:
+        requirements["definition_answers"] = answers
+
+    diagnostics = requirements.get("normalization_diagnostics") or {}
+    ja = task.get("response_language", "ja") == "ja"
+    if diagnostics.get("requirement_contradiction") == "YES":
+        pending = _coding_requirement_conflict_pending(requirements)
+        if pending:
+            db.update_coding_task(task["id"], status="WAITING_FOR_USER", activity="NONE", queue_order=None,
+                                  requirements=requirements, pending_authorization=pending,
+                                  pending_user_confirmation=1, recovery_action="NONE",
+                                  recovery_reason="REQUIREMENTS_CLARIFICATION")
+            response = "\n".join(pending["questions"])
+        else:
+            question = ("矛盾の根拠を現在の判定器で特定できませんでした。要求を書き直して新しいCoding Taskとして送ってください。"
+                        if ja else "The current requirement checker could not locate the conflicting clauses. Rewrite the request and submit it as a new Coding Task.")
+            pending = {"type": "REQUIREMENTS_CLARIFICATION", "reason": "CONFLICT_EVIDENCE_UNAVAILABLE",
+                       "questions": [question]}
+            db.update_coding_task(task["id"], status="WAITING_FOR_USER", activity="NONE", queue_order=None,
+                                  requirements=requirements, pending_authorization=pending,
+                                  pending_user_confirmation=1, recovery_action="NONE",
+                                  recovery_reason="REQUIREMENTS_CLARIFICATION")
+            response = "\n".join(pending["questions"])
+        state = db.coding_task(task["id"]) or task
+        db.add_message(task["conversation_id"], "assistant", response, time.time(), str(uuid.uuid4()), task["id"])
+        print(f"TASK_ID={task['id']} INVALID_REQUIREMENTS_RECHECK=NEEDS_USER CHANGED_BY={source} "
+              "PLANNING_STARTED=NO IMPLEMENTATION_STARTED=NO", file=__import__('sys').stderr, flush=True)
+        return {"conversation_id": task["conversation_id"], "coding_task_id": task["id"], "response": response,
+                "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                   "task_id": task["id"], "status": state["status"]}, "sources": []}
+
+    db.update_coding_task(task["id"], requirements=requirements, pending_authorization=None,
+                          pending_user_confirmation=0, recovery_action="NONE", recovery_reason="NONE",
+                          execution_mode=requirements["execution_mode"], task_profile=requirements["task_profile"],
+                          required_mcp=requirements["required_mcps"])
+    current = db.coding_task(task["id"]) or task
+    if not _coding_workspace_ready(current):
+        current = db.coding_task(task["id"]) or current
+        response = ((current.get("pending_authorization") or {}).get("message") or "")
+        return {"conversation_id": task["conversation_id"], "coding_task_id": task["id"], "response": response,
+                "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                   "task_id": task["id"], "status": current["status"]}, "sources": []}
+    db.enqueue_coding_task(task["id"])
+    db.update_coding_task(task["id"], activity="QWEN_PLANNING")
+    _coding_scheduler_wake.set()
+    response = ("保存済みの要求を現在の判定規則で再確認しました。矛盾は解消され、計画を開始します。" if ja
+                else "Rechecked the saved request with the current rules. No conflict remains; planning is starting.")
+    db.add_message(task["conversation_id"], "assistant", response, time.time(), str(uuid.uuid4()), task["id"])
+    current = db.coding_task(task["id"]) or current
+    print(f"TASK_ID={task['id']} INVALID_REQUIREMENTS_RECHECK=PASS CHANGED_BY={source} "
+          "SAME_TASK_ID=YES PLANNING_STARTED=YES", file=__import__('sys').stderr, flush=True)
+    return {"conversation_id": task["conversation_id"], "coding_task_id": task["id"], "response": response,
+            "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                               "task_id": task["id"], "status": current["status"]}, "sources": []}
+
+
 def _resume_coding_task_control_locked(task: dict, *, source: str) -> dict:
     """Queue one persisted task from an explicit, exclusive resume action."""
+    if (task.get("status") == "BLOCKED" and not task.get("archived")
+            and task.get("recovery_reason") == "INVALID_REQUIREMENTS"):
+        return _recheck_invalid_requirements_task(task, source=source)
     pending = task.get("pending_authorization")
+    if (pending or {}).get("type") == continuation_consent.PENDING:
+        return {"conversation_id": task["conversation_id"], "coding_task_id": task["id"],
+                "response": pending["message"], "sources": []}
+    if task.get("recovery_reason") == _CONTINUATION_DECLINED:
+        ja = task.get("response_language", "ja") == "ja"
+        return {"conversation_id": task["conversation_id"], "coding_task_id": task["id"], "sources": [],
+                "response": ("省略に同意しなかったため、この作業は停止しています。" if ja
+                             else "This task was stopped because you declined the proposed omission.")}
     if (task.get("status") == "WAITING_FOR_USER" and not task.get("archived") and isinstance(pending, dict)
             and pending.get("type") == "REPLAN_INEFFECTIVE"):
-        if not _record_recovery_model_call(task["id"]):
+        current_plan = task.get("plan") if isinstance(task.get("plan"), dict) else {}
+        completed_phase_ids = {
+            str(phase.get("id")) for phase in current_plan.get("phases") or []
+            if isinstance(phase, dict) and phase.get("status") == "pass"
+        }
+        host_split = deterministic_phase_slicing(
+            current_plan, str(task.get("current_phase_id") or ""), completed_phase_ids,
+            max_total_phase_count=MAX_HOST_EXECUTION_PHASES)
+        if host_split is None and not _record_recovery_model_call(task["id"]):
             db.update_coding_task(task["id"], pending_authorization=None, pending_user_confirmation=0)
             _record_coding_stop(task["id"], "GLOBAL_RECOVERY_LIMIT", False)
             blocked = db.coding_task(task["id"]) or task
@@ -2180,24 +2549,32 @@ def _resume_coding_task_control_locked(task: dict, *, source: str) -> dict:
                     "response": _blocked_task_user_message(blocked), "sources": [],
                     "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
                                        "task_id": task["id"], "status": "BLOCKED"}}
-        # A planner response that left the failing phase unchanged is not a
-        # reason to call the planner again with the same requirements. Resume
-        # the persisted phase directly; its prior typed report is supplied to
-        # the implementer as retry context. This does not mark the phase as
-        # complete or grant any additional filesystem scope.
         state = task.get("resume_state") if isinstance(task.get("resume_state"), dict) else {}
-        state = {**state, "ineffective_replan_retry_requested": {
-            "at": time.time(), "phase_id": task.get("current_phase_id"),
-            "plan_revision": int(task.get("plan_revision") or 0),
-            "instruction": "Retry the current phase using its saved failure evidence; preserve completed phases and approved scope.",
-        }}
+        if host_split is not None:
+            state.pop("ineffective_replan_retry_requested", None)
+            state = {**state, "ineffective_replan_split_requested": {
+                "at": time.time(), "phase_id": task.get("current_phase_id"),
+                "plan_revision": int(task.get("plan_revision") or 0),
+                "instruction": "Deterministically split the oversized phase within the approved manifest and criteria.",
+            }}
+        else:
+            # For a genuinely small phase, reuse the saved failure evidence
+            # and keep the current plan. Oversized phases take the host-side
+            # slicing path above, without another model call.
+            state = {**state, "ineffective_replan_retry_requested": {
+                "at": time.time(), "phase_id": task.get("current_phase_id"),
+                "plan_revision": int(task.get("plan_revision") or 0),
+                "instruction": "Retry the current phase using its saved failure evidence; preserve completed phases and approved scope.",
+            }}
         task = db.update_coding_task(task["id"], status="RESUMABLE", activity="NONE",
                                      pending_authorization=None, pending_user_confirmation=0,
                                      recovery_action="RECOVERY_REVIEW", recovery_reason="REPLAN_INEFFECTIVE",
                                      pause_requested=False, resume_state=state) or task
-        print(f"TASK_ID={task['id']} INEFFECTIVE_REPLAN_RESUME=PHASE_RETRY "
+        print(f"TASK_ID={task['id']} INEFFECTIVE_REPLAN_RESUME="
+              f"{'DETERMINISTIC_PHASE_SPLIT' if host_split is not None else 'PHASE_RETRY'} "
               f"PHASE_ID={task.get('current_phase_id') or 'UNKNOWN'} "
-              "PLANNER_RECALLED=NO PLAN_REVISION_CHANGED=NO SCOPE_EXPANSION=NO",
+              f"MODEL_CALL_ADDED={'NO' if host_split is not None else 'YES'} "
+              "PLAN_SCOPE_EXPANSION=NO",
               file=__import__('sys').stderr, flush=True)
         pending = None
     if _supersede_effective_replan_authorization(task):
@@ -2561,6 +2938,11 @@ def _requeue_authorized_false_pass_epoch(task: dict, *, source: str) -> dict:
 def update_coding_task(task_id: str, value: CodingTaskUpdate):
     task=db.coding_task(task_id)
     if not task: raise HTTPException(404,"coding task not found")
+    if value.continuation_choice:
+        if not value.continuation_id:
+            raise HTTPException(422, "CONTINUATION_ID_REQUIRED")
+        result = _coding_constraint_choice(task_id, value.continuation_id, value.continuation_choice)
+        return {**(db.coding_task(task_id) or task), "control_response": result["response"]}
     updates={}
     if value.pause_requested is not None: updates["pause_requested"]=value.pause_requested
     if value.archived is not None:
@@ -2808,6 +3190,10 @@ def decide_coding_subagent_proposal(task_id: str, proposal_id: str,
 def _record_coding_stop(task_id: str, reason: str, intended: bool) -> str:
     task = db.coding_task(task_id)
     if not task: return ''
+    if reason == continuation_consent.PENDING:
+        return str((task.get("pending_authorization") or {}).get("message") or "")
+    if reason == _CONTINUATION_DECLINED:
+        return ""
     reports=db.coding_phase_reports(task_id)
     snapshot = stop_progress(task, reports, reason, intended)
     return db.persist_coding_stop(task_id,snapshot,len(reports))
@@ -2822,6 +3208,23 @@ def _pause_at_checkpoint(task_id: str) -> bool:
         print(f"TASK_ID={task_id} PAUSE_REQUESTED=true TASK_STATUS=RESUMABLE",file=__import__('sys').stderr,flush=True)
         return True
     return False
+
+def _bounded_plan_diagnostics(value: Any, limit: int = 16) -> list[Any]:
+    """Keep structured validation diagnostics bounded without assuming a list."""
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return list(value[:limit])
+    return []
+
+
+def _first_plan_diagnostic(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        candidate = value.get("first_error") or value.get("first_diagnostic")
+        return candidate if isinstance(candidate, dict) else value
+    records = _bounded_plan_diagnostics(value, 1)
+    return records[0] if records and isinstance(records[0], dict) else {}
+
 
 def _transition_resumable(task_id: str, failure_stage: str, failure_class: str, recovery_action: str = "RECOVERY_REVIEW", exc: Exception | None = None, recovery_reason: str | None = None) -> None:
     before=db.coding_task(task_id) or {}
@@ -3042,9 +3445,9 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
         if reference:
             messages = [*messages[:-1], {**messages[-1], 'content': messages[-1]['content'] + reference}]
     if structured_schema and 'phases' in structured_schema.get('properties',{}):
-        from .concept_diagrams import ConceptDiagram, diagram_output_instruction
+        from .concept_diagrams import ConceptDiagram, explicit_concept_diagram_requested
         design_goal=str((db.coding_task(task_id) or {}).get('original_goal') or '')
-        if re.search(r'概念図|構成図|図解|concept\s+diagram|architecture\s+diagram|diagram.*(?:plan|system)', design_goal, re.I):
+        if explicit_concept_diagram_requested(design_goal):
             diagram_schema=ConceptDiagram.model_json_schema()
             definitions=diagram_schema.pop('$defs',{})
             diagram_schema['properties']['schema_version']={'type':'integer','const':2}
@@ -3092,11 +3495,19 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
                 # A multi-file plan repeats requirements, scope and phase
                 # contracts; keep its cap finite and independent of chat.
                 options['max_tokens']=8192
+        missing_structured_capabilities=[]
         try:
             if callable(generate):
                 parameters=inspect.signature(generate).parameters
-                if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
-                    options={key:value for key,value in options.items() if key in parameters}
+                accepts_arbitrary=any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+                if structured_schema is not None and not accepts_arbitrary:
+                    missing_structured_capabilities=[key for key in ('format','max_tokens') if key not in parameters]
+                if not accepts_arbitrary:
+                    # Optional controls may be omitted for older adapters, but
+                    # structured coding calls must retain both the schema and
+                    # the output cap. Missing either is a typed failure below.
+                    options={key:value for key,value in options.items()
+                             if key in parameters or key in missing_structured_capabilities}
         except (TypeError,ValueError):
             pass
         model_progress_snapshot={}
@@ -3108,6 +3519,10 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
             with observe_model_progress(record_model_progress):
                 if not callable(generate):
                     raise ModelFailure('unavailable','Selected coding model provider is unavailable')
+                if missing_structured_capabilities:
+                    raise ModelFailure('unsupported',
+                        'Selected coding model provider lacks required structured-call capability: '
+                        + ', '.join(missing_structured_capabilities))
                 raw=generate(messages,model,**options)
         except Exception as exc:
             telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
@@ -3125,10 +3540,41 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
                 terminal['invocation_id']=model_progress_snapshot['invocation_id']
             _record_coding_model_progress(task_id,terminal)
             raise
+    raw_text = raw.get('text') if isinstance(raw,dict) else None
+    response_error = None
+    if not isinstance(raw,dict):
+        response_error='Coding model returned a non-object provider response'
+    elif not isinstance(raw_text,str) or not raw_text.strip():
+        response_error='Coding model returned no text'
+    elif structured_schema is not None:
+        candidate=raw_text.strip()
+        if candidate.startswith('```'):
+            fenced=re.fullmatch(r'```(?:json)?\s*(.*?)\s*```',candidate,re.I|re.S)
+            if fenced:
+                candidate=fenced.group(1)
+        try:
+            parsed_response=json.loads(candidate)
+        except (TypeError,ValueError):
+            response_error='Coding model returned malformed structured JSON'
+        else:
+            expected_type=structured_schema.get('type') if isinstance(structured_schema,dict) else None
+            accepted_types=expected_type if isinstance(expected_type,list) else [expected_type]
+            if expected_type and not any(
+                    (kind=='object' and isinstance(parsed_response,dict))
+                    or (kind=='array' and isinstance(parsed_response,list))
+                    or (kind=='string' and isinstance(parsed_response,str))
+                    or (kind=='boolean' and isinstance(parsed_response,bool))
+                    or (kind=='integer' and type(parsed_response) is int)
+                    or (kind=='number' and type(parsed_response) in {int,float})
+                    or (kind=='null' and parsed_response is None)
+                    for kind in accepted_types):
+                response_error=f'Coding model returned JSON that does not match the required top-level {expected_type} type'
     telemetry = _coding_telemetry.setdefault(task_id, CodingTelemetry(task_id, model_name=model))
+    reported_thinking=raw.get('thinking_decision') if isinstance(raw,dict) else None
+    effective_thinking=reported_thinking if isinstance(reported_thinking,dict) else decision
     telemetry.add_call(phase_id=(db.coding_task(task_id) or {}).get("current_phase_id"), role=role, model=model, messages=messages,
                        result=raw if isinstance(raw, dict) else None, started=time.time() - (time.perf_counter() - started), finished=time.time(),
-                       structured=structured_schema is not None, thinking=(raw.get('thinking_decision') or decision).get('enabled') if isinstance(raw,dict) else decision['enabled'], success=isinstance(raw, dict), failure_class="NONE" if isinstance(raw, dict) else "INVALID_RESPONSE", model_provenance=provenance)
+                       structured=structured_schema is not None, thinking=effective_thinking.get('enabled'), success=response_error is None, failure_class="NONE" if response_error is None else "INVALID_RESPONSE", model_provenance=provenance)
     boundary.finalize_telemetry()
     print(f"TASK_ID={task_id} MODEL_INVOCATION_BOUNDARY_TELEMETRY_FINALIZED=YES MODEL_HANDOFF_NEXT_REQUIRES_NEW_INVOCATION=YES", file=__import__('sys').stderr, flush=True)
     print(f"TASK_ID={task_id} CODING_TELEMETRY_CALL=RECORDED CODING_TELEMETRY_ROLE={role} MODEL_CALL_COUNT={telemetry.record['model_call_count']}", file=__import__('sys').stderr, flush=True)
@@ -3139,6 +3585,14 @@ def _model_text(task_id: str, status: str, activity: str, model: str, messages: 
             'task_id':task_id,'stage':activity,'requested_model':model,
             'response':raw.get('text',''),'finish_reason':raw.get('finish_reason'),
             'completion_tokens':raw.get('completion_tokens'),'prompt_tokens':raw.get('prompt_tokens')},ensure_ascii=False),encoding='utf8')
+    if response_error:
+        _record_coding_model_progress(task_id,{
+            'state':'request_failed','model':model,'failure':'invalid_response',
+            'reason':'provider returned an invalid structured response'})
+        failure=ModelFailure('invalid_response',response_error)
+        if isinstance(raw_text,str):
+            failure.response_text=raw_text
+        raise failure
     return raw.get("text","") if isinstance(raw,dict) else ""
 
 def _record_coding_model_progress(task_id,data):
@@ -3395,8 +3849,11 @@ def _typed_summary(execution: Task) -> dict:
             "operation_diagnostics": operation_diagnostics[:8],
             "mutation_classification": mutation_classification,
             "final_worktree_mutations": len(net_changed_paths) if net_observation_seen else len(set(written_paths)),
-            "phase_progress":bool(net_changed_paths or (accepted_mutations and not net_observation_seen)
-                                   or package_install_status == "PASS")}
+            # Progress belongs to this execution attempt.  PACKAGE_INSTALL
+            # evidence can be replayed from an earlier successful install on
+            # every retry; that passive evidence must not make an empty or
+            # read-only implementation response look productive.
+            "phase_progress":bool(net_changed_paths or (accepted_mutations and not net_observation_seen))}
 
 
 def _phase_execution_expectations(phase: dict) -> dict:
@@ -3481,17 +3938,14 @@ def _read_only_context(workspace_root: str | None, approved_scopes: list[Any] | 
     root = Path(workspace_root).expanduser().resolve()
     allowed = _approved_scope_paths(approved_scopes)
     paths: list[str] = []
-    try:
-        candidates = sorted(path for path in root.rglob("*") if path.is_file())
-    except OSError:
-        candidates = []
-    for path in candidates:
-        relative = path.relative_to(root).as_posix()
+    for relative in workspace_source_files(root):
         if relative == ".benchmark_metadata.json":
             continue
         if any(relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/") for item in allowed):
             continue
         paths.append(relative)
+        if len(paths) >= 200:
+            break
     return {"access": "READ_ONLY", "paths": paths[:200]}
 
 
@@ -4437,7 +4891,10 @@ def _host_verification_phase(task_id: str, phase: dict, plan: dict, workspace_ro
         if result and result[1].get('executor_error'):
             # A broken host cannot supply counterexamples for either source
             # repair or check reauthoring. Preserve the saved contract.
-            raise VerificationExecutorError(str(result[1].get('output') or 'Verification executor failed')[-4000:])
+            raise VerificationExecutorError(
+                str(result[1].get('output') or 'Verification executor failed')[-4000:],
+                startup_failed=result[1].get("returncode") is None and not result[1].get("changed_targets"),
+            )
         return result
     phase={key:value for key,value in phase.items() if key not in {
         'host_source_defect','host_source_defect_evidence','host_source_defect_repair_paths','host_runtime_diagnostic',
@@ -5846,7 +6303,7 @@ def _save_report(task_id: str, phase_id: str, attempt: int, report: dict, valida
     if epoch_signature:
         state["epoch_no_progress_count"] = epoch_count
         state["epoch_last_failure_signature"] = epoch_signature
-    elif report.get("phase_progress") is True or int(report.get("accepted_mutations") or 0) > 0 or int(report.get("files_written") or 0) > 0:
+    elif _report_has_worktree_progress(report):
         state["epoch_no_progress_count"] = 0
         state["epoch_last_failure_signature"] = ""
     lifetime_report_count = sum(
@@ -6011,7 +6468,7 @@ def _bounded_review_context(report: dict) -> dict:
         "files_written": int(report.get("files_written") or typed_summary.get("files_written") or 0),
         "rolled_back_mutations": int(report.get("rolled_back_mutations") or typed_summary.get("rolled_back_mutations") or 0),
         "final_worktree_mutations": int(report.get("final_worktree_mutations") or typed_summary.get("final_worktree_mutations") or 0),
-        "phase_progress": bool(report.get("phase_progress") or typed_summary.get("phase_progress")),
+        "phase_progress": _report_has_worktree_progress(report),
         "rejection_signature": str(report.get("rejection_signature") or "")[:32],
     }
 
@@ -6096,7 +6553,7 @@ def _zero_progress_signature(report: dict) -> str:
         # must not spend the separate unauthorized-mutation failure budget.
         return ''
     idempotent = (report.get('mutation_classification') or typed.get('mutation_classification')) == 'IDEMPOTENT_NOOP'
-    meaningful = ((not idempotent and (bool(report.get("phase_progress")) or
+    meaningful = ((not idempotent and (_report_has_worktree_progress(report) or
                   int(report.get("accepted_mutations") or typed.get("accepted_mutations") or 0) > 0 or
                   int(report.get("files_written") or typed.get("files_written") or 0) > 0 or
                   int(report.get("final_worktree_mutations") or typed.get("final_worktree_mutations") or 0) > 0)) or
@@ -6175,11 +6632,19 @@ def _evidence_counts(report: dict, typed_summary: dict) -> tuple[int, int]:
 
 
 def _phase_signature(phase: dict) -> str:
-    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "risks", "execution_mode",
+    payload = {key: phase.get(key) for key in ("goal", "done", "verify", "dependencies", "execution_mode",
                                                 "requires_dependency_installation", "dependency_requirements",
                                                 "verification_command", "verification_targets", "verification_executor",
-                                                "criterion_executors", "host_verification")}
+                                                "criterion_executors", "host_verification", "acceptance_contract")}
+    for key in ("required_mcp", "selected_mcp"):
+        payload[key] = sorted(coding_mcp_ids(phase.get(key)))
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+def _phase_manifest_contract(plan: dict, phase_id: str) -> set[tuple[str, str, bool]]:
+    artifact = plan.get("implementation_plan_artifact") or {}
+    manifest = artifact.get("file_manifest") or plan.get("file_manifest") or []
+    return {(str(item.get("path")), str(item.get("action")), item.get("required") is not False)
+            for item in manifest if isinstance(item, dict) and item.get("owner_phase") == phase_id}
 
 def _retain_completed_replan_phases(plan: dict, current: dict, completed_ids: set[str]) -> dict:
     """Keep persisted completed work when a model emits only its repair stages.
@@ -6345,9 +6810,13 @@ def _phase_retry_limit(phase: dict, current: dict, prior: list[dict]) -> int:
     same_epoch = [report for report in [*prior,current]
                   if report.get('plan_revision',0)==current.get('plan_revision',0)
                   and report.get('recovery_epoch',0)==current.get('recovery_epoch',0)]
-    syntax_handoff = any(
-        ((op.get('output') or {}).get('operation_diagnostic') or {}).get('reason_subtype') == 'STRUCTURAL_VALIDATION_FAILED'
-        for report in same_epoch for op in (report.get('typed_execution_summary') or {}).get('operations') or [] if isinstance(op, dict))
+    structured_output_handoff = any(
+        (((op.get('output') or {}).get('operation_diagnostic') or {}).get('reason_subtype') == 'STRUCTURAL_VALIDATION_FAILED'
+         or op.get('tool') == 'operation_rejection'
+         and str((op.get('input') or {}).get('failure_class') or
+                 (op.get('output') or {}).get('failure_class') or '').upper() == 'EMPTY_IMPLEMENTATION_OPERATIONS')
+        for report in same_epoch for op in (report.get('typed_execution_summary') or {}).get('operations') or []
+        if isinstance(op, dict))
     stalled_handoff = any(report.get('implementation_model') == settings.short_coding_model and report.get('test_fail')
         and (report.get('mutation_classification') or (report.get('typed_execution_summary') or {}).get('mutation_classification')) == 'IDEMPOTENT_NOOP'
         for report in same_epoch)
@@ -6366,7 +6835,7 @@ def _phase_retry_limit(phase: dict, current: dict, prior: list[dict]) -> int:
                 for op in (report.get('typed_execution_summary') or {}).get('operations') or [])
         for report in same_epoch))
     limit=(MAX_RETRIES_PER_PHASE + int(bool(credit)) + progress_credit
-            + int(bool(syntax_handoff)) + int(bool(stalled_handoff or legacy_repair_handoff)) + int(read_only_credit))
+            + int(bool(structured_output_handoff)) + int(bool(stalled_handoff or legacy_repair_handoff)) + int(read_only_credit))
     # The first transition from a file-load failure to actually passing
     # registered tests earns one review of the newly exposed failures. This
     # also works on a resumed old task whose attempt already exceeds limit.
@@ -6383,9 +6852,9 @@ def _phase_retry_limit(phase: dict, current: dict, prior: list[dict]) -> int:
 def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, completed: list[dict], workspace_root: str | None = None) -> str | None:
     report=report_row["structured_report"]
     typed=report.get("typed_execution_summary") if isinstance(report.get("typed_execution_summary"),dict) else {}
-    prior_reports=[row["structured_report"] for row in db.coding_phase_reports(task_id)
-                   if row.get("id") != report_row.get("id") and row.get("phase_id") == phase.get("id")]
-    evaluation=evaluate_phase(phase,report,prior_reports,workspace_root)
+    prior_reports = _prior_saved_phase_reports(task_id, report_row)
+    references = (db.coding_task(task_id) or managed).get("mcp_evidence")
+    evaluation = evaluate_phase(phase, report, prior_reports, workspace_root, reference_mcp_evidence=references)
     report["phase_evaluation"]={key:value for key,value in evaluation.items() if key != "file_state"}
     done_evidence_count, verify_evidence_count = _evidence_counts(report, typed)
     print(f"TASK_ID={task_id} TASK_ACTIVITY=PHASE_EVALUATION PHASE_REPORT_VALID=true "
@@ -6460,11 +6929,13 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
         decision = {"decision": "REPLAN_REQUIRED", "reason": "phase retry budget exhausted"}
     report["manager_decision"] = decision
     decision["diagnosis"] = {
-        "unmet_done": [phase["done"][index] for index in range(len(phase.get("done") or []))
-                       if f"DONE:{index+1}" in (evaluation.get("unsatisfied_done_ids") or [])],
-        "unmet_verify": [phase["verify"][index] for index in range(len(phase.get("verify") or []))
-                         if f"VERIFY:{index+1}" in (evaluation.get("unsatisfied_verify_ids") or [])],
-        "evidence_used": [str(item)[:500] for item in [*(report.get("errors") or []), *(report.get("test_fail") or [])]][:4],
+        # These unified lists also carry host-owned acceptance and MCP criteria.
+        # Reconstructing only DONE:n/VERIFY:n drops that evidence from retries.
+        "unmet_done": [str(item)[:500] for item in (evaluation.get("done_unmet") or [])][:8],
+        "unmet_verify": [str(item)[:500] for item in (evaluation.get("verify_unmet") or [])][:8],
+        "evidence_used": [str(item)[:500] for item in [
+            *(report.get("errors") or []), *(report.get("blockers") or []), *(report.get("test_fail") or []),
+            *(evaluation.get("done_unmet") or []), *(evaluation.get("verify_unmet") or [])]][:8],
     }
     report["manager_diagnostics"] = {"raw_decision": None, "decision_valid": True,
                                       "effective_decision": decision["decision"], "phase_complete": evaluation["phase_complete"],
@@ -6484,11 +6955,53 @@ def _review_phase(task_id: str, managed: dict, phase: dict, report_row: dict, co
     print(f"TASK_ID={task_id} CODING_GEMMA_PHASE_REVIEW=REMOVED MANAGER_DECISION={decision['decision']}", file=__import__('sys').stderr, flush=True)
     return decision["decision"]
 
+def _discard_unrequested_invalid_plan_diagram(plan: dict, goal: str) -> dict:
+    """Keep an invalid optional diagram from blocking an otherwise valid plan.
+
+    Concept diagrams carry geometry constraints that JSON Schema cannot fully
+    express. They are a separate presentation artifact, so malformed geometry
+    may be discarded when the user did not request a diagram. Explicit diagram
+    requests remain fail-closed and use the normal bounded repair path.
+    """
+    if "concept_diagram" not in plan:
+        return plan
+    from .concept_diagrams import ConceptDiagram, explicit_concept_diagram_requested
+    if explicit_concept_diagram_requested(goal):
+        return plan
+    try:
+        ConceptDiagram.model_validate(plan["concept_diagram"])
+    except (TypeError, ValueError):
+        print("PLAN_UNREQUESTED_INVALID_CONCEPT_DIAGRAM=DISCARDED", file=__import__('sys').stderr, flush=True)
+        return {key: value for key, value in plan.items() if key != "concept_diagram"}
+    return plan
+
+
+def _store_plan_validation_diagnostic(task_id: str, errors: list[str] | None) -> None:
+    task=db.coding_task(task_id)
+    if not task:
+        return
+    stored_state=task.get('resume_state')
+    state=dict(stored_state) if isinstance(stored_state,dict) else {}
+    if errors:
+        state['planning_validation_failure']={
+            'errors':[re.sub(r'\s+',' ',str(item)).strip()[:400] for item in errors[:8]],
+            'error_count':len(errors),
+            'recorded_at':time.time(),
+        }
+    else:
+        if 'planning_validation_failure' not in state:
+            return
+        state.pop('planning_validation_failure',None)
+    db.update_coding_task(task_id,resume_state=state)
+
+
 def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirements: dict | None = None,
                    *, recovery: bool = False, repair: bool = False) -> tuple[dict | None, str | None]:
+    _store_plan_validation_diagnostic(task_id,None)
     if recovery and not (requirements or {}).get('_explicit_instruction_revision') and not _record_recovery_model_call(task_id, repair=repair):
         return None, None
     schema = plan_schema()
+    prompt += _omission_instruction(requirements or {})
     verification_requested = verification_requested_by_user(goal, requirements)
     raw_preserve_ids = (requirements or {}).get("_preserve_completed_phase_ids") or []
     if isinstance(raw_preserve_ids, (list, tuple, set)):
@@ -6502,16 +7015,44 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
                    'do not create tests, build/typecheck/browser checks, acceptance criteria, or verification-only phases unless they are explicitly requested deliverables. '
                    'Feature behavior is implemented as requested and is not an instruction to run a separate check.\n')
     automatic_replan_phase_limit = None
+    recovery_split_allowed = (requirements or {}).get('_allow_replan_phase_split') is True
     if recovery and not (requirements or {}).get('_explicit_instruction_revision'):
         requested_limit = (requirements or {}).get('_replan_phase_limit')
         if isinstance(requested_limit, int) and not isinstance(requested_limit, bool):
             automatic_replan_phase_limit = max(1, min(requested_limit, 8))
             schema['properties']['phases']['maxItems'] = automatic_replan_phase_limit
             prompt += (f'\nAUTOMATIC_RECOVERY_PHASE_LIMIT={automatic_replan_phase_limit}. Return only replacement phases '
-                       'for unfinished work. The host reattaches completed verified phases. Do not split or add phases.')
-    # The task identity is host state, not a field the model may paraphrase
-    # or repeat until it exhausts the generation budget.
-    schema['properties']['original_goal']={'type':'string','const':goal}
+                       'for unfinished work. The host reattaches completed verified phases. ')
+            if recovery_split_allowed:
+                prompt += ('The host explicitly permits a bounded split of the failing oversized phase into dependency-ordered, independently executable slices. '
+                           'Split only that failed phase. Preserve every existing done and verify criterion exactly across the replacement slices. '
+                           'If a new slice has no original done criterion, add one concise, observable slice-local done checkpoint tied to its approved manifest paths or preserved criteria. Add checkpoints only to new slices, add no new verify criteria, and keep each slice to at most six total done/verify criteria and six mutable files. Do not widen the user-visible deliverables or approved scope. '
+                           'Preserve all other unfinished phase IDs and deliverables, the approved file scope, and every manifest path with its producing owner. '
+                           'The complete plan, including completed phases restored by the host, must stay within 8 phases.\n')
+            else:
+                prompt += 'Do not split or add phases.\n'
+    execution_policy_for_plan = (requirements or {}).get('execution_policy') or {}
+    planning_policy_for_plan = (requirements or {}).get('planning_policy') or {}
+    large_task_plan = (execution_policy_for_plan.get('task_size') == 'LARGE'
+                       or planning_policy_for_plan.get('task_size') == 'LARGE')
+    if large_task_plan and not recovery:
+        phase_schema = schema['properties']['phases']
+        phase_schema['maxItems'] = 7
+        phase_properties = phase_schema['items']['properties']
+        for field in ('done', 'verify', 'risks'):
+            if field in phase_properties:
+                phase_properties[field]['maxItems'] = 6
+        prompt += ('\nFor LARGE tasks, use bounded implementation batches: keep each implementation phase to at most 6 mutable files '
+                   'and at most 6 independent done criteria; divide broader work into dependency-ordered, independently executable slices. '
+                   'Use no more than 7 returned phases so the host can retain its blueprint within the overall 8-phase bound.\n')
+    elif recovery_split_allowed:
+        phase_properties = schema['properties']['phases']['items']['properties']
+        for field in ('done', 'verify', 'risks'):
+            if field in phase_properties:
+                phase_properties[field]['maxItems'] = 6
+    # The task identity is host state. Requiring a large request to be echoed
+    # inside the model's structured response wastes output tokens and can
+    # truncate the plan before its phases are produced.
     if not recovery and re.search(r'node:test',goal,re.I) and re.search(r'\bHTML\b',goal,re.I):
         prompt += ('\nFor browser code shared with Node.js tests, record the shared module API and browser/Node loading strategy in assumptions. '
             'When logic and UI are separate files, define the logic API before its consumers and make tests call that actual API. '
@@ -6532,24 +7073,41 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
         schema['properties']['assumptions'].update(maxItems=8,items={'type':'string','maxLength':500})
         phases=schema['properties']['phases']
         coherent=(requirements or {}).get('planning_policy',{}).get('coherent_static_application')
+        large_task = large_task_plan
         phases['maxItems']=(automatic_replan_phase_limit if automatic_replan_phase_limit is not None
-                            else 2 if coherent and not recovery else 4)
+                            else 2 if coherent and not recovery else 7 if large_task and not recovery else 4)
         properties=phases['items']['properties']
         properties['id']['maxLength']=80
         properties['goal']['maxLength']=500
+        bounded_batches = (large_task and not recovery) or recovery_split_allowed
         for key in ('done','verify','risks'):
-            properties[key].update(maxItems=8,items={'type':'string','maxLength':500})
+            properties[key].update(maxItems=6 if bounded_batches else 8,items={'type':'string','maxLength':500})
         properties['dependencies'].update(maxItems=4,items={'type':'string','maxLength':80})
         properties.pop('file_manifest',None)
         prompt+='\nKeep plan summaries concise. Use only the top-level file_manifest, with owner_phase assigning each file to its producing phase. Original requirements remain authoritative and are passed separately to implementation.'
     prompt+='\nEvery done/verify array item must be a complete observable condition. JSON delimiters and schema field labels belong outside condition strings; never emit items such as "],", "verify:[" or "verify" as conditions.'
-    raw=_model_text(task_id,"PLANNING" if activity=="QWEN_PLANNING" else "RUNNING",activity,settings.planner_model,[
-        {"role":"system","content":"You are OLCR Bonsai Planning Mode. Return JSON only; this is read-only planning."},
-        {"role":"user","content":prompt},
-    ], structured_schema=schema)
+    try:
+        raw=_model_text(task_id,"PLANNING" if activity=="QWEN_PLANNING" else "RUNNING",activity,settings.planner_model,[
+            {"role":"system","content":"You are OLCR Bonsai Planning Mode. Return JSON only; this is read-only planning."},
+            {"role":"user","content":prompt},
+        ], structured_schema=schema)
+    except ModelFailure as failure:
+        # Preserve the planner's one schema-repair opportunity when a provider
+        # returned malformed structured text. The boundary still records a
+        # typed invalid response; only the planner's explicit repair path may
+        # consume its bounded response text.
+        if failure.category != 'invalid_response' or not isinstance(getattr(failure,'response_text',None),str):
+            raise
+        raw=failure.response_text
     if raw is None: return None,None
     plan,parse_error=extract_plan_json(raw)
     if isinstance(plan, dict):
+        model_goal=plan.get('original_goal')
+        if model_goal is not None and model_goal != goal:
+            print("PLAN_ORIGINAL_GOAL_SOURCE=task PLAN_MODEL_ORIGINAL_GOAL_PRESENT=yes PLAN_MODEL_ORIGINAL_GOAL_MATCH=no",
+                  file=__import__('sys').stderr,flush=True)
+        plan={**plan,'original_goal':goal}
+        plan = _discard_unrequested_invalid_plan_diagram(plan, goal)
         plan, checkpoint_changes = enforce_explicit_phase_failure_checkpoint(plan, goal)
         if checkpoint_changes:
             print(f"PLAN_CHECKPOINT_POLICY_NORMALIZED=YES CHANGES={json.dumps(checkpoint_changes, ensure_ascii=False)}",
@@ -6593,13 +7151,6 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
             for item in diagnostics.get("errors", []) if isinstance(item, dict)
         ]
     errors=([parse_error] if parse_error else []) + validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements) + graph_error_messages(graph_diagnostics) + ([] if recovery else validate_definition_steps(plan, goal))
-    # The task goal is persisted host state; a model paraphrase must never
-    # consume the single schema-repair attempt or alter that identity.
-    if plan is not None and errors == ["original goal mismatch"]:
-        print("PLAN_ORIGINAL_GOAL_SOURCE=task PLAN_MODEL_ORIGINAL_GOAL_PRESENT=yes PLAN_MODEL_ORIGINAL_GOAL_MATCH=no",file=__import__('sys').stderr,flush=True)
-        plan={**plan,"original_goal":goal}
-        errors=validate_plan(plan,goal) + validate_fix_plan_quality(plan, requirements) + ([] if recovery else validate_definition_steps(plan, goal))
-        print("CANONICAL_PLAN_ORIGINAL_GOAL_SOURCE=task",file=__import__('sys').stderr,flush=True)
     # The planner may provide an advisory task graph, but OLCR derives the
     # authoritative graph after profile normalization.  Preserve a valid phase
     # plan when only those advisory task references are malformed; otherwise a
@@ -6615,21 +7166,31 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
             print("PLAN_ADVISORY_TASK_GRAPH=DISCARDED_INVALID AUTHORITATIVE_TASK_GRAPH=PENDING_NORMALIZATION",file=__import__('sys').stderr,flush=True)
             plan,errors=phase_plan,[]
     print(f"PLAN_INITIAL_PARSE={'PASS' if not parse_error else 'FAIL'} PLAN_INITIAL_SCHEMA={'PASS' if not validate_plan(plan,goal) else 'FAIL'} PLAN_INITIAL_ERRORS={json.dumps(errors,ensure_ascii=False)}",file=__import__('sys').stderr,flush=True)
-    if not errors: return plan,raw
+    if not errors:
+        _store_plan_validation_diagnostic(task_id,None)
+        return plan,raw
     deterministic_repair = deterministic_plan_schema_repair(plan, goal, errors, verification_requested)
     if deterministic_repair is not None:
         print("PLAN_SCHEMA_REPAIR_DETERMINISTIC=PASS MODEL_REPAIR_CALL=SKIPPED", file=__import__('sys').stderr, flush=True)
+        _store_plan_validation_diagnostic(task_id,None)
         return deterministic_repair, raw
+    _store_plan_validation_diagnostic(task_id,errors)
     if recovery and not (requirements or {}).get('_explicit_instruction_revision') and not _record_recovery_model_call(task_id, repair=True):
         return None, raw
-    repaired=_model_text(task_id,"PLANNING","QWEN_PLAN_SCHEMA_REPAIR",settings.short_coding_model,[
-        {"role":"system","content":"Repair the existing JSON plan and its deliverable boundaries using the supplied validation errors. Split already-requested work when needed; do not add scope or execute tools."},
-        {"role":"user","content":plan_repair_prompt(goal,raw,errors,graph_diagnostics)},
-    ], structured_schema=schema)
+    try:
+        repaired=_model_text(task_id,"PLANNING","QWEN_PLAN_SCHEMA_REPAIR",settings.short_coding_model,[
+            {"role":"system","content":"Repair the existing JSON plan and its deliverable boundaries using the supplied validation errors. Split already-requested work when needed; do not add scope or execute tools."},
+            {"role":"user","content":plan_repair_prompt(goal,raw,errors,graph_diagnostics)},
+        ], structured_schema=schema)
+    except ModelFailure as failure:
+        if failure.category != 'invalid_response' or not isinstance(getattr(failure,'response_text',None),str):
+            raise
+        repaired=failure.response_text
     if repaired is None: return None,None
     plan,repair_parse_error=extract_plan_json(repaired)
     if plan is not None and isinstance(plan,dict):
         plan={**plan,"original_goal":goal}
+        plan = _discard_unrequested_invalid_plan_diagram(plan, goal)
         plan, checkpoint_changes = enforce_explicit_phase_failure_checkpoint(plan, goal)
         if checkpoint_changes:
             print(f"PLAN_CHECKPOINT_POLICY_NORMALIZED=YES REPAIR_CHANGES={json.dumps(checkpoint_changes, ensure_ascii=False)}",
@@ -6656,6 +7217,7 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
     deterministic_repair = deterministic_plan_schema_repair(plan, goal, repair_errors, verification_requested)
     if deterministic_repair is not None:
         print("PLAN_REPAIR_SCHEMA_DETERMINISTIC=PASS MODEL_REPAIR_RETRY=SKIPPED", file=__import__('sys').stderr, flush=True)
+        _store_plan_validation_diagnostic(task_id,None)
         return deterministic_repair, repaired
     initial_graph_error = graph_diagnostics.get("first_error") if isinstance(graph_diagnostics, dict) else None
     repaired_graph_error = repair_graph_diagnostics.get("first_error") if isinstance(repair_graph_diagnostics, dict) else None
@@ -6671,6 +7233,7 @@ def _generate_plan(task_id: str, goal: str, prompt: str, activity: str, requirem
               f"REPAIR_GRAPH_ERROR_FINGERPRINT={first.get('fingerprint') or 'NONE'}",
               file=__import__('sys').stderr, flush=True)
     print(f"PLAN_REPAIR_PARSE={'PASS' if not repair_parse_error else 'FAIL'} PLAN_REPAIR_SCHEMA={'PASS' if not validate_plan(plan,goal) else 'FAIL'} PLAN_REPAIR_ERRORS={json.dumps(repair_errors,ensure_ascii=False)}",file=__import__('sys').stderr,flush=True)
+    _store_plan_validation_diagnostic(task_id,repair_errors or None)
     return (plan,repaired) if not repair_errors else (None,repaired)
 
 def _scope_expansion(current: dict, proposed: dict) -> list[str]:
@@ -6749,12 +7312,65 @@ def _deterministic_verifier_recovery_plan(task: dict, revision: str) -> dict | N
         return None
     return corrected
 
-def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: str, diagnosis: dict | None = None) -> str:
+def _approved_manifest_replan_owner(
+    prior_owner: str,
+    model_owner: str,
+    mutation_phase_ids: set[str],
+    *,
+    path_was_approved: bool,
+    recovery_split_allowed: bool = False,
+    failing_phase_id: str | None = None,
+    split_phase_ids: set[str] | None = None,
+    retained_phase_ids: set[str] | None = None,
+    fallback_owner: str = "",
+) -> str:
+    """Keep task-wide approved path ownership stable during automatic replans."""
+    split_phase_ids = set(split_phase_ids or ())
+    retained_phase_ids = set(retained_phase_ids or ())
+    if recovery_split_allowed:
+        if not path_was_approved:
+            return model_owner if model_owner in mutation_phase_ids else fallback_owner
+        if (prior_owner == str(failing_phase_id or "")
+                and model_owner in split_phase_ids
+                and model_owner in mutation_phase_ids):
+            return model_owner
+        if prior_owner in retained_phase_ids:
+            return prior_owner
+        return prior_owner or fallback_owner
+    if model_owner in mutation_phase_ids:
+        return model_owner
+    if prior_owner and prior_owner not in mutation_phase_ids and fallback_owner:
+        return fallback_owner
+    return prior_owner or fallback_owner
+
+
+def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: str,
+                 diagnosis: dict | None = None, *, force_deterministic_split: bool = False) -> str:
     # Earlier phases may have passed or received steering since this runner
     # snapshot was loaded. Recovery must use the persisted plan and counters.
     managed = db.coding_task(task_id) or managed
     user_revision = reason.startswith('Explicit user instructions at a phase boundary:\n')
     requirements = managed.get('requirements') if isinstance(managed.get('requirements'), dict) else {}
+    early_plan = managed.get("plan") if isinstance(managed.get("plan"), dict) else {}
+    early_reports = db.coding_phase_reports(task_id)
+    early_failure_context = (str(reason or "") + " " + json.dumps(diagnosis or {}, ensure_ascii=False)
+                             + " " + json.dumps([_bounded_review_context(row.get("structured_report") or {})
+                                                  for row in early_reports[-4:]], ensure_ascii=False)).lower()
+    early_output_limit = bool(re.search(
+        r"(?:output|token|generation).{0,32}(?:limit|budget|truncat)|output_limit|token_limit|finish_reason.{0,20}length",
+        early_failure_context, re.I))
+    try:
+        early_retry_count = int(managed.get("retry_count") or 0)
+        early_max_retries = int(managed.get("max_retries") or 0)
+    except (TypeError, ValueError):
+        early_retry_count, early_max_retries = 0, 0
+    early_retry_exhausted = bool(re.search(
+        r"retry.{0,24}(?:limit|exhaust|budget)|(?:limit|exhaust).{0,24}retry",
+        str(reason or ""), re.I)) or (early_max_retries > 0 and early_retry_count >= early_max_retries)
+    deterministic_split_capacity = (None if user_revision or not (
+        force_deterministic_split or early_output_limit or early_retry_exhausted) else
+        deterministic_phase_slicing(early_plan, str(managed.get("current_phase_id") or ""),
+                                    completed_ids, max_total_phase_count=MAX_HOST_EXECUTION_PHASES))
     verification_requested = verification_requested_by_user(str(managed.get('original_goal') or ''), requirements)
     if user_revision:
         revision_text = reason.split('Explicit user instructions at a phase boundary:\n', 1)[-1]
@@ -6790,17 +7406,6 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         _deterministic_verifier_recovery_plan(managed, reason)
         if not user_revision and recovery_calls >= TASK_GLOBAL_RECOVERY_MODEL_CALL_LIMIT else None
     )
-    if not user_revision and int(managed.get("replan_count") or 0) >= global_limit and deterministic_fallback is None:
-        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
-                              recovery_action="NONE", recovery_reason="GLOBAL_RECOVERY_LIMIT")
-        print(f"TASK_ID={task_id} TASK_GLOBAL_BOUND_ENFORCED=YES AUTO_REQUEUE_AFTER_GLOBAL_LIMIT=NO "
-              f"GLOBAL_LIMIT_KIND=REPLAN EFFECTIVE_LIMIT={global_limit} STATUS_AFTER=BLOCKED",
-              file=__import__('sys').stderr, flush=True)
-        return "Coding Task is blocked: task-global recovery budget exhausted."
-    if (not user_revision and replan_count_in_epoch >= MAX_SUBSTANTIAL_REPLANS_PER_TASK
-            and deterministic_fallback is None):
-        _transition_resumable(task_id,"REPLAN_LIMIT","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
-        return "Coding Task could not continue after the replan limit."
     recovery_epoch = int(managed.get("recovery_epoch") or 0)
     no_progress, no_progress_signature, no_progress_count = _repeated_zero_progress_failure(task_id, recovery_epoch)
     if not user_revision and no_progress and deterministic_fallback is None:
@@ -6828,6 +7433,18 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
               f"RECOVERY_EPOCH={recovery_epoch} NO_PROGRESS_EVALUATED=YES "
               "NEXT_TASK_ACTION=TERMINATE TASK_STATUS=BLOCKED", file=__import__('sys').stderr, flush=True)
         return "Coding Task is blocked: repeated implementation attempts made no filesystem progress."
+    if (not user_revision and int(managed.get("replan_count") or 0) >= global_limit
+            and deterministic_fallback is None and deterministic_split_capacity is None):
+        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                              recovery_action="NONE", recovery_reason="GLOBAL_RECOVERY_LIMIT")
+        print(f"TASK_ID={task_id} TASK_GLOBAL_BOUND_ENFORCED=YES AUTO_REQUEUE_AFTER_GLOBAL_LIMIT=NO "
+              f"GLOBAL_LIMIT_KIND=REPLAN EFFECTIVE_LIMIT={global_limit} STATUS_AFTER=BLOCKED",
+              file=__import__('sys').stderr, flush=True)
+        return "Coding Task is blocked: task-global recovery budget exhausted."
+    if (not user_revision and replan_count_in_epoch >= MAX_SUBSTANTIAL_REPLANS_PER_TASK
+            and deterministic_fallback is None and deterministic_split_capacity is None):
+        _transition_resumable(task_id,"REPLAN_LIMIT","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
+        return "Coding Task could not continue after the replan limit."
     # Reserve the bounded recovery attempt before invoking the replanner.  A
     # malformed schema, path validation failure, or blueprint rejection is
     # still a recovery attempt and must consume the same epoch budget as a
@@ -6853,7 +7470,56 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         diagnosis.get("replan_reason_source") == "model"))
     structural_reason = structural_reason or any(term in reason.lower() for term in (
         "structur", "verification criteria", "verify criteria", "unobservable", "unsatisfiable"))
-    failing_phase_id = unfinished[0].get("id") if unfinished else None
+    failing_phase_id = next((phase.get("id") for phase in unfinished
+                             if phase.get("id") == managed.get("current_phase_id")),
+                            unfinished[0].get("id") if unfinished else None)
+    recovery_split_allowed = False
+    replan_phase_limit = max(1, min(len(unfinished), 8))
+    split_phase = next((phase for phase in unfinished if phase.get("id") == failing_phase_id), None)
+    phase_manifest = [entry for entry in (current.get("file_manifest") or [])
+                      if isinstance(entry, dict) and str(entry.get("owner_phase") or "") == str(failing_phase_id or "")
+                      and str(entry.get("action") or "modify").lower() in {"create", "modify", "delete"}]
+    phase_criteria_count = (len(split_phase.get("done") or []) + len(split_phase.get("verify") or [])
+                            if isinstance(split_phase, dict) else 0)
+    unmet_criteria_count = sum(len(diagnosis.get(key) or []) for key in ("unmet_done", "unmet_verify")) if diagnosis else 0
+    failure_context = (str(reason or "") + " " + json.dumps(diagnosis or {}, ensure_ascii=False)
+                       + " " + json.dumps(failure_history, ensure_ascii=False)).lower()
+    output_budget_failure = bool(re.search(
+        r"(?:output|token|generation).{0,32}(?:limit|budget|truncat)|output_limit|token_limit|finish_reason.{0,20}length",
+        failure_context, re.I))
+    retry_budget_failure = bool(re.search(
+        r"retry.{0,24}(?:limit|exhaust|budget)|(?:limit|exhaust).{0,24}retry",
+        str(reason or ""), re.I))
+    try:
+        retry_count = int(managed.get("retry_count") or 0)
+        max_retries = int(managed.get("max_retries") or 0)
+    except (TypeError, ValueError):
+        retry_count, max_retries = 0, 0
+    retry_budget_failure = retry_budget_failure or (max_retries > 0 and retry_count >= max_retries)
+    oversized_phase = max(phase_criteria_count, unmet_criteria_count, len(phase_manifest)) > 6
+    if (not user_revision and oversized_phase
+            and (force_deterministic_split or output_budget_failure or retry_budget_failure)
+            and split_phase is not None):
+        completed_and_active_limit = max(0, min(8 - len(completed_ids), 8))
+        other_unfinished_count = max(0, len(unfinished) - 1)
+        needed_slices = max(2, math.ceil(max(phase_criteria_count, unmet_criteria_count,
+                                             len(phase_manifest)) / 6))
+        if completed_and_active_limit > len(unfinished):
+            replan_phase_limit = min(completed_and_active_limit,
+                                     max(len(unfinished), needed_slices + other_unfinished_count))
+            recovery_split_allowed = replan_phase_limit > len(unfinished)
+    deterministic_host_split = None
+    if (not user_revision and split_phase is not None
+            and (force_deterministic_split or
+                 (recovery_split_allowed and (output_budget_failure or retry_budget_failure)))):
+        deterministic_host_split = deterministic_phase_slicing(
+            current, str(failing_phase_id), completed_ids,
+            max_total_phase_count=MAX_HOST_EXECUTION_PHASES)
+        if deterministic_host_split is not None:
+            recovery_split_allowed = True
+            print(f"TASK_ID={task_id} DETERMINISTIC_PHASE_SLICING=READY "
+                  f"PHASE_ID={failing_phase_id} MODEL_CALL_ADDED=NO SCOPE_EXPANSION=NO",
+                  file=__import__('sys').stderr, flush=True)
     compact_plan = _bounded_replan_plan_context(current, completed_ids, failing_phase_id)
     original_plan_chars = len(json.dumps(current, ensure_ascii=False))
     compact_plan_chars = len(json.dumps(compact_plan, ensure_ascii=False))
@@ -6895,7 +7561,13 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     print(f"TASK_ID={task_id} REPLAN_FAILURE_CONTEXT_PRESENT={'true' if failure_history else 'false'} "
           f"REPLAN_BOUNDED_FAILURE_COUNT={len(failure_history)} REPLAN_CONTEXT_FINGERPRINT={_context_fingerprint({'revision': managed.get('plan_revision',0), 'completed': sorted(completed_ids), 'history': failure_history, 'reason': reason[:500]})}",
           file=__import__('sys').stderr,flush=True)
-    if deterministic_fallback is not None:
+    if deterministic_host_split is not None:
+        plan, slice_changes = deterministic_host_split
+        print(f"TASK_ID={task_id} DETERMINISTIC_PHASE_SLICING=PASS "
+              f"CHANGES={json.dumps(slice_changes, ensure_ascii=False)} "
+              "SOURCE=APPROVED_PLAN_AND_MANIFEST MODEL_CALL_ADDED=NO SCOPE_EXPANSION=NO",
+              file=__import__('sys').stderr, flush=True)
+    elif deterministic_fallback is not None:
         plan = deterministic_fallback
         print(f"TASK_ID={task_id} DETERMINISTIC_VERIFIER_REPLAN=PASS "
               "SOURCE=EXPLICIT_USER_REVISION SCOPE_PRESERVED=YES MODEL_CALLS_ADDED=0",
@@ -6913,12 +7585,19 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
                        'to update that file; retain the historical completed phase and verify the affected behavior. '
                        'The file/phase structure may remain unchanged when only the instruction changes behavior.\n')
         else:
-            replan_phase_limit = max(1, min(len(unfinished), 8))
             revision_requirements['_replan_phase_limit'] = replan_phase_limit
             revision_requirements['_preserve_completed_phase_ids'] = sorted(completed_ids)
-            prompt += (f'\nAUTOMATIC_RECOVERY_PHASE_LIMIT={replan_phase_limit}. Return only the replacement phases '
-                       'for existing unfinished phase IDs. Do not repeat completed phases, split existing work into '
-                       'additional phases, or add new phases; the host restores completed verified phases.\n')
+            if recovery_split_allowed:
+                revision_requirements['_allow_replan_phase_split'] = True
+                prompt += (f'\nAUTOMATIC_RECOVERY_PHASE_LIMIT={replan_phase_limit}. Return only unfinished work. '
+                           'The host explicitly permits splitting the failing oversized phase into bounded, dependency-ordered batches. '
+                           'Preserve every existing done and verify criterion exactly across those batches. If a new slice lacks an original done criterion, add one concise, observable slice-local done checkpoint tied to its approved manifest paths or preserved criteria; add checkpoints only to new slices, add no new verify criteria, and keep each slice to at most six total done/verify criteria and six mutable files. Do not widen user-visible deliverables or approved scope. Keep every other unfinished phase ID and deliverable, '
+                           'preserve the approved scope and assign every existing manifest path exactly once to its producing phase. '
+                           'The host restores completed verified phases; the total plan may contain at most 8 phases.\n')
+            else:
+                prompt += (f'\nAUTOMATIC_RECOVERY_PHASE_LIMIT={replan_phase_limit}. Return only the replacement phases '
+                           'for existing unfinished phase IDs. Do not repeat completed phases, split existing work into '
+                           'additional phases, or add new phases; the host restores completed verified phases.\n')
         # Persist the recovery stage before entering provider code. If the
         # model or its transport fails immediately, the scheduler can resume
         # the saved replan action without guessing from a stale phase status.
@@ -6935,6 +7614,40 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     if not plan:
         _transition_resumable(task_id,"REPLAN_VALIDATION","RECOVERABLE_INTERNAL","REPLAN_CONTINUATION")
         return "Coding Task replan could not be validated."
+    if not user_revision:
+        try:
+            plan, phase_changes = normalize_automatic_replan_phases(
+                plan, current, completed_ids, preferred_phase_id=failing_phase_id,
+                profile=str(requirements.get("task_profile") or managed.get("task_profile") or ""),
+                required_mcp=list(requirements.get("required_mcps") or managed.get("required_mcp") or []),
+                verification_requested=verification_requested,
+                allow_additional_phases=recovery_split_allowed,
+                max_total_phase_count=8)
+        except ValueError as exc:
+            phase_limit_error = "total phase limit" in str(exc)
+            failure_stage = "REPLAN_PHASE_LIMIT" if phase_limit_error else "REPLAN_VALIDATION"
+            recovery_reason = "REPLAN_PHASE_LIMIT" if phase_limit_error else "REPLAN_PHASE_SPLIT_VALIDATION"
+            _transition_resumable(task_id, failure_stage, "RECOVERABLE_INTERNAL",
+                                  "REPLAN_CONTINUATION", exc, recovery_reason)
+            print(f"TASK_ID={task_id} AUTOMATIC_REPLAN_PHASE_SPLIT=FAIL "
+                  f"REASON={str(exc)[:240]} PLAN_PERSISTED=NO",
+                  file=__import__('sys').stderr, flush=True)
+            return ("Coding Task replan exceeded the total phase limit."
+                    if phase_limit_error else
+                    "Coding Task replan did not preserve its approved phase graph.")
+        if phase_changes:
+            print(f"TASK_ID={task_id} AUTOMATIC_REPLAN_DELIVERABLES_NORMALIZED=YES "
+                  f"CHANGES={json.dumps(phase_changes, ensure_ascii=False)}",
+                  file=__import__('sys').stderr, flush=True)
+        if not any(phase_has_observable_deliverable(phase)
+                   for phase in (plan.get("phases") or [])
+                   if isinstance(phase, dict) and str(phase.get("id") or "") not in completed_ids):
+            db.update_coding_task(task_id, status="BLOCKED", activity="NONE", queue_order=None,
+                                  recovery_action="NONE", recovery_reason="REPLAN_NO_EXECUTABLE_DELIVERABLE")
+            print(f"TASK_ID={task_id} AUTOMATIC_REPLAN_DELIVERABLES=FAIL "
+                  "NO_EXECUTABLE_PHASE=YES PLAN_PERSISTED=NO AUTO_RETRY=NO",
+                  file=__import__('sys').stderr, flush=True)
+            return "Coding Task was stopped because recovery produced no executable deliverable."
     plan, checkpoint_changes = enforce_explicit_phase_failure_checkpoint(
         plan, managed.get("original_goal", ""))
     if checkpoint_changes:
@@ -6956,8 +7669,14 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
             str(phase.get('id')) for phase in plan.get('phases') or []
             if str(phase.get('id')) not in completed_ids
         }
-        exceeds_phase_limit = (bool(added_phase_ids)
-                               or len(proposed_unfinished_ids) > max(1, len(unfinished)))
+        if recovery_split_allowed:
+            max_additional_phase_ids = max(0, replan_phase_limit - len(unfinished))
+            exceeds_phase_limit = (len(added_phase_ids) > max_additional_phase_ids
+                                   or len(proposed_unfinished_ids) > replan_phase_limit
+                                   or len(completed_ids) + len(proposed_unfinished_ids) > 8)
+        else:
+            exceeds_phase_limit = (bool(added_phase_ids)
+                                   or len(proposed_unfinished_ids) > max(1, len(unfinished)))
     else:
         added_phase_ids = set()
         exceeds_phase_limit = False
@@ -6990,6 +7709,7 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
         if verification_changes:
             print(f"TASK_ID={task_id} REPLAN_UNREQUESTED_VERIFICATION_REMOVED=YES CHANGES={json.dumps(verification_changes, ensure_ascii=False)}",
                   file=__import__('sys').stderr, flush=True)
+    plan, _ = ensure_explicit_phase_execution_modes(plan)
     if continuation_policy.get("task_size") == "LARGE":
         from .continuation import phase_lifecycle_stages
         if any(len(phase_lifecycle_stages(p)) >= 4 for p in plan["phases"] if p["id"] not in completed_ids):
@@ -7030,21 +7750,26 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
     changed=[phase_id for phase_id,signature in old_signatures.items()
              if new_signatures.get(phase_id) != signature]
     structure_changed=set(old_signatures) != set(new_signatures) or bool(changed)
-    failing_phase_id=unfinished[0].get("id") if unfinished else ""
+    failing_phase_changed = old_signatures.get(failing_phase_id) != new_signatures.get(failing_phase_id)
     print(f"TASK_ID={task_id} REPLAN_OLD_REVISION={int(managed.get('plan_revision') or 0)} "
           f"REPLAN_NEW_REVISION={int(managed.get('plan_revision') or 0)+1} "
           f"OLD_PLAN_REVISION={int(managed.get('plan_revision') or 0)} NEW_PLAN_REVISION={int(managed.get('plan_revision') or 0)+1} "
           f"OLD_PHASE_SIGNATURE={old_signatures.get(failing_phase_id,'')} NEW_PHASE_SIGNATURE={new_signatures.get(failing_phase_id,'')} "
           f"REPLAN_OLD_PHASE_SIGNATURES={json.dumps(old_signatures,sort_keys=True)} "
           f"REPLAN_NEW_PHASE_SIGNATURES={json.dumps(new_signatures,sort_keys=True)} "
-          f"FAILING_PHASE_CHANGED={'true' if structure_changed else 'false'} REPLAN_EFFECTIVE={'true' if structure_changed else 'false'}",
+          f"FAILING_PHASE_CHANGED={'true' if failing_phase_changed else 'false'}",
           file=__import__('sys').stderr,flush=True)
-    if not structure_changed and (not user_revision or not unfinished):
+    def wait_for_effective_replan():
         unmet = []
         if diagnosis:
             unmet.extend(diagnosis.get("unmet_done") or [])
             unmet.extend(diagnosis.get("unmet_verify") or [])
-        pending = {"type":"REPLAN_INEFFECTIVE", "reason":"Phase replan did not change the failing phase structure.", "unmet_criteria": unmet[:8], "state":"PENDING"}
+        retry_split = deterministic_phase_slicing(current, str(failing_phase_id or ""),
+                                                  completed_ids,
+                                                  max_total_phase_count=MAX_HOST_EXECUTION_PHASES)
+        pending = {"type":"REPLAN_INEFFECTIVE", "reason":"Phase replan did not change the failing phase structure.",
+                   "unmet_criteria": unmet[:8], "state":"PENDING",
+                   "recovery_mode":"deterministic_phase_slice" if retry_split is not None else "same_phase_retry"}
         # An unchanged replacement cannot make the failing phase complete.
         # Keep its cursor and wait for a materially different user/model
         # decision instead of treating the replan call itself as progress.
@@ -7059,6 +7784,11 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
               "FAILURE_STAGE=REPLAN_INEFFECTIVE NEXT_TASK_ACTION=WAITING_FOR_USER",
               file=__import__('sys').stderr,flush=True)
         return _record_coding_stop(task_id, "REPLAN_INEFFECTIVE", False)
+
+    if not structure_changed and (not user_revision or not unfinished) and (
+            not failing_phase_id or _phase_manifest_contract(current, failing_phase_id)
+            == _phase_manifest_contract(plan, failing_phase_id)):
+        return wait_for_effective_replan()
     expansion=_scope_expansion(current,plan)
     count = (int(managed.get("replan_count") or 0) if deterministic_fallback is not None
              else reserved_replan_count)
@@ -7096,15 +7826,26 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
             mutation_phase_ids = [phase_id for phase_id, phase in phase_by_id.items()
                                   if phase.get("kind") != "ORCHESTRATOR_BLUEPRINT"
                                   and phase.get("execution_mode") != "VERIFICATION_ONLY"]
+            current_phase_ids = {str(phase.get("id") or "") for phase in current.get("phases") or []
+                                 if isinstance(phase, dict) and phase.get("id")}
+            split_phase_ids = {str(failing_phase_id or "")} | (
+                set(phase_by_id) - current_phase_ids)
+            retained_phase_ids = set(phase_by_id)
             fallback_owner = mutation_phase_ids[0] if mutation_phase_ids else ""
             for path, item in approved_by_path.items():
                 model_item = model_by_path.get(path)
                 model_owner = str((model_item or {}).get("owner_phase") or "")
                 prior_owner = str(item.get("owner_phase") or "") if isinstance(item, dict) else ""
-                if isinstance(item, dict) and model_owner in mutation_phase_ids:
-                    item["owner_phase"] = model_owner
-                elif isinstance(item, dict) and prior_owner and prior_owner not in phase_by_id and fallback_owner:
-                    item["owner_phase"] = fallback_owner
+                if isinstance(item, dict):
+                    item["owner_phase"] = _approved_manifest_replan_owner(
+                        prior_owner, model_owner, set(mutation_phase_ids),
+                        path_was_approved=path in prior_approved_paths,
+                        recovery_split_allowed=recovery_split_allowed,
+                        failing_phase_id=str(failing_phase_id or ""),
+                        split_phase_ids=split_phase_ids,
+                        retained_phase_ids=retained_phase_ids,
+                        fallback_owner=fallback_owner,
+                    )
             model_paths = set(model_by_path)
             model_only_paths = sorted(model_paths - prior_approved_paths)
             plan = {**plan, "file_manifest": merged_manifest}
@@ -7161,9 +7902,9 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
                 return stack_conformance_message(stack_details)
             if diagnostics:
                 pending_plan = dict(plan)
-                pending_plan["path_validation_diagnostics"] = diagnostics[:16]
+                pending_plan["path_validation_diagnostics"] = _bounded_plan_diagnostics(diagnostics)
                 db.update_coding_task(task_id, pending_plan=pending_plan)
-            first_diagnostic = diagnostics[0] if diagnostics else {}
+            first_diagnostic = _first_plan_diagnostic(diagnostics)
             coverage_failure = isinstance(exc, PlanManifestCoverageError)
             repair_progress: dict[str, Any] = {}
             if coverage_failure:
@@ -7230,6 +7971,9 @@ def _replan_task(task_id: str, managed: dict, completed_ids: set[str], reason: s
                     " 不足している成果物: " + ", ".join(exc.missing[:8]) if exc.missing else "")
             code = first_diagnostic.get("path_validation_code") or path_validation_code(first_diagnostic.get("path_validation_reason") or str(exc))
             return path_validation_message(code, replan=False)
+    if (not user_revision and not invalidated_completed and failing_phase_id and not failing_phase_changed
+            and _phase_manifest_contract(current, failing_phase_id) == _phase_manifest_contract(plan, failing_phase_id)):
+        return wait_for_effective_replan()
     next_phase=next((phase for phase in plan.get("phases",[])
                      if phase.get("id") not in completed_ids
                      and all(dep in completed_ids for dep in phase.get("dependencies",[]))), None)
@@ -7303,6 +8047,30 @@ def _report_has_execution_attempt(report: dict) -> bool:
     )
 
 
+def _report_has_worktree_progress(report: dict) -> bool:
+    """Use mutation evidence as progress; passive package evidence is not a write."""
+    if not isinstance(report, dict):
+        return False
+    typed = report.get("typed_execution_summary")
+    typed = typed if isinstance(typed, dict) else {}
+    explicit_mutation_evidence = any(key in typed for key in (
+        "accepted_mutations", "files_written", "final_worktree_mutations",
+        "net_changed_paths", "mutation_classification", "rejected_operations",
+    ))
+    if explicit_mutation_evidence:
+        if str(typed.get("worktree_state") or "").upper() == "ROLLED_BACK":
+            return False
+        return bool(
+            typed.get("net_changed_paths")
+            or int(typed.get("accepted_mutations") or 0) > 0
+            or int(typed.get("files_written") or 0) > 0
+            or int(typed.get("final_worktree_mutations") or 0) > 0
+        )
+    # Older report rows predate typed mutation counters. Keep their historical
+    # signal only when the host did not persist enough evidence to recompute it.
+    return bool(report.get("phase_progress") or report.get("changed_files"))
+
+
 def _phase_reports_for_epoch(task_id: str, phase_id: str, revision: int,
                             recovery_epoch: int) -> list[dict]:
     """Return only active-epoch execution reports for scheduler control flow."""
@@ -7344,13 +8112,19 @@ def _prior_saved_phase_reports(task_id: str, current: dict) -> list[dict]:
 def _saved_phase_pass_is_current(task_id: str, phase: dict, row: dict, workspace_root: str | None) -> bool:
     """Recheck owned artifact/verification facts without rerunning blueprints."""
     if phase.get('kind') == 'ORCHESTRATOR_BLUEPRINT':
-        return True
+        plan = (db.coding_task(task_id) or {}).get("plan") or {}
+        blueprint = plan.get("blueprint")
+        report = row["structured_report"]
+        return (isinstance(blueprint, dict) and "preflight" in blueprint
+                and (report.get("manager_decision") or {}).get("decision") == "PASS"
+                and not report_has_authoritative_failure(report, phase))
     report = row['structured_report']
     prior = _prior_saved_phase_reports(task_id,row)
     artifact_gate = (phase.get('verify') == ['Typed workspace writes and read-back succeed for the changed files.']
                      and phase.get('done') and all(re.fullmatch(r'.+ exists',str(item)) for item in phase['done']))
     if phase.get('host_verification') or artifact_gate:
-        return evaluate_phase(phase,report,prior,workspace_root=workspace_root)['phase_complete']
+        return evaluate_phase(phase, report, prior, workspace_root=workspace_root,
+            reference_mcp_evidence=(db.coding_task(task_id) or {}).get("mcp_evidence"))['phase_complete']
     if workspace_root:
         root = Path(workspace_root)
         for item in [*prior,report]:
@@ -7755,6 +8529,9 @@ def _append_static_app_launch(final_text: str, task: dict, plan: dict, workspace
             or requirements.get('dependency_requirements')):
         return final_text
     root=Path(workspace_root).resolve()
+    from . import workspace_launch
+    if workspace_launch.has_package_launcher(root):
+        return final_text
     for entry in plan.get('file_manifest') or []:
         name=entry.get('path') if isinstance(entry,dict) else None
         if not isinstance(name,str) or not name.endswith('.html'):
@@ -7774,13 +8551,41 @@ def _append_static_app_launch(final_text: str, task: dict, plan: dict, workspace
     return final_text
 
 
+def _append_completion_launch_guidance(final_text: str, task: dict, plan: dict,
+                                      workspace_root: str | None) -> str:
+    """Append deterministic open/run steps when the completed task made an app or site."""
+    static_text = _append_static_app_launch(final_text, task, plan, workspace_root)
+    if static_text != final_text:
+        return static_text
+    from . import workspace_launch
+    guidance = workspace_launch.completion_guidance(
+        Path(workspace_root) if workspace_root else None,
+        japanese=response_language() == "ja",
+        goal=str(task.get("original_goal") or task.get("goal") or ""),
+        plan=plan,
+    )
+    return final_text.rstrip() + "\n\n" + guidance if guidance else final_text
+
+
 _MCP_LIFECYCLE_ONLY_TOOLS = {"", "initialize", "tools/list"}
+
+
+def _omission_instruction(requirements: dict) -> str:
+    items = [item for row in requirements.get("accepted_omissions") or []
+             for item in row.get("unmet_criteria") or []]
+    return ("\nThe user approved omitting these exact items. Do not schedule, attempt or report them as completed: "
+            + json.dumps(items, ensure_ascii=False) + "\n") if items else ""
+
+
+def _omitted_mcp_names(requirements: dict) -> set[str]:
+    return {row["mcp"] for row in requirements.get("accepted_omissions") or [] if row.get("mcp")}
 
 
 def _required_mcp_names(managed: dict) -> list[str]:
     requirements = managed.get("requirements") if isinstance(managed.get("requirements"), dict) else {}
     names = requirements.get("required_mcps", requirements.get("required_mcp", managed.get("required_mcp") or []))
-    return [str(name) for name in names if str(name)]
+    omitted = _omitted_mcp_names(requirements)
+    return [name for name in coding_mcp_ids(names) if name not in omitted]
 
 
 def _mcp_usage_rows(managed: dict, server_id: str) -> list[dict]:
@@ -7897,7 +8702,9 @@ def _final_acceptance_gaps(managed: dict, reports: list[dict]) -> list[str]:
     if "browser" in requested and not (_mcp_usage_rows(managed, "playwright") or
             any(int((op.get('output') or {}).get('browser_checks') or 0) > 0 for op in verification_ops)):
         gaps.append("required browser verification")
-    return gaps
+    omitted_gaps = {gap for row in requirements.get("accepted_omissions") or []
+                    for gap in row.get("verification_gaps") or []}
+    return [gap for gap in gaps if gap not in omitted_gaps]
 
 
 def _invalidate_changed_verification(task_id: str, reports: list[dict]) -> None:
@@ -7980,19 +8787,9 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
         return 'Coding Task requires verification again: ' + ', '.join(content_gaps)
     gaps = _final_acceptance_gaps(before or managed, reports)
     if gaps:
-        reason = "REQUIRED_MCP_UNVERIFIED" if any(item.startswith("required MCP") or item.startswith("required browser") for item in gaps) else "REQUIRED_VERIFICATION_UNVERIFIED"
-        after = db.update_coding_task(task_id, status="RESUMABLE", activity="NONE",
-                                      recovery_action="RECOVERY_REVIEW", recovery_reason=reason) or {}
-        _finalization_log(task_id, final_phase_id=final_phase_id, all_phases_pass=False,
-                          completion_check_started=completion_check_started,
-                          completion_check_raw_decision=completion_check_raw_decision,
-                          completion_check_valid=completion_check_valid, final_report_started=False,
-                          final_report_valid=False, final_report_persisted=False,
-                          status_before=before.get("status", "UNKNOWN"),
-                          status_after=after.get("status", "RESUMABLE"),
-                          failure_stage="REQUIRED_ACCEPTANCE", exception_type="NONE")
-        _finish_coding_telemetry(task_id, "FAIL")
-        return "Coding Task final verification is incomplete: " + ", ".join(gaps)
+        return _coding_constraint_prompt(task_id, item="", gaps=gaps,
+            reason=("必要な検証の実行記録がありません。" if response_language() == "ja"
+                    else "There is no successful execution record for the required checks."))
     # Final report generation is a deterministic projection of persisted task
     # evidence.  Keep it as a separate lifecycle activity so the frontend can
     # show the existing FINAL_REPORTING state, while never routing this path
@@ -8016,8 +8813,8 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
         persisted_reports = [row["structured_report"] for row in db.coding_phase_reports(task_id)
                              if row.get("validation_status") == "PASS"]
         final = _append_artifact_paths(final, persisted_reports or reports, task_workspaces.service.root_for(task_id, project.get("workspace_path")))
-        final = _append_static_app_launch(final, report_task, plan,
-                                         task_workspaces.service.root_for(task_id, project.get("workspace_path")))
+        final = _append_completion_launch_guidance(final, report_task, plan,
+                                                  task_workspaces.service.root_for(task_id, project.get("workspace_path")))
         final = _append_mcp_telemetry(final, db.coding_task(task_id) or managed)
         format_ms = (time.perf_counter() - format_started) * 1000
         telemetry = _coding_telemetry.get(task_id)
@@ -8045,7 +8842,13 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
                           final_report_valid=False,final_report_persisted=False,status_before=before.get("status","UNKNOWN"),
                           status_after="RESUMABLE",failure_stage="FINAL_REPORT",exception_type="INVALID_OUTPUT")
         return "Coding Task final report could not be validated."
-    if coding_git_intent(str(managed.get('original_goal') or ''), git_integration.github.automatic()):
+    omissions = (report_task.get("requirements") or {}).get("accepted_omissions") or []
+    if omissions:
+        ja = report_task.get("response_language", "ja") == "ja"
+        heading = "一部未実施：同意により省いた項目" if ja else "Partial result: items omitted with your consent"
+        final_text = heading + "\n" + "\n".join(
+            f"- {item} ({row['reason']})" for row in omissions for item in row["unmet_criteria"]) + "\n\n" + final_text
+    if not omissions and coding_git_intent(str(managed.get('original_goal') or ''), git_integration.github.automatic()):
         if git_integration.github.automatic():
             final_text += ('\n\nGit操作の結果はGitパネルに表示します。' if response_language() == 'ja' else '\n\nGit operation results appear in the Git panel.')
         else:
@@ -8055,9 +8858,12 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
         _invalidate_changed_verification(task_id, reports)
         return 'Coding Task requires verification again: ' + ', '.join(content_gaps)
     try:
-        db.save_coding_completion(task_id, int(managed.get('plan_revision') or 0), final_text)
+        if omissions:
+            db.save_coding_completion(task_id, int(managed.get('plan_revision') or 0), final_text, partial=True)
+        else:
+            db.save_coding_completion(task_id, int(managed.get('plan_revision') or 0), final_text)
         persisted=db.coding_task(task_id) or {}
-        if persisted.get("status") != "COMPLETED" or persisted.get("final_report_status") != "PASS":
+        if persisted.get("status") != "COMPLETED" or persisted.get("final_report_status") != ("PARTIAL" if omissions else "PASS"):
             raise RuntimeError("final report persistence verification failed")
     except Exception as exc:
         if str(exc) == 'COMPLETION_INTERRUPTED':
@@ -8081,12 +8887,13 @@ def _final_report_only(task_id: str, managed: dict, plan: dict, reports: list[di
                       final_report_valid=True,final_report_persisted=True,status_before=before.get("status","UNKNOWN"),
                       status_after="COMPLETED")
     try:
-        _finish_coding_telemetry(task_id, "PASS")
+        _finish_coding_telemetry(task_id, "PARTIAL" if omissions else "PASS")
     except Exception as exc:
         print(f'TASK_ID={task_id} CODING_TELEMETRY_FINISH=FAILED ERROR_TYPE={type(exc).__name__} '
               'COMPLETION_PRESERVED=YES',file=__import__('sys').stderr,flush=True)
     try:
-        git_integration.completed_task(db.coding_task(task_id) or managed)
+        if not omissions:
+            git_integration.completed_task(db.coding_task(task_id) or managed)
     except Exception as exc:
         print(f"TASK_ID={task_id} GIT_HANDOFF_STATUS=UNAVAILABLE ERROR_TYPE={type(exc).__name__}", file=__import__('sys').stderr, flush=True)
     return "Coding Task completed."
@@ -8118,13 +8925,18 @@ def _complete_task(task_id: str, managed: dict) -> str:
             return "Coding Task completion evidence is incomplete."
         reports.append(latest["structured_report"])
         prior_evidence.append(_prior_saved_phase_reports(task_id,latest))
-    all_phases_pass=len(reports)==len(phases) and len(reports)>0
+    all_phases_pass = len(reports) == len(phases) and (bool(reports) or
+        any(row.get("skip_phase") for row in (managed.get("requirements") or {}).get("accepted_omissions") or []))
     conversation = db.conversation(str(managed.get("conversation_id") or "")) or {}
     project = db.project(str(conversation.get("project_id") or "")) or {}
     workspace_root = task_workspaces.service.root_for(task_id, project.get("workspace_path"))
     if not all_phases_pass or managed.get("pending_authorization") or any(
             (r.get('manager_decision') or {}).get('decision') not in {None, 'PASS'} or
-            (p.get('execution_mode') is not None and not evaluate_phase(p, r, prior, workspace_root=workspace_root)['phase_complete']) or
+            (not _saved_phase_pass_is_current(task_id, p, {"structured_report": r}, workspace_root)
+             if p.get('kind') == 'ORCHESTRATOR_BLUEPRINT' else
+             (p.get('execution_mode') is not None and not evaluate_phase(
+                 p, r, prior, workspace_root=workspace_root,
+                 reference_mcp_evidence=managed.get("mcp_evidence"))['phase_complete'])) or
             report_has_authoritative_failure(
                 r, p, workspace_root, prior)
             for r, p, prior in zip(reports, phases, prior_evidence)):
@@ -8388,6 +9200,9 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         return steering_result
     plan=managed.get("plan") or {}
     requirements = managed.get('requirements') or {}
+    if plan.get("phases") == [] and any(row.get("skip_phase") for row in requirements.get("accepted_omissions") or []):
+        _initialize_subtask_progress(task_id, plan)
+        return _complete_task(task_id, managed)
     original_goal = str(managed.get('original_goal') or '')
     verification_requested = verification_requested_by_user(original_goal, requirements)
     if requirements.get('verification_requested') is not verification_requested:
@@ -8406,8 +9221,16 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 owned_phase_ids.append(row['phase_id'])
     restored = (inherit_owned_verification(plan,plan,owned_phase_ids)
                 if verification_requested else suppress_unrequested_verification(plan)[0])
-    scheduled = normalize_static_verification(restored, workspace_root, verification_requested)
-    if verification_requested:
+    omissions = requirements.get("accepted_omissions") or []
+    remaining_checks = _final_acceptance_gaps(managed, [])
+    schedule_verification = verification_requested and (
+        not any(row.get("skip_phase") for row in omissions) or
+        any(gap for gap in remaining_checks if not gap.startswith("required MCP used:")) or
+        any(phase.get("execution_mode") == "VERIFICATION_ONLY" or phase.get("verify")
+            or phase.get("verification_command") for phase in restored.get("phases") or []
+            if phase.get("status") != "pass"))
+    scheduled = normalize_static_verification(restored, workspace_root, schedule_verification)
+    if schedule_verification:
         scheduled = bind_original_acceptance(scheduled, original_goal)
     schedule_changed=scheduled != plan
     if schedule_changed:
@@ -8526,7 +9349,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
             diagnostics = getattr(exc, "diagnostics", []) or []
             if diagnostics:
                 pending_plan = dict(plan)
-                pending_plan["path_validation_diagnostics"] = diagnostics[:16]
+                pending_plan["path_validation_diagnostics"] = _bounded_plan_diagnostics(diagnostics)
                 db.update_coding_task(task_id, pending_plan=pending_plan)
             if isinstance(exc, PlanStackConformanceError):
                 failure_reason = "PLAN_STACK_CONFORMANCE"
@@ -8536,7 +9359,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 message = manifest_coverage_message(replan=True)
             else:
                 failure_reason = "PLAN_PATH_VALIDATION"
-                first_diagnostic = diagnostics[0] if diagnostics else {}
+                first_diagnostic = _first_plan_diagnostic(diagnostics)
                 message = path_validation_message(
                     first_diagnostic.get("path_validation_code")
                     or first_diagnostic.get("path_validation_reason") or str(exc),
@@ -8633,11 +9456,10 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
             print(f'TASK_ID={task_id} PARTIAL_VERIFICATION_RESTORED=YES SOURCE_REPAIR_REQUIRED=NO',file=__import__('sys').stderr,flush=True)
         previous_decision = ((latest_report or {}).get("structured_report") or {}).get("manager_decision") or {}
         if latest_report and previous_decision.get("decision") != "PASS":
-            phase_reports = [row["structured_report"] for row in db.coding_phase_reports(task_id)
-                             if row.get("phase_id") == current_phase.get("id")
-                             and row.get("id") != latest_report.get("id")]
+            phase_reports = _prior_saved_phase_reports(task_id, latest_report)
             resumed_evaluation = evaluate_phase(current_phase, latest_report["structured_report"],
-                                                phase_reports, workspace_root)
+                                                phase_reports, workspace_root,
+                                                reference_mcp_evidence=managed.get("mcp_evidence"))
             print(f"TASK_ID={task_id} RESUME_REEVALUATION=YES "
                   f"PHASE_ID={current_phase.get('id')} "
                   f"PHASE_EVALUATION_COMPLETE={'true' if resumed_evaluation.get('phase_complete') else 'false'} "
@@ -8728,7 +9550,8 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 and phase.get('execution_mode')=='IMPLEMENTATION'
                 and phase.get('verify')==['Typed workspace writes and read-back succeed for the changed files.']
                 and evaluate_phase(phase,latest['structured_report'],
-                    [row['structured_report'] for row in reports[:-1]],workspace_root)['phase_complete']):
+                    [row['structured_report'] for row in reports[:-1]], workspace_root,
+                    reference_mcp_evidence=managed.get("mcp_evidence"))['phase_complete']):
             # A corrected host schedule may move an unexecuted integration
             # condition to final acceptance. Reuse actual saved writes for
             # the remaining artifact facts instead of repeating source edits.
@@ -8850,12 +9673,29 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                             'RECOVERY_REVIEW',recovery_reason='VERIFICATION_CONTRACT_INVALID')
                         return 'Coding Task paused: the project-test failure could not be tied to an attributable requirement/source review; no files were changed.'
         retry_state = (db.coding_task(task_id) or {}).get("resume_state") or {}
+        split_grant = retry_state.get("ineffective_replan_split_requested") or {}
+        deterministic_split_retry = bool(
+            split_grant.get("phase_id") == phase["id"]
+            and split_grant.get("plan_revision") == plan_revision
+            and not split_grant.get("consumed_at")
+        )
         retry_grant = retry_state.get("ineffective_replan_retry_requested") or {}
         direct_phase_retry = bool(
             retry_grant.get("phase_id") == phase["id"]
             and retry_grant.get("plan_revision") == plan_revision
             and not retry_grant.get("consumed_at")
         )
+        if deterministic_split_retry:
+            state = dict(retry_state)
+            state["ineffective_replan_split_requested"] = {
+                **split_grant, "consumed_at": time.time(), "attempt": attempt,
+            }
+            db.update_coding_task(task_id, resume_state=state)
+            saved_decision = latest["structured_report"].get("manager_decision", {}) if latest else {}
+            return _replan_task(
+                task_id, managed, completed,
+                str(saved_decision.get("reason") or "Deterministic host-side split requested after an ineffective replan."),
+                saved_decision.get("diagnosis"), force_deterministic_split=True)
         if latest:
             decision=latest["structured_report"].get("manager_decision",{}).get("decision")
             reason=latest["structured_report"].get("manager_decision",{}).get("reason","manager decision")
@@ -8887,7 +9727,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
             previous=latest["structured_report"]
             previous_typed = previous.get("typed_execution_summary") if isinstance(previous.get("typed_execution_summary"), dict) else {}
             previous_failure = str(previous_typed.get("failure_class") or "")
-            prior_attempt_progress = (previous.get("phase_progress") is True or
+            prior_attempt_progress = (_report_has_worktree_progress(previous) or
                                       int(previous.get("accepted_mutations") or previous_typed.get("accepted_mutations") or 0) > 0 or
                                       int(previous.get("files_written") or previous_typed.get("files_written") or 0) > 0)
             instruction = "" if prior_attempt_progress else zero_mutation_retry_instruction(
@@ -8941,7 +9781,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         previous_made_progress = (
             int(previous_report.get('accepted_mutations') or previous_typed_for_handoff.get('accepted_mutations') or 0) > 0
             or int(previous_report.get('final_worktree_mutations') or previous_typed_for_handoff.get('final_worktree_mutations') or 0) > 0
-            or previous_report.get('phase_progress') is True)
+            or _report_has_worktree_progress(previous_report))
         stalled_short_model = (previous_report.get('implementation_model') == settings.short_coding_model
             and bool(previous_report.get('test_fail'))
             and (previous_mutation_class == 'IDEMPOTENT_NOOP' or not previous_made_progress
@@ -8950,23 +9790,32 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         structural_output_failure=any(op.get('tool') == 'operation_application_failure'
                and ((op.get('output') or {}).get('operation_diagnostic') or {}).get('reason_subtype') == 'STRUCTURAL_VALIDATION_FAILED'
                for op in previous_operations if isinstance(op, dict))
+        empty_implementation_output_failure=any(
+            op.get('tool') == 'operation_rejection'
+            and str((op.get('input') or {}).get('failure_class') or
+                    (op.get('output') or {}).get('failure_class') or '').upper() == 'EMPTY_IMPLEMENTATION_OPERATIONS'
+            for op in previous_operations if isinstance(op, dict))
         if stalled_short_model:
             coding_model = settings.long_implementation_model
             implementation_handoff=True
             cause=('STALLED_ACCEPTANCE_REPAIR' if (retry_context or {}).get('stalled_acceptance') else
                    'IDEMPOTENT_FAILED_REPAIR')
             print(f'TASK_ID={task_id} IMPLEMENTER_ROLE_HANDOFF={cause} MODEL_NAME={coding_model}',file=__import__('sys').stderr,flush=True)
-        elif structural_output_failure:
+        elif structural_output_failure or empty_implementation_output_failure:
             previous_model=str(previous_report.get('implementation_model') or coding_model)
             alternate=_alternate_coding_model(previous_model,managed.get('conversation_id'))
             if alternate:
                 coding_model=alternate
                 implementation_handoff=True
-                cause='SOURCE_SYNTAX_REPAIR_DISTINCT_MODEL'
+                cause=('EMPTY_IMPLEMENTATION_OUTPUT_DISTINCT_MODEL' if empty_implementation_output_failure
+                       else 'SOURCE_SYNTAX_REPAIR_DISTINCT_MODEL')
             else:
                 _set_subtask_state(task_id,phase['id'],'FAILED',attempt=attempt,decision='RECOVERABLE_INTERNAL')
                 _transition_resumable(task_id,'STRUCTURAL_REPAIR','RECOVERABLE_INTERNAL',
-                    'RECOVERY_REVIEW',recovery_reason='STRUCTURAL_REPAIR_MODEL_UNAVAILABLE')
+                    'RECOVERY_REVIEW',recovery_reason='IMPLEMENTER_OUTPUT_REPAIR_MODEL_UNAVAILABLE')
+                if empty_implementation_output_failure:
+                    return ('Coding Task paused: the previous implementation response contained no valid file operations, '
+                            'and no distinct configured coding model is available for a bounded retry.')
                 return ('Coding Task paused: the last implementation output failed structural validation, '
                         'and no distinct configured coding model is available for a bounded repair.')
             print(f'TASK_ID={task_id} IMPLEMENTER_ROLE_HANDOFF={cause} '
@@ -8979,7 +9828,11 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
               file=__import__('sys').stderr,flush=True)
         db.update_coding_task(task_id,status="RUNNING",activity="READ_ONLY_VERIFICATION" if verification_retry else "QWEN_IMPLEMENTATION",current_phase_id=phase["id"],retry_count=max(0,attempt-1),recovery_action="NONE",recovery_reason="NONE")
         print(f"TASK_ID={task_id} TASK_STATUS=RUNNING TASK_ACTIVITY={'READ_ONLY_VERIFICATION' if verification_retry else 'IMPLEMENTATION'} MODEL_SLOT_OWNER={task_id} MODEL_NAME={coding_model} PHASE_ID={phase['id']} PHASE_ATTEMPT={attempt}",file=__import__('sys').stderr,flush=True)
-        phase_mcp=_phase_required_mcp(plan,phase["id"])
+        phase_mcp = _phase_required_mcp(plan, phase["id"])
+        required_mcp = set(_required_mcp_names(managed))
+        phase_requirements = managed.get("requirements") or {}
+        selected_mcp = set(coding_mcp_ids(phase_requirements.get("selected_mcps"))) - _omitted_mcp_names(phase_requirements)
+        phase_mcp = [name for name in phase_mcp if name in required_mcp or name in selected_mcp]
         mcp_context=[]
         for server_id in phase_mcp:
             persisted=db.coding_task(task_id) or {}
@@ -8994,22 +9847,29 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                     _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,decision="BLOCKED")
                     return "Coding Task is blocked: persisted shadcn preflight evidence was lost."
                 evidence,error=_run_required_mcp(task_id,server_id,workspace_root,
-                                                 f"{'required' if server_id in _required_mcp_names(managed) else 'automatic animation reference'} by phase {phase['id']}")
+                                                 f"{'required' if server_id in required_mcp else 'automatic animation reference'} by phase {phase['id']}")
                 if error:
-                    if server_id not in _required_mcp_names(managed):
+                    if server_id not in required_mcp:
                         # An automatic helper is advisory; its failed attempt is
                         # still typed evidence, but must not turn into a false
                         # required-MCP gate.
                         continue
-                    db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",
-                                          recovery_reason="REQUIRED_MCP_FAILED")
-                    _set_subtask_state(task_id,phase["id"],"FAILED",attempt=attempt,decision="BLOCKED")
-                    print(f"TASK_ID={task_id} REQUIRED_MCP={server_id} MCP_USAGE=FAILED "
-                          f"MCP_FAILURE_REASON={error or 'UNKNOWN'} TASK_STATUS=BLOCKED",
-                          file=__import__('sys').stderr,flush=True)
-                    message = _required_mcp_failure_message(task_id, server_id, error or "UNKNOWN")
-                    _add_task_message_once(managed["conversation_id"], task_id, message)
-                    return message
+                    _set_subtask_state(task_id, phase["id"], "FAILED", attempt=attempt, decision="BLOCKED")
+                    if error in {"VERSION_CONFLICT", "ANIMEJS_PROJECT_VERSION_UNKNOWN"}:
+                        db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_reason="REQUIRED_MCP_FAILED")
+                        message = _required_mcp_failure_message(task_id, server_id, error)
+                        _add_task_message_once(managed["conversation_id"], task_id, message)
+                        return message
+                    manifest = (implementation_artifact or {}).get("file_manifest") or plan.get("file_manifest") or []
+                    owned_paths = any(entry.get("owner_phase") == phase["id"] for entry in manifest if isinstance(entry, dict))
+                    skip = (server_id == "playwright" and not owned_paths
+                            and (phase.get("execution_mode") == "VERIFICATION_ONLY"
+                                 or (bool(implementation_artifact) and phase.get("execution_mode") == "IMPLEMENTATION_AND_VERIFICATION"
+                                     and phase.get("requires_dependency_installation") is not True))
+                            and not phase.get("verification_command") and not phase.get("host_verification"))
+                    item = f"Playwright MCP: {phase['goal']}" if skip else f"{_mcp_display_name(server_id)} MCP"
+                    return _coding_constraint_prompt(task_id, item=item, reason=error, mcp=server_id,
+                        phase=phase, skip_phase=skip, gaps=["required browser verification"] if skip else None)
             mcp_context.append(evidence)
         phase_dependency_records = phase.get("dependency_requirements") if isinstance(phase.get("dependency_requirements"), list) else []
         artifact_coverage = (implementation_artifact or {}).get("manifest_coverage") or {}
@@ -9052,7 +9912,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
               f"PACKAGE_JSON_DEPENDENCY_MUTATION_ALLOWED={'YES' if package_json_dependency_mutation_allowed else 'NO'} "
               f"PACKAGE_JSON_EFFECTIVE_MUTATION_SCOPE={'CONFIG_ALLOWED' if package_json_config_mutation_allowed else 'DEPENDENCIES_EXCLUDED'}",
               file=__import__('sys').stderr, flush=True)
-        phase_contract_metadata = {**phase, "required_mcp": phase_mcp,
+        phase_contract_metadata = {**phase, "required_mcp": [name for name in phase_mcp if name in required_mcp],
                                    "package_manager_executor": ("AUTHORIZED_PACKAGE_MANAGER"
                                                                   if package_install_authorized
                                                                   else None),
@@ -9092,6 +9952,14 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 phase_with_contract = _host_verification_phase(task_id, phase_with_contract, plan, workspace_root)
             except VerificationExecutorError as exc:
                 _record_verification_preparation_failure(task_id,phase['id'],exc)
+                if exc.startup_failed or str(exc).startswith(("VERIFICATION_NODE_RUNTIME_UNAVAILABLE", "VERIFICATION_BROWSER_RUNTIME_UNAVAILABLE")):
+                    ja = managed.get("response_language", "ja") == "ja"
+                    reason = ("検証コマンドを起動できませんでした。" if ja else "The verification command could not start.")
+                    if not exc.startup_failed:
+                        reason = ("検証に必要な実行環境がありません。" if ja else "The required verification runtime is unavailable.")
+                    offered = _omit_unavailable_verifier(task_id, phase, plan, reason)
+                    if offered:
+                        return offered
                 _transition_resumable(task_id,'VERIFICATION_EXECUTOR','RECOVERABLE_INTERNAL',
                                       'VERIFICATION_EXECUTOR_UNAVAILABLE')
                 return 'Coding Task paused: verification executor is unavailable. ' + str(exc)
@@ -9316,6 +10184,7 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         if phase_research_context:
             phase_request += "\n" + phase_research_context + "\n"
         phase_request += _frontend_quality_guidance(db.coding_task(task_id) or managed, phase_with_contract, workspace_root)
+        phase_request += _omission_instruction(managed.get("requirements") or {})
         instructions = task_workspaces.service.instruction_context(task_id)
         if instructions:
             phase_request += "\n[USER_TASK_INSTRUCTIONS]\n" + instructions
@@ -9370,8 +10239,14 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         verification_execution: Task | None = None
         if expectations.get("execution_mode") == "VERIFICATION_ONLY" and verification_result is None:
             # Verification-only never falls through to the file Implementer.
-            # Repair the missing executor contract from the original request,
-            # preserving completed work and the existing recovery budget.
+            # A saved read-only phase with no executable binding can be
+            # omitted only by a decision covering this exact phase.
+            if phase.get("execution_mode") == "VERIFICATION_ONLY" and not phase.get("host_verification"):
+                offered = _omit_unavailable_verifier(task_id, phase, plan,
+                    "この工程に実行可能な検証コマンドがありません。" if managed.get("response_language", "ja") == "ja"
+                    else "This phase has no executable verification command.")
+                if offered:
+                    return offered
             return _replan_task(task_id, db.coding_task(task_id) or managed, completed,
                 "verification-only phase has no executable verification contract", {
                     "specific_fix": "Provide an executable verification_command and existing verification_targets for this verification-only phase, within the original approved requirements. Do not replace verification with file mutations or an unobserved success claim.",
@@ -9656,6 +10531,13 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
         if decision is None: return "Task paused after phase review."
         if verification_result and verification_result[1].get('executor_error'):
             _record_verification_preparation_failure(task_id,phase['id'],verification_result[1].get('output') or 'Verification executor failed')
+            if (not verification_result[1].get("changed_targets")
+                    and verification_result[1].get("returncode") is None):
+                offered = _omit_unavailable_verifier(task_id, phase, plan,
+                    "The verification command could not start." if response_language() == "en"
+                    else "検証コマンドを起動できませんでした。")
+                if offered:
+                    return offered
             _transition_resumable(task_id,'VERIFICATION_EXECUTOR','RECOVERABLE_INTERNAL','VERIFICATION_EXECUTOR_UNAVAILABLE')
             return 'Coding Task paused: verification executor failed; no source repair was requested.'
         if decision == "RETRY" and phase.get("checkpoint_on_failure") is True:
@@ -9694,13 +10576,24 @@ def _run_managed_task(task_id: str, workspace_root: str | None) -> str:
                 return "Coding Task is blocked: 実装実行チャネルを利用できないため、操作を開始できませんでした。"
         if direct_phase_retry and decision in {"RETRY", "REPLAN_REQUIRED"}:
             evaluation = report_row["structured_report"].get("phase_evaluation") or {}
-            unmet = [phase["done"][index] for index in range(len(phase["done"]))
-                     if f"DONE:{index+1}" in (evaluation.get("unsatisfied_done_ids") or [])]
-            unmet += [phase["verify"][index] for index in range(len(phase["verify"]))
-                      if f"VERIFY:{index+1}" in (evaluation.get("unsatisfied_verify_ids") or [])]
+            unmet = [str(item) for item in [
+                *(evaluation.get("done_unmet") or []), *(evaluation.get("verify_unmet") or [])]]
+            decision_record = report_row["structured_report"].get("manager_decision") or {}
+            diagnosis = decision_record.get("diagnosis") or {}
+            if not unmet:
+                unmet = [str(item) for item in [
+                    *(diagnosis.get("unmet_done") or []), *(diagnosis.get("unmet_verify") or []),
+                    *(report_row["structured_report"].get("errors") or []),
+                    *(report_row["structured_report"].get("blockers") or []),
+                    *(report_row["structured_report"].get("test_fail") or [])] if str(item).strip()]
+            if not unmet:
+                reason = str(decision_record.get("reason") or "phase remained incomplete")
+                unmet = [f"Phase retry result: {reason}"]
+            unmet = list(dict.fromkeys(item[:500] for item in unmet if item.strip()))[:8]
             db.update_coding_task(task_id, status="WAITING_FOR_USER", activity="NONE", queue_order=None,
                 pending_authorization={"type": "REPLAN_INEFFECTIVE", "state": "PENDING",
-                                       "reason": "The phase retry did not satisfy its remaining criteria.", "unmet_criteria": unmet[:8]},
+                                       "reason": str(decision_record.get("reason") or "The phase retry did not satisfy its remaining criteria."),
+                                       "unmet_criteria": unmet},
                 pending_user_confirmation=1, recovery_action="NONE", recovery_reason="REPLAN_INEFFECTIVE")
             return _record_coding_stop(task_id, "REPLAN_INEFFECTIVE", False)
         prior_phase_reports = [row['structured_report'] for row in db.coding_phase_reports(task_id)
@@ -9847,10 +10740,12 @@ def run_managed_task(task_id: str, workspace_root: str | None) -> str:
 
 
 def _phase_required_mcp(plan: dict, phase_id: str) -> list[str]:
-    for task in plan.get("tasks") or []:
-        if isinstance(task, dict) and task.get("phase_id") == phase_id:
-            return list(dict.fromkeys([str(name) for name in task.get("required_mcp") or []] + [str(name) for name in task.get("selected_mcp") or []]))
-    return []
+    phase = next((row for row in plan.get("phases") or []
+                  if isinstance(row, dict) and row.get("id") == phase_id), {})
+    task = next((row for row in plan.get("tasks") or []
+                 if isinstance(row, dict) and row.get("phase_id") == phase_id), {})
+    return coding_mcp_ids([name for row in (phase, task) for field in ("required_mcp", "selected_mcp")
+                           for name in row.get(field) or []])
 
 
 def _explicit_task_brand_palette(goal: str) -> list[str]:
@@ -10061,6 +10956,46 @@ def _animejs_resource_diagnostics(resolution: dict, *, initialize: str = "NOT_RU
     print(" ".join(f"{key}={value}" for key, value in values.items()), file=__import__('sys').stderr, flush=True)
 
 
+def _run_coding_playwright(task_id: str, workspace_root: str | None, purpose: str) -> tuple[dict | None, str | None]:
+    """Capture browser evidence from an owned server, through the local-origin gate."""
+    def fail(reason: str, *, tool: str = "") -> tuple[None, str]:
+        item = _mcp_evidence(task_id, "playwright", status="FAILED" if tool else "BLOCKED",
+                             purpose=purpose, tool_name=tool, error=reason)
+        return None, item["error"]
+
+    if not capability_enabled(settings, "local_e2e_enabled"):
+        return fail("LOCAL_E2E_DISABLED")
+    if not workspace_root:
+        return fail("LOCAL_E2E_WORKSPACE_INVALID")
+    # The managed runner supplies the already verified task/worktree root.
+    run = None
+    session_id = None
+    try:
+        run = local_e2e.start(workspace_root, (workspace_root,), coding_task=True)
+        origin = run["origin"]
+        opened = browser_sessions.open_local(origin)
+        if opened.get("status") != "READY":
+            return fail(str(opened.get("error") or "LOCAL_E2E_BROWSER_START_FAILED"))
+        session_id = opened["session_id"]
+        page = browser_sessions.navigate(session_id, origin + "/")
+        if page.get("status") != "AVAILABLE":
+            return fail(str(page.get("error") or "LOCAL_E2E_NAVIGATION_FAILED"), tool="browser_navigate")
+        return _mcp_evidence(task_id, "playwright", status="PASS", purpose=purpose,
+                             tool_name="browser_navigate",
+                             result={"url": page["url"], "title": page.get("title"),
+                                     "snapshot": str(page.get("clean_markdown") or "")[:500],
+                                     "coverage": "navigation and accessibility snapshot only"}), None
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        return fail(str(exc))
+    finally:
+        try:
+            if session_id:
+                browser_sessions.close(session_id)
+        finally:
+            if run and run.get("owned_process"):
+                local_e2e.stop(run["id"])
+
+
 def _run_required_mcp(task_id: str, server_id: str, workspace_root: str | None, purpose: str) -> tuple[dict | None, str | None]:
     """Run the mandatory lifecycle and return bounded, persisted telemetry.
 
@@ -10069,9 +11004,13 @@ def _run_required_mcp(task_id: str, server_id: str, workspace_root: str | None, 
     """
     definition = server_definition(server_id)
     if not definition or not definition.get("enabled_by_policy"):
+        error = (_UNAVAILABLE_PLAYWRIGHT
+                 if server_id == "playwright" else "MCP is not enabled by the packaged policy")
         item = _mcp_evidence(task_id, server_id, status="BLOCKED", purpose=purpose,
-                             error="MCP is not enabled by the packaged policy")
+                             error=error)
         return None, item["error"]
+    if server_id == "playwright":
+        return _run_coding_playwright(task_id, workspace_root, purpose)
     resolution = node_mcp_resource_status(server_id)
     command = node_mcp_launch_command(server_id, prepare=True)
     if server_id == "animejs":
@@ -10180,8 +11119,6 @@ def _required_mcp_arguments(server_id: str, task: dict) -> dict:
             match = re.search(r"\b(?:about|for|regarding)\s+(?:anime\.?js\s+)?(?:v?4\s+)?([^.;]+)", goal, re.I)
             query = (match.group(1).strip() if match else goal.strip())[:160]
         return {"query": query}
-    if server_id == "playwright":
-        return {"url": "http://127.0.0.1:5173"}
     return {}
 
 _PROVIDER_RESEARCH_RELEVANCE = re.compile(
@@ -10415,7 +11352,7 @@ def _run_coding_planning(managed: dict) -> None:
     print(" ".join(f"{key}={json.dumps(value,ensure_ascii=False)}" for key,value in diagnostics.items()),file=__import__("sys").stderr,flush=True)
     execution_mode=diagnostics["EXECUTION_MODE"]
     profile=diagnostics["TASK_PROFILE"]
-    required_mcp=list(requirements["required_mcps"])
+    required_mcp = _required_mcp_names({**managed, "requirements": requirements})
     if _frontend_benchmark_invariant(requirements) and (profile != "FRONTEND_ONLY_MARKETING_SITE" or execution_mode != "NORMAL"):
         print(f"TASK_ID={task_id} CONTROL_PLANE_INVARIANT_FAILURE=TASK_PROFILE_MISMATCH TASK_PROFILE={profile} EXECUTION_MODE={execution_mode}",file=__import__('sys').stderr,flush=True)
         db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",recovery_reason="TASK_PROFILE_MISMATCH")
@@ -10441,21 +11378,21 @@ def _run_coding_planning(managed: dict) -> None:
                                    error=(str(resolution.get("reason") or "required MCP is unavailable before planning")
                                           if not command else "required MCP is unavailable before planning"),
                                    resource_mode=str(resolution.get("resource_mode") or ""))
-            db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",
-                                  recovery_reason="REQUIRED_MCP_UNAVAILABLE")
-            response=f"Coding Task は開始しませんでした。必須の {server_id} MCP を利用できません。"
             print(f"TASK_ID={task_id} TASK_PROFILE={profile} REQUIRED_MCP={server_id} MCP_PREFLIGHT=BLOCKED ERROR={evidence['error']}",file=__import__('sys').stderr,flush=True)
-            db.add_message(managed["conversation_id"],"assistant",response,time.time(),str(uuid.uuid4()),task_id)
+            _coding_constraint_prompt(task_id, item=f"{_mcp_display_name(server_id)} MCP", reason=evidence["error"], mcp=server_id)
             return
         mcp_purpose = f"{server_id} reference lookup for the requested coding task"
         evidence, error = _run_required_mcp(task_id, server_id, task_workspaces.service.root_for(task_id, (db.project((db.conversation(managed["conversation_id"]) or {}).get("project_id", "")) or {}).get("workspace_path")),
                                             mcp_purpose)
         if error:
-            reason = "REQUIRED_MCP_NETWORK_BLOCKED" if (db.coding_task(task_id) or {}).get("mcp_evidence", [{}])[-1].get("status") == "BLOCKED_NETWORK" else "REQUIRED_MCP_UNAVAILABLE"
-            db.update_coding_task(task_id,status="BLOCKED",activity="NONE",recovery_action="NONE",recovery_reason=reason)
-            response=f"Coding Task は開始しませんでした。必須の {server_id} MCP の検証に失敗しました。"
             print(f"TASK_ID={task_id} TASK_PROFILE={profile} REQUIRED_MCP={server_id} MCP_PREFLIGHT=BLOCKED ERROR={error}",file=__import__('sys').stderr,flush=True)
-            db.add_message(managed["conversation_id"],"assistant",response,time.time(),str(uuid.uuid4()),task_id)
+            # An incompatible project dependency is a stack constraint, not
+            # merely a missing reference lookup. Preserve that blocker.
+            if error in {"VERSION_CONFLICT", "ANIMEJS_PROJECT_VERSION_UNKNOWN"}:
+                db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_reason="REQUIRED_MCP_UNAVAILABLE")
+                _add_task_message_once(managed["conversation_id"], task_id, _required_mcp_failure_message(task_id, server_id, error))
+            else:
+                _coding_constraint_prompt(task_id, item=f"{_mcp_display_name(server_id)} MCP", reason=error, mcp=server_id)
             return
         requirements={**((db.coding_task(task_id) or {}).get("requirements") or requirements),"preflight":{**(requirements.get("preflight") or {}),server_id:"PASS"}}
         db.update_coding_task(task_id,requirements=requirements)
@@ -10541,7 +11478,11 @@ def _run_coding_planning(managed: dict) -> None:
     plan,_=_generate_plan(task_id,managed["original_goal"],planner_input,"QWEN_PLANNING",requirements)
     if not plan:
         _transition_resumable(task_id,"PLANNING","RECOVERABLE_INTERNAL","RECOVERY_REVIEW")
-        response="Coding Task の計画を検証できませんでした。実装は開始していません。"
+        failure=((db.coding_task(task_id) or {}).get('resume_state') or {}).get('planning_validation_failure') or {}
+        errors=failure.get('errors') if isinstance(failure,dict) else None
+        reason=str(errors[0])[:240] if isinstance(errors,list) and errors else None
+        response=(f"Coding Task の計画を検証できませんでした（{reason}）。実装は開始していません。"
+                  if reason else "Coding Task の計画を検証できませんでした。実装は開始していません。")
     else:
         # A persisted task/workspace contract is the source of truth for file
         # roles.  Planner output can describe verification files, but cannot
@@ -10621,9 +11562,40 @@ def _run_coding_planning(managed: dict) -> None:
             if verification_changes:
                 print(f"TASK_ID={task_id} PLAN_UNREQUESTED_VERIFICATION_REMOVED=YES POST_NORMALIZATION_CHANGES={json.dumps(verification_changes, ensure_ascii=False)}",
                       file=__import__('sys').stderr, flush=True)
+        # Structured schemas are advisory for several OpenAI-compatible
+        # providers. Bound oversized implementation phases on the host before
+        # the first implementer call so the chosen model does not determine
+        # whether a large plan fits one response. This only repartitions the
+        # accepted criteria and writable manifest entries already approved.
+        plan, host_slice_changes = bound_oversized_plan_phases(
+            plan, max_total_phase_count=MAX_HOST_EXECUTION_PHASES)
+        blocked_slice = next((item for item in host_slice_changes
+                              if str(item).startswith("phase_slicing_blocked:")), None)
+        if blocked_slice:
+            phase_id, _, detail = str(blocked_slice).removeprefix("phase_slicing_blocked:").rpartition(":")
+            error = (f"Approved implementation phase {phase_id} exceeds the host execution bounds and "
+                     f"could not be divided safely ({detail}). No implementation call was started.")
+            _store_plan_validation_diagnostic(task_id, [error])
+            _transition_resumable(task_id, "PHASE_SLICE_LIMIT", "RECOVERABLE_INTERNAL",
+                                  "RECOVERY_REVIEW", recovery_reason="PHASE_SLICE_LIMIT")
+            response = (f"計画された工程「{phase_id}」を実行上限内に安全に分割できなかったため、実装を開始せず停止しました。"
+                        "工程または検証条件を見直してから再試行してください。"
+                        if managed.get("response_language", "ja") == "ja" else
+                        f"Phase {phase_id} could not be safely split within the execution limits, so implementation did not start. "
+                        "Revise the phase or verification scope before retrying.")
+            db.add_message(managed["conversation_id"], "assistant", response, time.time(), str(uuid.uuid4()), task_id)
+            print(f"TASK_ID={task_id} PLAN_PHASE_SLICING=BLOCKED PHASE_ID={phase_id} "
+                  "IMPLEMENTATION_STARTED=NO MODEL_DEPENDENT=NO", file=__import__('sys').stderr, flush=True)
+            return
+        if host_slice_changes:
+            print(f"TASK_ID={task_id} PLAN_PHASE_SLICED_ON_HOST=YES "
+                  f"CHANGES={json.dumps(host_slice_changes, ensure_ascii=False)} "
+                  "SOURCE=APPROVED_PLAN_AND_MANIFEST MODEL_DEPENDENT=NO SCOPE_EXPANSION=NO",
+                  file=__import__('sys').stderr, flush=True)
         if depth['mode'] == 'LEAN' and not plan.get('tasks'):
             plan = derive_task_graph(plan, required_mcp)
-        post_plan_errors = validate_plan(plan, managed["original_goal"])
+        post_plan_errors = validate_plan(plan, managed["original_goal"],
+                                         max_phase_count=MAX_HOST_EXECUTION_PHASES)
         if post_plan_errors:
             print(f"TASK_ID={task_id} PHASE_COMPLEXITY_VALIDATION_ERRORS={json.dumps(post_plan_errors, ensure_ascii=False)} "
                   f"PHASE_COUNT={len(plan.get('phases') or [])} TASK_COUNT={len(plan.get('tasks') or [])}",
@@ -10637,7 +11609,8 @@ def _run_coding_planning(managed: dict) -> None:
                               for error in post_plan_errors)
             if graph_error:
                 candidate = derive_task_graph(plan, required_mcp)
-                if not validate_plan(candidate, managed["original_goal"]):
+                if not validate_plan(candidate, managed["original_goal"],
+                                     max_phase_count=MAX_HOST_EXECUTION_PHASES):
                     plan = candidate
                     post_plan_errors = []
                     print(f"TASK_ID={task_id} TASK_GRAPH_REDERIVED=YES PHASE_COMPLEXITY_CHECK=PASS", file=__import__('sys').stderr, flush=True)
@@ -10727,7 +11700,7 @@ def _run_coding_planning(managed: dict) -> None:
                                           "PLAN_STACK_CONFORMANCE")
                     _add_task_message_once(managed["conversation_id"], task_id, stack_conformance_message(stack_details))
                     return
-                first_diagnostic = diagnostics[0] if diagnostics else {}
+                first_diagnostic = _first_plan_diagnostic(diagnostics)
                 coverage_failure = isinstance(exc, PlanManifestCoverageError)
                 if coverage_failure:
                     print(f"TASK_ID={task_id} PLAN_MANIFEST_COVERAGE=FAIL "
@@ -10887,7 +11860,7 @@ def _run_coding_planning(managed: dict) -> None:
                     # diagnostics for a later recovery action.
                     pending_plan = dict(plan)
                     if diagnostics:
-                        pending_plan["path_validation_diagnostics"] = diagnostics[:16]
+                        pending_plan["path_validation_diagnostics"] = _bounded_plan_diagnostics(diagnostics)
                         db.update_coding_task(task_id, pending_plan=pending_plan)
                     if coverage_failure and repair_no_progress:
                         print(" ".join([
@@ -11138,8 +12111,8 @@ def _independent_external_chat_turn(value: ChatInput) -> bool:
     facts = coding_classification_diagnostics(text, execution_intent=value.execution_intent)
     if facts['mutation_intent'] or facts['planning_intent'] or facts['classification'] == 'CODING':
         return False
-    return bool(_api_preflight_clarification_guard(text) or route_external_tool(text) is not None or _external_router_candidate(text)
-                or _wikipedia_knowledge_fallback_candidate(text))
+    return bool(_api_preflight_clarification_guard(text) or _external_router_candidate(text)
+                or _wikipedia_knowledge_fallback_candidate(text) or _checked_provider_match(text) is not None)
 
 
 def _coding_resume_control_event(message: str) -> bool:
@@ -11150,8 +12123,11 @@ def _coding_resume_control_event(message: str) -> bool:
         message, re.I))
 
 
-def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str) -> dict | None:
-    if _independent_external_chat_turn(value) or value.image or value.attachment or value.message.startswith('/'):
+def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str, *,
+                         independent_chat_turn: bool | None = None) -> dict | None:
+    if independent_chat_turn is None:
+        independent_chat_turn = _independent_external_chat_turn(value)
+    if independent_chat_turn or value.image or value.attachment or value.message.startswith('/'):
         return None
     all_tasks = db.coding_tasks(conversation_id)
     # Restoring a closed console is an explicit task-control request. It does
@@ -11174,6 +12150,8 @@ def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str
                 target = _persist_coding_console(target,False,restore_archived=True)
             if target['status']=='QUEUED' and target.get('pause_requested'):
                 target=db.update_coding_task(target['id'],status='RESUMABLE') or target
+            if (target.get("pending_authorization") or {}).get("type") == continuation_consent.PENDING:
+                return _resume_coding_task_control(target, source="CHAT_RESTORE_SAVED_TASK")
             if (target['status'] in {'COMPLETED','WAITING_FOR_PLAN_APPROVAL'} or
                     (target.get('pending_authorization') and (target['pending_authorization'].get('type') not in {'REPLAN_INEFFECTIVE','USER_REVISION'}))):
                 message = ('保存済みのコーディングタスクを表示しました。完了済みの作業は再実行しません。修正・追加したい内容を入力できます。'
@@ -11188,6 +12166,12 @@ def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str
     selected = next((task for task in tasks if task['id'] == value.coding_task_id), None) if value.coding_task_id else None
     if value.coding_task_id and not selected: raise HTTPException(409, 'TASK_CONVERSATION_MISMATCH')
     text = value.message.strip()
+    decision = continuation_consent.choice(text)
+    if decision:
+        candidates = [task for task in tasks if (task.get("pending_authorization") or {}).get("type") == continuation_consent.PENDING]
+        target = selected if selected in candidates else (candidates[0] if not selected and len(candidates) == 1 else None)
+        if target:
+            return _coding_constraint_choice(target["id"], target["pending_authorization"]["id"], decision)
     plan_request = bool(re.fullmatch(r'(?:このTaskの|このタスクの)?(?:計画を(?:出して|見せて|表示して)|計画だけ(?:作って|出して))\s*[。！!]*', text, re.I))
     approval = bool(re.fullmatch(r'(?:はい、?\s*)?(?:承認します|承認|この計画を承認します|この計画で進めて|この計画を実行してください|この計画でお願いします|実行してください|進めてください|進めて|この内容でok|お願いします、?実装して|approve(?: this plan)?|approved|go ahead)\s*[。！!]*', text, re.I))
     setup_action = ('direct' if re.search(r'^(?:このTaskだけ|このタスクだけ)?現在の(?:Workspace|ワークスペース)で(?:進めて|実行して|続けて)', text, re.I) else
@@ -11209,6 +12193,8 @@ def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str
                 response += f"\n現在の工程：{task['current_phase_id']}"
             return reply(response)
     pending = task.get('pending_authorization') or {}
+    if pending.get("type") == continuation_consent.PENDING:
+        return reply(pending["message"])
     if pending.get('type') == 'REPLAN_INEFFECTIVE' and re.fullmatch(
             r'(?:再開(?:して)?|続行(?:して)?|再試行(?:して)?|失敗情報を使ってこの工程を再実行|元の要件で再計画して再試行|resume|continue|retry)[。！!]*', text, re.I):
         return _resume_coding_task_control(task, source='EXPLICIT_CHAT_REPLAN_RETRY')
@@ -11218,8 +12204,63 @@ def _managed_coding_chat(value: ChatInput, conversation_id: str, message_id: str
         if approval or plan_request:
             return reply('先に次の点を教えてください。\n\n' + '\n'.join(pending.get('questions') or []))
         previous = task.get('requirements') or {}
+        if pending.get("reason") == "CONFLICTING_REQUIREMENTS":
+            choice = _coding_requirement_conflict_choice(text)
+            if not choice:
+                return reply('どちらの条件を優先するか、A・B・「おすすめ」のいずれかで回答してください。\n\n' +
+                             '\n'.join(pending.get('questions') or []))
+            conflict = next(iter(pending.get("conflict_details") or []), {})
+            key = str(pending.get("current_conflict_key") or conflict.get("semantic_key") or "")
+            if not key:
+                return reply('矛盾した条件の識別情報を復元できませんでした。元の要求は変更せず、条件を言い換えて新しいCoding Taskとして送ってください。')
+            resolutions = dict(previous.get("constraint_resolutions") or {})
+            resolutions[key] = choice
+            answers = list(previous.get('definition_answers') or [])
+            raw_request = task['original_goal'] + ('\n' + '\n'.join(answers) if answers else '')
+            requirements = normalize_coding_requirements(
+                {"current_user_text": raw_request,
+                 "attachment_evidence": previous.get("attachment_evidence") or {}},
+                constraint_resolutions=resolutions)
+            if response_language() == 'ja':
+                selected_label = '必須条件' if choice == 'required' else '除外条件（推奨）'
+                decision_note = f"ユーザーが条件の優先順位を選択: {key} は{selected_label}を優先する。"
+            else:
+                selected_label = 'the required condition' if choice == 'required' else 'the exclusion (recommended)'
+                decision_note = f"User resolved the {key} conflict by prioritizing {selected_label}."
+            answers.append(decision_note)
+            requirements['definition_answers'] = answers
+            for control in ('planning_only', 'prior_task_goal', 'prior_task_id', 'followup_instruction_ids', 'explicit_skill', 'working_folder_id'):
+                if control in previous:
+                    requirements[control] = previous[control]
+            next_pending = _coding_requirement_conflict_pending(requirements)
+            if next_pending:
+                db.update_coding_task(task['id'], status='WAITING_FOR_USER', activity='NONE', queue_order=None,
+                                      requirements=requirements, pending_authorization=next_pending,
+                                      pending_user_confirmation=1, execution_mode=requirements['execution_mode'],
+                                      task_profile=requirements['task_profile'], required_mcp=requirements['required_mcps'])
+                return reply('\n'.join(next_pending['questions']))
+            if (requirements.get('normalization_diagnostics') or {}).get('requirement_contradiction') == 'YES':
+                return reply('条件の優先順位を適用しても矛盾が残っています。要求を変更せずに停止しています。残っている条件を確認してください。')
+            db.update_coding_task(task['id'], requirements=requirements, pending_authorization=None,
+                                  pending_user_confirmation=0, recovery_reason='NONE',
+                                  execution_mode=requirements['execution_mode'], task_profile=requirements['task_profile'],
+                                  required_mcp=requirements['required_mcps'])
+            current = db.coding_task(task['id']) or task
+            if not _coding_workspace_ready(current):
+                current = db.coding_task(task['id']) or current
+                return {"conversation_id": conversation_id, "coding_task_id": task['id'],
+                        "response": (current.get("pending_authorization") or {}).get("message", ""),
+                        "progress_event": {"type": "coding_task_progress", "origin": "HOST_STATUS",
+                                           "task_id": task['id'], "status": current['status']}, "sources": []}
+            db.enqueue_coding_task(task['id'])
+            db.update_coding_task(task['id'], activity='QWEN_PLANNING')
+            _coding_scheduler_wake.set()
+            return {'conversation_id':conversation_id,'coding_task_id':task['id'],'response':'','sources':[]}
         answers = [*(previous.get('definition_answers') or []), text]
-        requirements = normalize_coding_requirements(task['original_goal'] + '\n' + '\n'.join(answers))
+        requirements = normalize_coding_requirements(
+            {"current_user_text": task['original_goal'] + '\n' + '\n'.join(answers),
+             "attachment_evidence": previous.get("attachment_evidence") or {}},
+            constraint_resolutions=previous.get("constraint_resolutions") or {})
         if (task.get('requirements') or {}).get('explicit_skill'):
             requirements['explicit_skill']=task['requirements']['explicit_skill']
         if (requirements.get('normalization_diagnostics') or {}).get('requirement_contradiction') == 'YES':
@@ -11359,48 +12400,77 @@ def _coding_scheduler() -> None:
     except ValueError:
         concurrency = 2
         print('CODING_CONCURRENCY=2 CONFIG_FALLBACK=YES', file=__import__('sys').stderr, flush=True)
-    retry_pending = False
+    retry_delay_seconds = 0
     while not _coding_scheduler_stop.is_set():
-        _coding_scheduler_wake.wait(timeout=1 if retry_pending else None)
+        _coding_scheduler_wake.wait(timeout=retry_delay_seconds or None)
         _coding_scheduler_wake.clear()
         if _coding_scheduler_stop.is_set():
             break
         try:
-            _coding_scheduler_tick(concurrency)
-            retry_pending = False
-        except (sqlite3.Error, WorkspaceError, OSError, RuntimeError) as exc:
-            retry_pending = True
-            print(f"CODING_SCHEDULER_TICK=FAILED ERROR_TYPE={type(exc).__name__} RETRY_PENDING=YES",
+            retry_pending = _coding_scheduler_tick(concurrency)
+            retry_delay_seconds = (min(30, max(1, retry_delay_seconds * 2))
+                                   if retry_pending else 0)
+        except Exception as exc:
+            # The dispatcher is a long-lived service. A malformed task row,
+            # transient filesystem error, or unexpected ordinary exception
+            # must not permanently kill the only thread that drains QUEUED.
+            retry_delay_seconds = min(30, max(1, retry_delay_seconds * 2))
+            print(f"CODING_SCHEDULER_TICK=FAILED ERROR_TYPE={type(exc).__name__} "
+                  f"RETRY_PENDING=YES RETRY_DELAY_SECONDS={retry_delay_seconds}",
                   file=__import__('sys').stderr, flush=True)
 
 
-def _coding_scheduler_tick(concurrency: int) -> None:
+def _coding_scheduler_tick(concurrency: int) -> bool:
     # Bind/init the workspace tables before querying durable steering state.
     task_workspaces.service
     with db.connect() as conn:
         completed_with_queue = [row[0] for row in conn.execute("SELECT DISTINCT t.id FROM coding_tasks t JOIN coding_steering s ON s.task_id=t.id WHERE t.status='COMPLETED' AND t.archived=0 AND s.status='WAITING'")]
+    retry_pending = False
     for previous_id in completed_with_queue:
-        _dispatch_coding_followups(previous_id)
+        try:
+            _dispatch_coding_followups(previous_id)
+        except Exception as exc:
+            retry_pending = True
+            print(f"CODING_SCHEDULER_FOLLOWUP=FAILED TASK_ID={previous_id} "
+                  f"ERROR_TYPE={type(exc).__name__} RETRY_PENDING=YES",
+                  file=__import__('sys').stderr, flush=True)
     with db.connect() as conn:
         queued = [r[0] for r in conn.execute("SELECT id FROM coding_tasks WHERE status='QUEUED' AND archived=0 AND pause_requested=0 ORDER BY queue_order,id")]
     for task_id in queued:
         if _coding_scheduler_stop.is_set(): break
-        managed = db.coding_task(task_id)
-        if not managed or managed['status'] != 'QUEUED': continue
-        try: key = _coding_job_key(managed)
-        except (WorkspaceError, OSError): key = 'invalid:' + task_id
-        with _scheduler_jobs_lock:
-            if len(_scheduler_jobs) >= concurrency: break
-            if task_id in _scheduler_jobs or key in {entry[1] for entry in _scheduler_jobs.values()}: continue
-            thread = threading.Thread(target=_coding_job, args=(managed,), name='olcr-coding-' + task_id[:12], daemon=True)
-            _scheduler_jobs[task_id] = (thread, key)
-            try:
+        thread = None
+        try:
+            managed = db.coding_task(task_id)
+            if not managed or managed['status'] != 'QUEUED': continue
+            try: key = _coding_job_key(managed)
+            except (WorkspaceError, OSError): key = 'invalid:' + task_id
+            with _scheduler_jobs_lock:
+                if len(_scheduler_jobs) >= concurrency: break
+                if task_id in _scheduler_jobs or key in {entry[1] for entry in _scheduler_jobs.values()}: continue
+                thread = threading.Thread(target=_coding_job, args=(managed,), name='olcr-coding-' + task_id[:12], daemon=True)
+                _scheduler_jobs[task_id] = (thread, key)
                 thread.start()
-            except RuntimeError:
-                # An unstarted thread is not an active job and must not occupy
-                # the workspace/concurrency slot forever. Keep the DB queue.
-                _scheduler_jobs.pop(task_id, None)
-                raise
+        except RuntimeError:
+            if thread is not None:
+                with _scheduler_jobs_lock:
+                    if _scheduler_jobs.get(task_id, (None,))[0] is thread:
+                        _scheduler_jobs.pop(task_id, None)
+            # Preserve the dispatcher-level retry path for thread resource
+            # failures; the queue row remains durable and no slot is leaked.
+            raise
+        except Exception as exc:
+            # Isolate a single bad row/workspace so later queued tasks can
+            # still be dispatched. Leave its durable QUEUED state untouched
+            # and have the scheduler revisit it after a short backoff.
+            if thread is not None:
+                with _scheduler_jobs_lock:
+                    if _scheduler_jobs.get(task_id, (None,))[0] is thread:
+                        _scheduler_jobs.pop(task_id, None)
+            retry_pending = True
+            print(f"CODING_SCHEDULER_TASK=FAILED TASK_ID={task_id} "
+                  f"ERROR_TYPE={type(exc).__name__} RETRY_PENDING=YES",
+                  file=__import__('sys').stderr, flush=True)
+    return retry_pending
 
 start_coding_scheduler()
 
@@ -11457,7 +12527,8 @@ def create_conversation(project_id: str):
     project = db.project(project_id)
     if not project: raise HTTPException(404, "project not found")
     conversation_id = str(uuid.uuid4())
-    db.create_conversation("New conversation", time.time(), conversation_id, project_id)
+    db.create_conversation("New conversation", time.time(), conversation_id, project_id,
+                           title_auto_pending=True)
     return db.conversation(conversation_id)
 
 @app.patch("/api/projects/{project_id}/conversations/{conversation_id}")
@@ -11474,7 +12545,8 @@ def list_projectless_conversations():
 @app.post("/api/conversations")
 def create_projectless_conversation():
     conversation_id = str(uuid.uuid4())
-    db.create_conversation("New conversation", time.time(), conversation_id, None)
+    db.create_conversation("New conversation", time.time(), conversation_id, None,
+                           title_auto_pending=True)
     return db.conversation(conversation_id)
 
 @app.patch("/api/conversations/{conversation_id}")
@@ -13909,6 +14981,20 @@ def _wikipedia_knowledge_fallback_candidate(message: str) -> bool:
     ))
 
 
+def _explicit_knowledge_lookup_request(message: str) -> bool:
+    """Return true only when the user clearly asks to look up outside knowledge."""
+    value = str(message or "")
+    if _external_data_prohibited(value) or _tool_execution_prohibited(value):
+        return False
+    return bool(re.search(
+        r"(?:[^。！？!?、,;\r\n]{1,100}について(?:は)?(?:詳しく|もう少し|概要を)?"
+        r"(?:教えて|説明して|解説して|知りたい)|"
+        r"検索(?:して|してください|する)|調べ(?:て|てください|る)|探して|"
+        r"\b(?:search(?:\s+for)?|look\s+up|research|find)\b)",
+        value, re.I,
+    ))
+
+
 def _api_router_tokens(value: str) -> set[str]:
     """Build mixed-script recall tokens, retaining Japanese terms inside sentences."""
     stop_tokens = {"調べて", "調べる", "検索", "検索して", "探して", "教えて", "一覧", "最新", "について", "find", "search", "look", "up", "latest"}
@@ -14237,8 +15323,11 @@ def router_decision(message: str) -> tuple[str, dict] | None:
     # A 0.55 gate therefore prevented Laya from seeing many genuine matches.
     # Keep a small floor to reject empty/noisy retrievals; Laya's explicit
     # no-match choice remains the final authorization to call an API.
-    semantic_floor = 0.28
-    if semantic_top and semantic_top[0][1] < semantic_floor:
+    # Keep retrieval permissive so a relevant API can enter Laya's candidate
+    # set; use a separate, stricter floor for Laya's final route decision.
+    embedding_relevance_floor = 0.28
+    laya_confidence_floor = 0.65
+    if semantic_top and semantic_top[0][1] < embedding_relevance_floor:
         # Laya cannot turn a weak semantic neighbor into a grounded provider
         # route. High-signal direct requests have already had their deterministic
         # route chance above; shared conversational boilerplate is not enough
@@ -14248,7 +15337,7 @@ def router_decision(message: str) -> tuple[str, dict] | None:
                                 "semantic_top_score": semantic_top[0][1], "laya_called": False,
                                 "selected": None, "selection_guard": "EMBEDDING_BELOW_FLOOR"})
         print(f"API_ROUTE_ABSTAINED=EMBEDDING_BELOW_FLOOR TOP_SCORE={semantic_top[0][1]:.6f} "
-              f"FLOOR={semantic_floor:.2f} NEXT_FALLBACK=KNOWLEDGE_POLICY",
+              f"FLOOR={embedding_relevance_floor:.2f} NEXT_FALLBACK=BRAIN",
               file=__import__('sys').stderr, flush=True)
         return None
     if not top_k:
@@ -14302,10 +15391,10 @@ def router_decision(message: str) -> tuple[str, dict] | None:
         semantic_margin = best_semantic_score - second_semantic_score
         # Retrieval scores measure similarity, not user intent. A completed
         # selector decision must never be replaced with a different neighbour.
-        # During a selector outage only a structured-data request may use the
-        # calibrated emergency route.
+        # During a selector outage only a structured-data request with a strong,
+        # clearly separated semantic match may use the emergency route.
         if (not laya_decision_completed and structured_data_intent
-                and best_semantic_score >= 0.30 and semantic_margin >= 0.05):
+                and best_semantic_score >= 0.55 and semantic_margin >= 0.10):
             selection_guard = "STRUCTURED_DATA_EMERGENCY_ROUTE"
             laya_selected = best_semantic_id
             selected = best_semantic_id
@@ -14326,7 +15415,7 @@ def router_decision(message: str) -> tuple[str, dict] | None:
                 })
                 print(f"API_ROUTE_ABSTAINED=LAYA_EMBEDDING_CONFLICT LAYA_SELECTED={laya_selected} "
                       f"TOP_SCORE={best_semantic_score:.6f} SELECTED_SCORE={selected_semantic_score:.6f} "
-                      "NEXT_FALLBACK=KNOWLEDGE_POLICY", file=__import__('sys').stderr, flush=True)
+                      "NEXT_FALLBACK=BRAIN", file=__import__('sys').stderr, flush=True)
                 return None
     if laya_decision_completed and laya_selected is None:
         # A completed Laya choice with no valid candidate is an intentional
@@ -14352,14 +15441,16 @@ def router_decision(message: str) -> tuple[str, dict] | None:
             "selected": None,
             "selection_guard": "LAYA_NO_MATCH",
             })
-            print("API_ROUTE_ABSTAINED=LAYA_NO_MATCH NEXT_FALLBACK=KNOWLEDGE_POLICY", file=__import__('sys').stderr, flush=True)
+            print("API_ROUTE_ABSTAINED=LAYA_NO_MATCH NEXT_FALLBACK=BRAIN", file=__import__('sys').stderr, flush=True)
             return None
-    if laya_selected is not None:
+    if laya_selected is not None and laya_decision_completed:
         try:
             numeric_confidence = float(laya_confidence)
         except (TypeError, ValueError):
             numeric_confidence = None
-        if numeric_confidence is not None and numeric_confidence < semantic_floor:
+        if (numeric_confidence is None or not math.isfinite(numeric_confidence)
+                or not 0.0 <= numeric_confidence <= 1.0
+                or numeric_confidence < laya_confidence_floor):
             # A completed but explicitly low-confidence choice is not stronger
             # evidence than an unrelated nearest neighbor. Abstain instead of
             # executing a provider such as IMF for a generic domestic query.
@@ -14367,18 +15458,20 @@ def router_decision(message: str) -> tuple[str, dict] | None:
                 "retrieval": "embedding" if embedding_active else "metadata",
                 "embedding_status": embedding_status, "candidate_ids": list(top_k),
                 "laya_called": True, "laya_selected": laya_selected,
-                "laya_confidence": laya_confidence, "selected": None,
+                "laya_confidence": laya_confidence, "confidence_floor": laya_confidence_floor,
+                "selected": None,
                 "selection_guard": "LAYA_LOW_CONFIDENCE",
             })
+            confidence_label = f"{numeric_confidence:.6f}" if numeric_confidence is not None else "MISSING_OR_INVALID"
             print(f"API_ROUTE_ABSTAINED=LAYA_LOW_CONFIDENCE LAYA_SELECTED={laya_selected} "
-                  f"LAYA_CONFIDENCE={numeric_confidence:.6f} FLOOR={semantic_floor:.2f} "
-                  "NEXT_FALLBACK=KNOWLEDGE_POLICY", file=__import__('sys').stderr, flush=True)
+                  f"LAYA_CONFIDENCE={confidence_label} FLOOR={laya_confidence_floor:.2f} "
+                  "NEXT_FALLBACK=BRAIN", file=__import__('sys').stderr, flush=True)
             return None
     if (laya_provider.loaded and not laya_decision_completed and semantic_top
-            and semantic_top[0][1] < semantic_floor):
+            and semantic_top[0][1] < embedding_relevance_floor):
         # If Laya itself fails, keep only a strong semantic neighbor eligible
         # for deterministic emergency fallback. Weak nearest neighbors are
-        # not evidence that an API fits; let the chat's Wikipedia policy run.
+        # not evidence that an API fits; let the normal Brain path handle it.
         _API_ROUTING_TRACE.set({
             "retrieval": "embedding" if embedding_active else "metadata",
             "embedding_status": embedding_status,
@@ -14389,7 +15482,7 @@ def router_decision(message: str) -> tuple[str, dict] | None:
             "selected": None,
             "selection_guard": "LAYA_FAILURE_LOW_CONFIDENCE",
         })
-        print(f"API_ROUTE_ABSTAINED=LAYA_FAILURE_LOW_CONFIDENCE LAYA_ERROR={laya_failure_category} NEXT_FALLBACK=KNOWLEDGE_POLICY",
+        print(f"API_ROUTE_ABSTAINED=LAYA_FAILURE_LOW_CONFIDENCE LAYA_ERROR={laya_failure_category} NEXT_FALLBACK=BRAIN",
               file=__import__('sys').stderr, flush=True)
         return None
     if laya_selected is None and not laya_decision_completed:
@@ -14415,6 +15508,7 @@ def router_decision(message: str) -> tuple[str, dict] | None:
         if laya_selected is None:
             _API_ROUTING_TRACE.set({"candidate_ids": list(top_k), "selected": None,
                                     "laya_called": bool(laya_provider.loaded),
+                                    "laya_error": laya_failure_category,
                                     "selection_guard": "SELECTOR_UNAVAILABLE", "embedding_status": embedding_status,
                                     "fallback": "KNOWLEDGE_POLICY"})
             return None
@@ -14483,7 +15577,7 @@ def router_decision(message: str) -> tuple[str, dict] | None:
             "argument_error": exc.category,
         })
         print(f"API_ROUTE_ABSTAINED=ARGUMENT_COMPILATION_FAILED TOOL={selected} "
-              f"ERROR={exc.category} NEXT_FALLBACK=KNOWLEDGE_POLICY",
+              f"ERROR={exc.category} NEXT_FALLBACK=BRAIN",
               file=__import__('sys').stderr, flush=True)
         return None
     route_status = "LAYA_CHOICE_GUARDED" if selection_guard else "LAYA_CHOICE" if laya_provider.loaded else "DETERMINISTIC_METADATA_ONLY"
@@ -17325,6 +18419,10 @@ def _external_tool_user_message(code: str, arguments: dict | None = None, tool_i
 
 
 def _translation_error_message(code: str) -> str:
+    if code == 'BRAIN_TRANSLATION_TIMEOUT':
+        return '通常の推論用Brainが時間内に応答しませんでした。短い文章に分けて再試行してください。'
+    if code == 'BRAIN_TRANSLATION_FAILED':
+        return '通常の推論用Brainで翻訳を完了できませんでした。推論モデルの設定を確認して再試行してください。'
     if code == 'MODEL_PRESET_NOT_DOWNLOADED':
         return '翻訳モデル PLaMo 3 Translate 2B が未ダウンロードです。設定の用途別モデルからダウンロードしてください。'
     if code == 'MODEL_PRESET_RUNTIME_UNAVAILABLE':
@@ -17339,6 +18437,8 @@ def _translation_error_message(code: str) -> str:
         return 'メモリ不足でローカル翻訳を完了できませんでした。他のローカルモデルを停止してから再試行してください。'
     if code == 'MODEL_TRANSLATION_CHECKPOINT_MISMATCH':
         return '翻訳モデルの重み形式と実行設定が一致しません。翻訳モデルを再ダウンロードしてください。'
+    if code == 'MODEL_TRANSLATION_OUTPUT_LIMIT':
+        return '翻訳フェーズの生成上限に達したため完了できませんでした。保存済みフェーズの成果物はチャットに残っています。対象の分割サイズを小さくして再試行してください。'
     if code == 'MODEL_TRANSLATION_PROVIDER_FAILED':
         return '選択中の翻訳モデルから応答を得られませんでした。翻訳用モデルの接続設定とモデル名を確認してください。'
     if code == 'MODEL_TRANSLATION_TIMEOUT':
@@ -17348,9 +18448,23 @@ def _translation_error_message(code: str) -> str:
     return '翻訳を完了できませんでした。設定の翻訳用モデルを確認して再試行してください。'
 
 
+def _translation_output_format_was_requested(prompt: str) -> bool:
+    """Detect an explicit non-plain-text format request in the instruction."""
+    return bool(re.search(
+        r"(?:出力|保存|書き出し|形式|フォーマット|ファイル|output|save|format)"
+        r".{0,32}(?:pdf|docx?|word|markdown|md|html|csv|rtf|json)\b|"
+        r"\b(?:pdf|docx?|word|markdown|md|html|csv|rtf|json)\b"
+        r".{0,32}(?:で出力|として出力|形式|ファイル|にして|で保存|format|file|output)",
+        str(prompt or ""), re.I,
+    ))
+
+
 def _api_router_clarification(tool_id: str | None, prompt: str, guard: str | None = None) -> str:
     """Ask for the missing discriminator instead of silently falling back to generic knowledge."""
     adapter = CANONICAL_ALIASES.get(tool_id, tool_id)
+    if adapter == "language.translation":
+        return (f"翻訳本文を処理できませんでした。翻訳するテキストを確認してください。"
+                f" 本文は約{MAX_TRANSLATION_PHASE_CHARS:,}文字ごとに自動分割し、合計 {MAX_TEXT_PROCESSING_CHARS:,}文字まで処理できます。")
     discriminators = {
         "security.cve": "比較する脆弱性のCVE番号、または対象製品名を指定してください。",
         "security.exploit_probability": "悪用可能性を確認するCVE番号を指定してください。",
@@ -17660,7 +18774,8 @@ def execute_command(value: CommandInput):
         pid = (db.conversation(value.conversation_id) or {}).get('project_id')
     if spec.requires_project and (not pid or not db.project(pid)):
         raise HTTPException(422, "PROJECT_REQUIRED")
-    conversation_id = value.conversation_id or db.create_conversation(value.text, time.time(), str(uuid.uuid4()), pid)
+    conversation_id = value.conversation_id or db.create_conversation(
+        "New conversation", time.time(), str(uuid.uuid4()), pid, title_auto_pending=True)
     if not db.conversation(conversation_id): raise HTTPException(404, "conversation not found")
     if pid and db.conversation(conversation_id)["project_id"] != pid:
         raise HTTPException(403, "CONVERSATION_PROJECT_MISMATCH")
@@ -19310,7 +20425,7 @@ def _resolve_chat_context(value: ChatInput) -> tuple[str, str, dict[str, Any] | 
     project_id = (value.project_id if project_was_specified else
                   existing.get("project_id") if existing else db.default_project_id())
     conversation_id = value.conversation_id or db.create_conversation(
-        value.message, time.time(), str(uuid.uuid4()), project_id)
+        "New conversation", time.time(), str(uuid.uuid4()), project_id, title_auto_pending=True)
     existing = db.conversation(conversation_id)
     if not existing:
         raise HTTPException(404, "conversation not found")
@@ -19449,7 +20564,7 @@ def _knowledge_youtube_supplement(question: str, answer: str, conversation_id: s
     ident = str(uuid.uuid4())
     return response, [{"type": "assistant_action", "kind": "media", "id": ident,
                        "conversation_id": conversation_id, "created_at": time.time(),
-                       "query": query or "", "candidates": candidates[:5], "autoplay": False}]
+                       "query": query or "", "candidates": candidates[:10], "autoplay": False}]
 
 
 def _assistant_intent(value):
@@ -19507,8 +20622,8 @@ def _lexical_chat_request_intent(value: ChatInput):
         attachment_present=bool(value.image or value.attachment),execution_intent=value.execution_intent)
 
 
-def _chat_request_intent(value: ChatInput):
-    result = _lexical_chat_request_intent(value)
+def _chat_request_intent(value: ChatInput, result: RequestIntent | None = None):
+    result = result if result is not None else _lexical_chat_request_intent(value)
     # Explicit software work owns the request before follow-up/domain-action
     # heuristics run. Calling the assistant router here let unrelated actions
     # throw or capture a coding request before the orchestrator could create
@@ -19518,7 +20633,6 @@ def _chat_request_intent(value: ChatInput):
         return result
     contextual=_assistant_intent(value)
     if contextual and contextual.get('followup'):
-        from .request_intent import RequestIntent
         return RequestIntent('ASSISTANT_ACTION',{**result.facts,'reason':'CONTEXTUAL_ACTION_FOLLOWUP'})
     return result
 
@@ -19600,6 +20714,56 @@ def _chat_explicit_skill(value: ChatInput):
             'blocks': result['blocks'], 'sources': result['sources']}
 
 
+def _workspace_launch_response(value: ChatInput, intent: RequestIntent) -> dict | None:
+    from . import workspace_launch
+    if (intent.owner != "GENERAL" or value.coding_followup in {"queue", "steer"}
+            or value.resume_control or value.resume_task_id
+            or value.execution_intent or value.approved
+            or value.image or value.attachment or value.concept_diagram or value.location_map
+            or value.external or value.computer_use_event or value.agent_builder):
+        return None
+
+    conversation_id, project_id, existing = _resolve_chat_context(value)
+    latest_task = next((task for task in db.coding_tasks(conversation_id)
+                        if not task.get("archived")), None)
+    latest_message = next(reversed(existing.get("messages") or []), None)
+    completed_coding_task_context = bool(
+        latest_task and latest_task.get("status") == "COMPLETED"
+        and latest_message and latest_message.get("role") == "assistant"
+        and latest_message.get("task_id") == latest_task.get("id")
+    )
+    if not workspace_launch.requested(
+        value.message, completed_coding_task_context=completed_coding_task_context,
+    ):
+        return None
+
+    root = None
+    try:
+        project = db.project(project_id) or {}
+        project_root = None if project.get("archived") else project.get("workspace_path")
+        service = task_workspaces.service
+        selected_id = value.coding_task_id
+        if selected_id:
+            task = db.coding_task(selected_id)
+            if not task or task["conversation_id"] != conversation_id or task.get("archived"):
+                raise WorkspaceError("TASK_CONVERSATION_MISMATCH")
+            workspace = service.root_for(selected_id, project_root)
+        else:
+            workspace = service.conversation_root(conversation_id) or project_root
+        if workspace:
+            candidate = Path(workspace).resolve(strict=True)
+            if candidate.is_dir():
+                root = candidate
+    except (OSError, ValueError, RuntimeError):
+        # A stale or moved worktree must not silently resolve to a different project.
+        pass
+    response = workspace_launch.answer(root, japanese=response_language() == "ja")
+    db.add_message(conversation_id, "user", value.message, time.time(), value.message_id or str(uuid.uuid4()))
+    db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()))
+    return {"conversation_id": conversation_id, "response": response, "sources": [],
+            "response_owner": workspace_launch.OWNER}
+
+
 def _operation_help_response(value: ChatInput):
     from .operation_help import requested, answer, identity_response
     if value.image or value.attachment or value.concept_diagram or value.location_map:
@@ -19618,11 +20782,22 @@ def _operation_help_response(value: ChatInput):
             or (action_intent(value.message) is not None and explicit_action)
             or _explicit_knowledge_video_request(value.message)):
         return None
-    identity = identity_response(value.message, response_language())
-    if identity is None and not requested(value.message):
+    try:
+        identity = identity_response(value.message, response_language())
+        if identity is None and not requested(value.message):
+            return None
+        result = ({"response": identity, "sources": []} if identity is not None
+                  else answer(value.message, response_language()))
+    except Exception as exc:
+        # The bundled operation guide is an optional route. A stale or
+        # incomplete Graphify snapshot must not abort an otherwise valid chat
+        # turn before its user message is persisted.
+        from .generation_control import GenerationCancelled
+        if isinstance(exc, GenerationCancelled):
+            raise
+        print(f"OPERATION_HELP_FALLBACK=GENERAL_CHAT ERROR_TYPE={type(exc).__name__}",
+              file=sys.stderr, flush=True)
         return None
-    result = ({"response": identity, "sources": []} if identity is not None
-              else answer(value.message, response_language()))
     conversation_id,_,_=_resolve_chat_context(value)
     task=Task(value.message);task.route=Route.RETRIEVAL
     task.transition(TaskState.ROUTING);task.transition(TaskState.SEARCHING)
@@ -19795,38 +20970,490 @@ def _is_travel_booking_stream_turn(value: ChatInput) -> bool:
     return False
 
 
-@app.post("/api/chat")
-def chat(value: ChatInput):
+def _limited_answer_choice(text: str) -> str | None:
+    text = text.strip().rstrip("。.!！").casefold()
+    if text in {"情報取得なしで回答", "answer without lookup"}:
+        return "accept"
+    if text in {"この回答を停止", "stop this answer"}:
+        return "decline"
+    return None
+
+
+def _explicit_provider_requested(message: str, tool_id: str) -> bool:
+    provider = REGISTRY[tool_id].provider
+    return bool(re.search(r"\bAPI\b", message, re.I) or provider.casefold() in message.casefold())
+
+
+def _offer_limited_answer(conversation_id: str, request: str, item: str, reason: str) -> str:
+    ja = response_language() == "ja"
+    db.save_constrained_chat(conversation_id, {"request": request})
+    response = continuation_consent.prompt([item], reason,
+        "取得できない情報を明記し、確認なしで答えられる部分だけを回答します。" if ja
+        else "Answer only the parts that can be addressed without the lookup, and identify what remains unverified.",
+        ja=ja)
+    if ja:
+        return response.replace("制約を受け入れて続行", "情報取得なしで回答").replace("ここで停止", "この回答を停止")
+    return response.replace("continue with limitations", "answer without lookup").replace("stop here", "stop this answer")
+
+
+def _offer_provider_limited_answer(conversation_id: str, request: str, tool_id: str, code: str,
+                                   routing_evidence: dict | None, *, blocks: list | None = None,
+                                   result: dict | None = None) -> dict:
+    provider = REGISTRY[tool_id].provider
+    reasons = {
+        "CREDENTIAL_SETUP_REQUIRED": ("必要な認証情報が設定されていません。", "The provider's credentials are not configured."),
+        "EXTERNAL_ACCESS_REQUIRED": ("外部アクセスが無効です。", "External access is disabled."),
+        "PROVIDER_CAPABILITY_UNSUPPORTED": ("このAPIは指定された操作に対応していません。", "This API does not support the requested operation."),
+        "PROVIDER_EMPTY": ("指定された条件に合う結果が得られませんでした。", "No result matched the requested criteria."),
+        "PROVIDER_TIMEOUT": ("指定されたAPIが時間内に応答しませんでした。", "The requested API did not respond in time."),
+        "PROVIDER_ACCESS_DENIED": ("指定されたAPIがアクセスを拒否しました（HTTP 403）。", "The requested API denied access (HTTP 403)."),
+    }
+    ja = response_language() == "ja"
+    reason = reasons.get(code, ("指定されたAPIから使える情報を取得できませんでした。",
+                                "The requested API did not provide usable information."))[0 if ja else 1]
+    response = _offer_limited_answer(conversation_id, request, provider, reason)
+    task = Task(request)
+    task.transition(TaskState.ROUTING)
+    task.transition(TaskState.FAILED)  # The provider attempt ended; consent has its own conversation state.
+    task.error = code
+    record_external_api_execution(task, tool_id, provider, routing_evidence, "failed", code, result)
+    db.save_task(task, conversation_id)
+    db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()), task.id, blocks=blocks)
+    return {"conversation_id": conversation_id, "task": serialize_task(task), "response": response,
+            "sources": [], "blocks": blocks or []}
+
+
+def _lookup_constraint(value: ChatInput) -> tuple[str, str] | None:
+    if (value.image or value.attachment or value.agent_builder or value.location_map or value.external
+            or value.message.startswith("/") or _external_data_prohibited(value.message)
+            or _tool_execution_prohibited(value.message)):
+        return None
+    ja = response_language() == "ja"
+    if runtime._explicit_web_search_request(value.message) and settings.web_mode == "off":
+        return ("Web検索", "設定でWeb検索がオフです。") if ja else ("Web search", "Web search is turned off in Settings.")
+    return None
+
+
+def _constrained_lookup_chat(value: ChatInput, limitation: tuple[str, str] | None) -> dict | None:
+    decision = _limited_answer_choice(value.message)
+    if not limitation and not decision:
+        return None
+    conversation_id, _, _ = _resolve_chat_context(value)
+    ja = response_language() == "ja"
+    if decision:
+        pending = db.take_constrained_chat(conversation_id)
+        if not pending:
+            response = "続行を待っている情報取得依頼はありません。" if ja else "No lookup request is waiting for your decision."
+        elif decision == "decline":
+            response = "情報取得と回答を停止しました。" if ja else "Stopped the lookup and answer."
+        else:
+            instructions = ("Answer only the parts of the original request that can be answered without any lookup, "
+                            "tools, or external evidence. State what cannot be verified. Do not claim to have "
+                            "performed the omitted lookup; do not fabricate sources or current facts.")
+            notice = ("指定された情報源は未確認です。" if ja else "The requested source was not consulted.")
+            try:
+                with model_slot():
+                    result = runtime._generate_brain([{"role": "system", "content": instructions},
+                        {"role": "user", "content": pending["request"]}], pending["request"], repair_tool_control=False)
+                answer = _sanitize_user_visible_assistant_text(str(result.get("text") or ""))
+            except ModelFailure:
+                answer = ""
+            response = notice + "\n\n" + (answer or ("利用可能な情報だけで回答を生成できませんでした。" if ja
+                                                       else "An answer could not be generated from the available information."))
+    else:
+        item, reason = limitation
+        response = _offer_limited_answer(conversation_id, value.message, item, reason)
+    db.add_message(conversation_id, "user", value.message, time.time(), value.message_id or str(uuid.uuid4()))
+    db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()))
+    return {"conversation_id": conversation_id, "response": response, "sources": []}
+
+
+class _ChatRoutingFailure(Exception):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _checked_request_intent(value: ChatInput, **context) -> RequestIntent:
+    try:
+        if context:
+            return resolve_request_intent(value.message, execution_intent=value.execution_intent, **context)
+        return _lexical_chat_request_intent(value)
+    except (ValueError, TypeError, RuntimeError, KeyError, OSError) as exc:
+        raise _ChatRoutingFailure('REQUEST_CLASSIFIER_FAILED') from exc
+
+
+def _checked_provider_match(message: str):
+    try:
+        return route_external_tool(message)
+    except (ValueError, TypeError, RuntimeError, KeyError, OSError) as exc:
+        raise _ChatRoutingFailure('PROVIDER_MATCH_FAILED') from exc
+
+
+def _chat_routing_outcome(conversation_id: str, message: str, code: str, *,
+                          clarification: bool = False, failure_type: str | None = None) -> dict:
+    descriptions = {
+        'CONTRADICTORY_MUTATION_AND_NON_CODING_SCOPE': (
+            '変更を求める指示と変更を禁止する指示が矛盾しています。実装を行うか、変更せずに説明・計画だけを行うか指定してください。',
+            'The request both asks for and prohibits changes. Specify whether to make changes or only explain or plan.'),
+        'SOFTWARE_ACTION_UNSPECIFIED': (
+            'ソフトウェアに関する依頼ですが、具体的な操作が指定されていません。実装を行うか、計画・設計や説明を行うか指定してください。',
+            'The request names a software target without specifying an action. Say whether you want an implementation, plan, or explanation.'),
+        'TECHNICAL_CONTEXT_WITHOUT_MUTATION': (
+            '技術的な対象は見つかりましたが、具体的な操作が指定されていません。実装を行うか、調査・説明を行うか指定してください。',
+            'A technical topic was found, but no specific action was identified. Say whether you want implementation, investigation, or explanation.'),
+        'REQUEST_CLASSIFIER_FAILED': (
+            '依頼の種類を判定する段階で内部エラーが発生しました。',
+            'An internal error occurred while classifying the request.'),
+        'PROVIDER_MATCH_FAILED': (
+            '処理先の候補を調べる段階で内部エラーが発生しました。',
+            'An internal error occurred while matching the request to a provider.'),
+        'PROVIDER_SELECTION_FAILED': (
+            '処理先の候補を絞り込む段階で内部エラーが発生しました。',
+            'An internal error occurred while selecting a provider.'),
+    }
+    detail = descriptions.get(code, ('処理先を確定できませんでした。', 'The request could not be routed.'))
+    japanese = response_language() == 'ja'
+    stopped = ('実装・処理の実行には進んでいません。' if japanese else 'The requested operation was not started.')
+    response = f'{detail[0 if japanese else 1]}\n{stopped}（{code}）'
+    task = Task(message)
+    task.transition(TaskState.ROUTING)
+    task.reason_category = 'REQUEST_CLASSIFICATION_CLARIFICATION' if clarification else 'REQUEST_ROUTING_FAILED'
+    task.error = code
+    if failure_type:
+        task.selected_context.append({'routing_error_type': failure_type})
+    task.transition(TaskState.WAITING if clarification else TaskState.FAILED)
+    db.save_task(task, conversation_id)
+    db.add_message(conversation_id, 'assistant', response, time.time(), str(uuid.uuid4()), task.id)
+    print(f'CHAT_ROUTING_OUTCOME={code} ERROR_TYPE={failure_type or "NONE"}', file=__import__('sys').stderr, flush=True)
+    return {'conversation_id': conversation_id, 'task': serialize_task(task), 'response': response, 'sources': []}
+
+
+def _chat_ingress_routing_failure(value: ChatInput, failure: _ChatRoutingFailure) -> dict:
+    conversation_id, _, _ = _resolve_chat_context(value)
+    db.add_message(conversation_id, 'user', value.message, time.time(), value.message_id or str(uuid.uuid4()))
+    return _chat_routing_outcome(conversation_id, value.message, failure.code,
+                                 failure_type=type(failure.__cause__).__name__)
+
+
+def _routing_failure_events(result: dict):
+    task = result['task']
+    yield 'data: ' + json.dumps({'type': 'meta', 'conversation_id': result['conversation_id'], 'task_id': task['id']}) + '\n\n'
+    yield 'data: ' + json.dumps({'type': 'chunk', 'text': result['response']}, ensure_ascii=False) + '\n\n'
+    yield 'data: ' + json.dumps({'type': 'done', 'task': task, 'response_owner': 'REQUEST_ROUTER'}, ensure_ascii=False) + '\n\n'
+
+
+def _dispatch_chat_translation(value: ChatInput, conversation_id: str, translation_request_text: str,
+                               arguments: dict, route_source: str, translation_attachment_truncated: bool,
+                               report_chat_status, clear_translation_progress=None,
+                               on_translation_phase=None):
+    tool_id = "language.translation"
+    report_chat_status("翻訳指示と対象言語を確認しています。")
+    print(f"TOOL_ROUTE_DECISION=translation TOOL_ROUTE_SOURCE={route_source} TOOL_CAPABILITY={tool_id} TOOL_PROVIDER=PurposeModels.translation TOOL_ROUTER_SELECTED={tool_id}", file=__import__('sys').stderr, flush=True)
+    try:
+        if translation_attachment_truncated:
+            raise ExternalToolError('ARGUMENT_COMPILATION_FAILED')
+        arguments = compile_provider_arguments(tool_id, translation_request_text, arguments)
+        if arguments.get('unsupported_capability') is True:
+            raise ExternalToolError('PROVIDER_CAPABILITY_UNSUPPORTED')
+    except ExternalToolError as exc:
+        code = str(exc)
+        report_chat_status("翻訳指示の確認に追加情報が必要です。")
+        task = Task(value.message)
+        task.transition(TaskState.ROUTING)
+        task.route = Route.NEURAL
+        task.reason_category = 'TRANSLATION_ARGUMENT_CLARIFICATION'
+        task.error = code
+        task.selected_context.append({'selected_tool': tool_id, 'model_role': 'translation', 'provider_call': 'not_started'})
+        if code in {'ARGUMENT_COMPILATION_FAILED', 'ARGUMENT_SEMANTIC_VALIDATION_FAILED'}:
+            task.transition(TaskState.WAITING)
+            response = _api_router_clarification(tool_id, translation_request_text)
+        else:
+            task.transition(TaskState.FAILED)
+            response = _translation_error_message(code)
+        db.save_task(task, conversation_id)
+        db.add_message(conversation_id, 'assistant', response, time.time(), str(uuid.uuid4()), task.id)
+        return {'conversation_id': conversation_id,
+                'task': task.__dict__ | {'route': task.route.value, 'state': task.state.value},
+                'response': response, 'sources': []}
+
+    task = Task(value.message)
+    task.transition(TaskState.ROUTING)
+    task.route = Route.NEURAL
+    task.reason_category = 'TRANSLATION_MODEL'
+    task.selected_context.append({'selected_tool': tool_id, 'model_role': 'translation', 'provider_call': 'not_started'})
+    task.transition(TaskState.GENERATING)
+    translation_blocks = []
+    phase_message_ids = []
+    try:
+        phases = split_text_into_phases(
+            arguments['text'], max_chars=MAX_TRANSLATION_PHASE_CHARS)
+        phase_count = len(phases)
+        report_chat_status(f"翻訳本文を確認し、{phase_count}フェーズに分割しました。")
+        translated = {}
+        completed_phase_indices = set()
+        translation_configuration = purpose_models.choice('translation')
+        translation_is_preset = translation_configuration.get('protocol') == 'preset'
+        plamo_preset_selected = False
+        translation_fallback_reason = None
+        if translation_is_preset:
+            try:
+                translation_model_id = ModelRegistry(settings.model_manifest_path).entry_for_role('translation')['id']
+                plamo_preset_selected = translation_model_id == 'plamo_3_translate_2b'
+                if plamo_preset_selected:
+                    preset = purpose_models.downloads.presets().get(translation_model_id)
+                    if preset is None or not purpose_models.downloads.installed(preset):
+                        translation_fallback_reason = 'PLaMoのモデルまたは実行環境を利用できません'
+                else:
+                    translation_fallback_reason = '翻訳用のPLaMoプリセットが設定されていません'
+            except (ImportError, KeyError, OSError, RuntimeError, TypeError, ValueError):
+                translation_fallback_reason = 'PLaMoのモデル設定または実行環境を確認できません'
+                plamo_preset_selected = True
+
+        def translation_progress(state, index, total, output=None):
+            if state == 'source_detected':
+                text = f"翻訳元の言語を {output} と判定しました。"
+            elif state == 'model_starting':
+                text = f"翻訳フェーズ {index}/{total} 用にローカル翻訳モデルを起動しています。"
+            elif state == 'model_ready':
+                text = f"翻訳フェーズ {index}/{total} 用のローカル翻訳モデルの準備ができました。"
+            elif state == 'phase_started':
+                text = f"翻訳フェーズ {index}/{total} を処理しています。"
+            elif state == 'phase_split_retry':
+                text = (f"翻訳フェーズ {index}/{total} の出力が上限に達したため、"
+                        f"小さく分割して再試行します。{str(output or '')}")
+            elif state == 'phase_completed':
+                completed_phase_indices.add(index)
+                phase_content = str(output or '').strip() + phases[index - 1].separator_after
+                phase_block = {
+                    'type': 'text_file',
+                    'filename': f'translation-phase-{index:03d}-of-{total:03d}.txt',
+                    'content': phase_content,
+                    'mime_type': 'text/plain; charset=utf-8',
+                }
+                phase_message_id = str(uuid.uuid4())
+                db.add_message(
+                    conversation_id, 'assistant',
+                    f"翻訳フェーズ {index}/{total} の成果物を保存しました。",
+                    time.time(), phase_message_id, task.id, blocks=[phase_block],
+                )
+                phase_message_ids.append(phase_message_id)
+                if on_translation_phase:
+                    try:
+                        on_translation_phase(phase_block)
+                    except Exception:
+                        pass
+                text = f"翻訳フェーズ {index}/{total} が完了しました。"
+            elif state == 'model_stopping':
+                text = f"ローカル翻訳モデルを停止しています（翻訳フェーズ {index}/{total}）。"
+            elif state == 'phase_cooldown':
+                from .plamo_translation import PHASE_RESTART_COOLDOWN_SECONDS
+                text = (f"次の翻訳フェーズまで{PHASE_RESTART_COOLDOWN_SECONDS}秒待機します。"
+                        "翻訳タスクは継続中です。")
+            else:
+                return
+            report_chat_status(text)
+
+        def translate_with_normal_brain(phase_texts):
+            source = arguments['source']
+            target = arguments['target']
+            source_instruction = (f"The source language code is {source}."
+                                  if source and str(source).casefold() not in {'auto', 'autodetect', 'auto-detect'}
+                                  else "Detect the source language automatically.")
+            system_prompt = (
+                "Translate the supplied text into the target language identified by this code: "
+                f"{target}. {source_instruction} Return only the translation, without commentary. "
+                "Preserve the original meaning, tone, names, paragraph breaks, and formatting."
+            )
+            report_chat_status(
+                f"{translation_fallback_reason or 'PLaMoを利用できません'}。通常の推論用Brainで翻訳しています。"
+            )
+            outputs = []
+            with brain_scope(brain_models.configuration(conversation_id)):
+                for index, phase_text in enumerate(phase_texts, start=1):
+                    translation_progress('phase_started', index, len(phase_texts))
+                    with model_slot():
+                        result = runtime._generate_brain(
+                            [{'role': 'system', 'content': system_prompt}], phase_text,
+                            thinking_override=False, model_name='role:normal_chat',
+                            max_tokens=MAX_TEXT_PHASE_OUTPUT_TOKENS, repair_tool_control=False,
+                        )
+                    output = str(result.get('text') or '').strip() if isinstance(result, dict) else ''
+                    if not output:
+                        raise ValueError('MODEL_TRANSLATION_RESPONSE_INVALID')
+                    outputs.append(output)
+                    translation_progress('phase_completed', index, len(phase_texts), output)
+            return {'texts': outputs, 'model': 'role:normal_chat',
+                    'model_role': 'normal_chat', 'model_runtime': 'brain'}
+
+        def translate_phases(phase_texts):
+            nonlocal translation_fallback_reason
+            if translation_fallback_reason:
+                translated.update(translate_with_normal_brain(phase_texts))
+            else:
+                try:
+                    translated.update(purpose_models.translate_phases(
+                        phase_texts, arguments['source'], arguments['target'],
+                        config=translation_configuration, progress=translation_progress))
+                except (RuntimeError, ValueError) as exc:
+                    unavailable_codes = {
+                        'MODEL_PRESET_NOT_DOWNLOADED',
+                        'MODEL_PRESET_RUNTIME_UNAVAILABLE',
+                        'PLAMO_TRANSLATION_RUNTIME_PREPARATION_REQUIRED',
+                    }
+                    if (plamo_preset_selected and str(exc) in unavailable_codes
+                            and not completed_phase_indices):
+                        translation_fallback_reason = {
+                            'MODEL_PRESET_NOT_DOWNLOADED': 'PLaMoが未ダウンロードです',
+                            'MODEL_PRESET_RUNTIME_UNAVAILABLE': 'PLaMoの実行環境が利用できません',
+                            'PLAMO_TRANSLATION_RUNTIME_PREPARATION_REQUIRED': 'PLaMoの実行環境が未準備です',
+                        }[str(exc)]
+                        translated.update(translate_with_normal_brain(phase_texts))
+                    else:
+                        raise
+            return translated['texts']
+
+        response = process_text_phases(
+            arguments['text'],
+            lambda phase_text: purpose_models.translate(
+                phase_text, arguments['source'], arguments['target']),
+            max_chars=MAX_TRANSLATION_PHASE_CHARS,
+            process_many=translate_phases,
+        )
+        report_chat_status("全フェーズの翻訳が完了しました。結果を結合しています。")
+        task.model_calls.append({'purpose_role': translated.get('model_role', 'translation'),
+                                 'model': translated['model'],
+                                 'runtime': translated['model_runtime'],
+                                 'phase_count': phase_count})
+        task.selected_context.append({'translation_model_role': 'translation',
+                                      'execution_model_role': translated.get('model_role', 'translation'),
+                                      'model': translated['model'],
+                                      'runtime': translated['model_runtime'],
+                                      'phase_count': phase_count,
+                                      **({'fallback_reason': translation_fallback_reason}
+                                         if translation_fallback_reason else {})})
+        if (len(response) > MAX_TRANSLATION_INLINE_CHARS
+                and not _translation_output_format_was_requested(value.message)):
+            translation_blocks.append({
+                'type': 'text_file', 'filename': 'translation.txt',
+                'content': response, 'mime_type': 'text/plain; charset=utf-8',
+            })
+            response = "翻訳結果をテキストファイルにまとめました。"
+        task.transition(TaskState.COMPLETED)
+    except ModelFailure as exc:
+        report_chat_status(
+            "通常の推論用Brainからの応答を確認できず、エラー内容を整理しています。"
+            if translation_fallback_reason else
+            "翻訳モデルからの応答を確認できず、エラー内容を整理しています。"
+        )
+        if translation_fallback_reason:
+            code = ('EXTERNAL_ACCESS_REQUIRED' if exc.category in {'external_access_disabled', 'authorization'}
+                    else 'BRAIN_TRANSLATION_TIMEOUT' if exc.category == 'timeout'
+                    else 'BRAIN_TRANSLATION_FAILED')
+        else:
+            code = ('EXTERNAL_ACCESS_REQUIRED' if exc.category in {'external_access_disabled', 'authorization'}
+                    else 'MODEL_TRANSLATION_TIMEOUT' if exc.category == 'timeout'
+                    else 'MODEL_TRANSLATION_PROVIDER_FAILED' if exc.category in {
+                        'provider_rejected', 'provider_unavailable', 'unavailable',
+                        'configuration', 'invalid_response', 'unsupported'}
+                    else 'MODEL_TRANSLATION_FAILED')
+        task.error = code
+        task.transition(TaskState.FAILED)
+        response = _translation_error_message(code)
+    except (ValueError, RuntimeError, OSError, TypeError, KeyError) as exc:
+        report_chat_status(
+            "通常の推論用Brainで翻訳を完了できず、エラー内容を整理しています。"
+            if translation_fallback_reason else
+            "翻訳処理を完了できず、エラー内容を整理しています。"
+        )
+        code = ('BRAIN_TRANSLATION_FAILED' if translation_fallback_reason else
+                str(exc) if isinstance(exc, ValueError) else 'MODEL_TRANSLATION_FAILED')
+        task.error = code
+        task.transition(TaskState.FAILED)
+        response = _translation_error_message(code)
+    db.save_task(task, conversation_id)
+    if task.state is TaskState.COMPLETED:
+        report_chat_status("翻訳結果をまとめ、応答を作成しました。")
+    db.add_message(conversation_id, 'assistant', response, time.time(), str(uuid.uuid4()),
+                   task.id, blocks=translation_blocks or None)
+    if task.state is TaskState.COMPLETED:
+        # Keep phase artifacts visible while work is active and on failure for
+        # recovery; after the merged response is saved, remove this task's
+        # transient phase messages and progress display.
+        db.delete_messages(conversation_id, phase_message_ids)
+        if clear_translation_progress:
+            try:
+                clear_translation_progress()
+            except Exception:
+                pass
+    return {'conversation_id': conversation_id,
+            'task': task.__dict__ | {'route': task.route.value, 'state': task.state.value},
+            'response': response, 'sources': [],
+            **({'blocks': translation_blocks} if translation_blocks else {})}
+
+
+def _chat(value: ChatInput, *, on_translation_phase=None):
     # Audio ingress owns audio attachments before any Brain/request-intent
     # routing. Besides avoiding needless classifier work, malformed audio
     # payloads must be rejected before a model route can observe the turn.
     audio_result = _chat_audio_file(value)
     if audio_result is not None:
         return audio_result
-    explicit_scrape_control = _is_explicit_scrape_control(value)
+    attachment_translation_text = (str(value.attachment.get('content') or '')
+                                   if isinstance(value.attachment, dict) else '')
+    if (isinstance(value.attachment, dict) and value.attachment.get('content_truncated')
+            and value.attachment.get('content_suffix')):
+        attachment_translation_text += "\n\n" + str(value.attachment['content_suffix'])
+    translation_request_text, anchored_translation_hint = translation_request_with_attachment(
+        value.message, attachment_translation_text)
+    translation_attachment_truncated = bool(
+        isinstance(value.attachment, dict) and value.attachment.get('content_truncated'))
+    anchored_translation_request = anchored_translation_hint is not None and not value.image
+    explicit_scrape_control = (False if anchored_translation_request
+                               else _is_explicit_scrape_control(value))
     # Resolve explicit software work before any specialist chat handler.  A
     # coding request can contain words such as "E2E", "trip", or "create";
     # letting an unrelated workflow inspect it first can consume the turn
     # before Coding Task Manager gets a chance to own it.
-    early_request_intent = _lexical_chat_request_intent(value)
-    explicit_coding_request = _is_explicit_coding_request(value, early_request_intent)
-    workflow_result = None if (explicit_coding_request or explicit_scrape_control) else _chat_assistant_workflow(value)
+    try:
+        early_request_intent = (RequestIntent('TRANSLATION', {}) if anchored_translation_request
+                                else _checked_request_intent(value))
+    except _ChatRoutingFailure as exc:
+        return _chat_ingress_routing_failure(value, exc)
+    if not anchored_translation_request and not explicit_scrape_control:
+        launch_help = _workspace_launch_response(value, early_request_intent)
+        if launch_help is not None:
+            return launch_help
+    explicit_coding_request = (False if anchored_translation_request
+                               else _is_explicit_coding_request(value, early_request_intent))
+    if not (explicit_coding_request or anchored_translation_request or explicit_scrape_control):
+        try:
+            limitation = _lookup_constraint(value)
+        except _ChatRoutingFailure as exc:
+            return _chat_ingress_routing_failure(value, exc)
+        limited = _constrained_lookup_chat(value, limitation)
+        if limited is not None:
+            return limited
+    specialist_routing_suppressed = (anchored_translation_request or explicit_coding_request
+                                     or explicit_scrape_control)
+    workflow_result = None if specialist_routing_suppressed else _chat_assistant_workflow(value)
     if workflow_result is not None:
         return workflow_result
-    trip_result = None if (explicit_coding_request or explicit_scrape_control) else _chat_trip(value)
+    trip_result = None if specialist_routing_suppressed else _chat_trip(value)
     if trip_result is not None:
         return trip_result
-    medication_result = None if (explicit_coding_request or explicit_scrape_control) else _chat_medication(value)
+    medication_result = None if specialist_routing_suppressed else _chat_medication(value)
     if medication_result is not None:
         return medication_result
-    symptom_result = (None if (explicit_coding_request or explicit_scrape_control) else
+    symptom_result = (None if specialist_routing_suppressed else
                       symptom_chat_response(db, value, _resolve_chat_context, _symptom_chat))
     if symptom_result is not None:
         return symptom_result
-    help_result=None if (explicit_coding_request or explicit_scrape_control) else _operation_help_response(value)
+    help_result=None if specialist_routing_suppressed else _operation_help_response(value)
     if help_result is not None: return help_result
-    request_intent=_chat_request_intent(value)
-    if not request_intent.blocks_external_answer and not explicit_scrape_control:
+    request_intent = (early_request_intent if anchored_translation_request
+                      else _chat_request_intent(value, early_request_intent))
+    if not anchored_translation_request and not request_intent.blocks_external_answer and not explicit_scrape_control:
         from .connector_chat import intent as connector_intent, handle as connector_handle
         from .service_connectors import ConnectorError
         try:
@@ -19835,17 +21462,17 @@ def chat(value: ChatInput):
                 return connector_handle(db,value,connector_request,get_service_connectors(),_resolve_chat_context)
         except ConnectorError as exc:
             raise HTTPException(422,str(exc)) from None
-    if re.match(r"^\s*/skill(?:\s|$)", value.message):
+    if not anchored_translation_request and re.match(r"^\s*/skill(?:\s|$)", value.message):
         return _chat_explicit_skill(value)
-    knowledge_video_request = (not explicit_scrape_control and not request_intent.blocks_external_answer
+    knowledge_video_request = (not anchored_translation_request and not explicit_scrape_control and not request_intent.blocks_external_answer
                                and _explicit_knowledge_video_request(value.message))
-    everyday = (None if explicit_scrape_control or request_intent.blocks_external_answer or knowledge_video_request or
+    everyday = (None if anchored_translation_request or explicit_scrape_control or request_intent.blocks_external_answer or knowledge_video_request or
                 _coding_skill_invocation.get() else _assistant_intent(value))
     if everyday:
         return _chat_assistant_action(value, everyday)
     _API_ROUTING_TRACE.set(None)
     from .agent_builder import requested as builder_requested, handle_builder
-    if not explicit_scrape_control and not request_intent.blocks_external_answer and builder_requested(db,value):
+    if not anchored_translation_request and not explicit_scrape_control and not request_intent.blocks_external_answer and builder_requested(db,value):
         conversation_id, _, _ = _resolve_chat_context(value)
         try:
             from .brain_models import brain_scope
@@ -19854,19 +21481,34 @@ def chat(value: ChatInput):
         except ValueError as exc:
             raise HTTPException(422,str(exc)) from exc
     from .file_conversion import conversion_target
-    target = None if (explicit_scrape_control or request_intent.blocks_external_answer) else conversion_target(value.message)
+    target = None if (anchored_translation_request or explicit_scrape_control or request_intent.blocks_external_answer) else conversion_target(value.message)
     if target:
         return _chat_file_conversion(value, target)
-    if not explicit_scrape_control and not request_intent.blocks_external_answer and value.conversation_id and AgentStore(db).bound(value.conversation_id):
+    if not anchored_translation_request and not explicit_scrape_control and not request_intent.blocks_external_answer and value.conversation_id and AgentStore(db).bound(value.conversation_id):
         return agent_chat(_custom_agent_host(),value)
     print("GUI_CHAT_BACKEND_RECEIVED=true", file=__import__("sys").stderr, flush=True)
-    control = None if explicit_scrape_control or request_intent.blocks_external_answer or value.attachment or value.image or value.concept_diagram or value.location_map else workspace_command(value.message)
+    control = None if anchored_translation_request or explicit_scrape_control or request_intent.blocks_external_answer or value.attachment or value.image or value.concept_diagram or value.location_map else workspace_command(value.message)
     if control:
         result = execute_command(CommandInput(text=value.message, project_id=value.project_id,
                                               conversation_id=value.conversation_id))
         return {"conversation_id": result["conversation_id"], "response": result["message"],
                 "blocks": result["blocks"], "sources": []}
     conversation_id, project_id, existing = _resolve_chat_context(value)
+    status_invocation_id = f"olcr-chat-{uuid.uuid4()}"
+
+    def report_chat_status(text: str) -> None:
+        # Progress is best-effort telemetry and must never interrupt a reply.
+        try:
+            record_model_log(db, conversation_id, {
+                'invocation_id': status_invocation_id,
+                'state': 'status',
+                'text': text,
+            })
+        except Exception:
+            pass
+
+    def clear_chat_status() -> None:
+        clear_model_logs(db, conversation_id, status_invocation_id)
     if value.message_id:
         prior=db.coding_task_for_source_message(value.message_id)
         if prior:
@@ -19927,7 +21569,12 @@ def chat(value: ChatInput):
     execution_intent = str(value.execution_intent or "").strip().upper()
     resume_metadata = bool(value.resume_control or value.resume_task_id or
                            execution_intent in {"RESUME", "RESUME_CODING_TASK", "CONTINUE_CODING_TASK"})
-    independent_chat_turn = _independent_external_chat_turn(value)
+    try:
+        independent_chat_turn = anchored_translation_request or _independent_external_chat_turn(value)
+    except _ChatRoutingFailure as exc:
+        db.add_message(conversation_id, 'user', value.message, time.time(), source_message_id, blocks=user_blocks)
+        return _chat_routing_outcome(conversation_id, value.message, exc.code,
+                                     failure_type=type(exc.__cause__).__name__)
     def coding_tasks_for_turn():
         return [] if independent_chat_turn else [task for task in db.coding_tasks(conversation_id) if not task.get('archived')]
     has_managed_task = any(task.get("status") in {"RESUMABLE", "BLOCKED", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
@@ -19935,12 +21582,20 @@ def chat(value: ChatInput):
     # Continue/resume is an orchestrator control event, not semantic coding
     # content. Keep it out of the transcript and project-goal context when a
     # managed task is present.
-    if value.location_map is not None or not ((control_event or resume_metadata) and has_managed_task):
+    if anchored_translation_request or value.location_map is not None or not ((control_event or resume_metadata) and has_managed_task):
         db.add_message(conversation_id,"user",(_coding_skill_invocation.get() or {}).get("command",value.message),time.time(),source_message_id,blocks=user_blocks)
+    report_chat_status("依頼を受け付けました。内容と添付を確認し、処理方法を選んでいます。")
+    if anchored_translation_request:
+        # Source text is input to translation, including any imperatives it contains.
+        return _dispatch_chat_translation(
+            value, conversation_id, translation_request_text, anchored_translation_hint[1], 'deterministic',
+            translation_attachment_truncated, report_chat_status, clear_chat_status,
+            on_translation_phase)
     selected_map = value.location_map
     if selected_map is None and re.search(r"ピン|地図|マップ|地点|\bpin[s]?\b|\bmap\b", value.message, re.I):
         selected_map = latest_map(existing)
     if selected_map is not None:
+        report_chat_status("地図上の対象を確認し、必要な情報を取得しています。")
         request = value.message + map_context(selected_map)
         routing = None
         if not capability_enabled(settings, "external_access_enabled"):
@@ -20045,7 +21700,8 @@ def chat(value: ChatInput):
           f"PROJECT_CONTEXT_FACT_COUNT={len([key for key, item in conversation_project_state.items() if item and key not in {'revision','provenance'}])} "
           f"ATTACHMENT_COUNT={1 if attachment_meta else 0}", file=__import__('sys').stderr, flush=True)
     print("GUI_CHAT_USER_SAVE=PASS GUI_CHAT_RUNTIME_START", file=__import__("sys").stderr, flush=True)
-    managed_reply = _managed_coding_chat(value, conversation_id, source_message_id)
+    managed_reply = _managed_coding_chat(value, conversation_id, source_message_id,
+                                        independent_chat_turn=independent_chat_turn)
     if managed_reply is not None: return managed_reply
     planning_session, planning_response = ((None, None) if independent_chat_turn else
                                            _resolve_interactive_planning_reply(conversation_id, value.message))
@@ -20101,6 +21757,11 @@ def chat(value: ChatInput):
         print(f"TASK_ID={ineffective_waiting['id']} CLARIFICATION_NO_MUTATION=true QWEN_REPLANNING_STARTED=false QUEUE_ENTRY_CREATED=false PLAN_REVISION_CHANGED=false CURRENT_PHASE_CHANGED=false STATUS_AFTER=WAITING_FOR_USER",file=__import__('sys').stderr,flush=True)
         db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),ineffective_waiting["id"])
         return {"conversation_id":conversation_id,"coding_task_id":ineffective_waiting["id"],"response":response,"sources":[]}
+    constraint_waiting = next((task for task in coding_tasks_for_turn() if task["status"] == "WAITING_FOR_USER"
+                               and (task.get("pending_authorization") or {}).get("type") == continuation_consent.PENDING), None)
+    if constraint_waiting:
+        return {"conversation_id": conversation_id, "coding_task_id": constraint_waiting["id"],
+                "response": constraint_waiting["pending_authorization"]["message"], "sources": []}
     scope_waiting=next((task for task in coding_tasks_for_turn() if task["status"] == "WAITING_FOR_USER" and task.get("pending_authorization")),None)
     if scope_waiting and approved_message:
         db.accept_pending_plan(scope_waiting["id"])
@@ -20825,13 +22486,15 @@ def chat(value: ChatInput):
                 "candidate_retrieval": candidate_result["candidate_retrieval"]}
     # The persisted toggle controls orchestration only.  When disabled, an
     # otherwise coding-shaped request continues through the normal Brain path.
-    request_intent = resolve_request_intent(
-        value.message,
-        project_scoped=bool(working_root),
-        attachment_present=bool(attachment_meta) and attachment_meta.get("kind") != "folder",
-        attachment_evidence=attachment_evidence,
-        execution_intent=value.execution_intent,
-    )
+    try:
+        request_intent = _checked_request_intent(
+            value, project_scoped=bool(working_root),
+            attachment_present=bool(attachment_meta) and attachment_meta.get("kind") != "folder",
+            attachment_evidence=attachment_evidence,
+        )
+    except _ChatRoutingFailure as exc:
+        return _chat_routing_outcome(conversation_id, value.message, exc.code,
+                                     failure_type=type(exc.__cause__).__name__)
     classification = request_intent.facts
     activation_class = ("AMBIGUOUS" if request_intent.owner=="CLARIFY_CODING" else
                         "NON_CODING" if request_intent.owner in {"ASSISTANT_ACTION","COMMAND"} else str(classification["classification"]))
@@ -20889,9 +22552,18 @@ def chat(value: ChatInput):
         print(f"REQUIREMENT_CONTRADICTION={norm_diag.get('requirement_contradiction','NO')} CONFLICT_COUNT={norm_diag.get('conflict_count',0)} CONFLICTING_SEMANTIC_KEYS={json.dumps(norm_diag.get('conflicting_semantic_keys',[]), ensure_ascii=False)} REQUIRED_SOURCE={json.dumps(norm_diag.get('required_source'), ensure_ascii=False, sort_keys=True)} FORBIDDEN_SOURCE={json.dumps(norm_diag.get('forbidden_source'), ensure_ascii=False, sort_keys=True)} CONFLICT_REASON={norm_diag.get('conflict_reason','')} ACTIVE_REQUIRED_CAPABILITIES={json.dumps(norm_diag.get('active_required_capabilities',[]), ensure_ascii=False)} ACTIVE_FORBIDDEN_CAPABILITIES={json.dumps(norm_diag.get('active_forbidden_capabilities',[]), ensure_ascii=False)} IGNORED_NON_CONTROL_EVIDENCE_COUNT={norm_diag.get('ignored_non_control_evidence_count',0)} CONFLICT_DETAILS={json.dumps(norm_diag.get('conflict_details',[]), ensure_ascii=False, sort_keys=True)}", file=__import__('sys').stderr, flush=True)
         print(f"TASK_ID={task_id} TASK_CREATED=true REQUIREMENTS_NORMALIZED=PASS CANONICAL_REQUIREMENTS_VALID={'PASS' if valid else 'FAIL'} ATTACHMENT_EVIDENCE_AVAILABLE={'YES' if attachment_evidence.get('available') else 'NO'} FIX_TARGET_SOURCE={requirements.get('attachment_evidence',{}).get('target_source','NONE')} CURRENT_USER_TEXT_HASH={norm_diag.get('current_user_text_hash','')} NORMALIZER_CONTROL_INPUT_HASH={norm_diag.get('normalizer_control_input_hash','')} MODEL_CONTEXT_HASH={norm_diag.get('model_context_hash','')} NORMALIZER_INPUT_CHAR_COUNT={norm_diag.get('normalizer_input_char_count',0)} CURRENT_USER_TEXT_CHAR_COUNT={norm_diag.get('current_user_text_char_count',0)} PROJECT_CONTEXT_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('project_context_added_before_normalization') else 'NO'} CONVERSATION_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('conversation_history_added_before_normalization') else 'NO'} ASSISTANT_HISTORY_ADDED_BEFORE_NORMALIZATION={'YES' if norm_diag.get('assistant_history_added_before_normalization') else 'NO'} RAW_REQUEST_HASH={norm_diag.get('raw_request_hash','')} SCOPED_INPUT_HASH={norm_diag.get('scoped_input_hash','')} CANONICAL_REQUIREMENTS_HASH={norm_diag.get('canonical_requirements_hash','')} CODING_MUTATION_MODE={requirements['mutation_mode']} FIX_REASON={requirements['fix_reason']} FIX_SCOPE_EXPANDED=NO FIX_ESCALATED_TO_IMPLEMENTATION=NO REQUIRED_CAPABILITIES={json.dumps(requirements['required_capabilities'])} FORBIDDEN_CAPABILITIES={json.dumps(requirements['forbidden_capabilities'])} REQUIRED_MCPS={json.dumps(requirements['required_mcps'])} CAPABILITY_PROVENANCE={json.dumps(norm_diag.get('capability_provenance', []), ensure_ascii=False, sort_keys=True)}",file=__import__('sys').stderr,flush=True)
         if not valid:
-            db.update_coding_task(task_id, status="BLOCKED", activity="NONE", recovery_action="NONE", recovery_reason="INVALID_REQUIREMENTS")
-            print(f"TASK_ID={task_id} CONTROL_PLANE_INVARIANT_FAILURE=CANONICAL_REQUIREMENTS_CONFLICT CODING_TASK_STATUS=BLOCKED QUEUED=NO", file=__import__('sys').stderr, flush=True)
-            response="Coding Task の実行要件を確定できませんでした。要求の必須条件と除外条件が矛盾しています。"
+            pending = _coding_requirement_conflict_pending(requirements)
+            if pending:
+                db.update_coding_task(task_id, status="WAITING_FOR_USER", activity="NONE", queue_order=None,
+                                      recovery_action="NONE", recovery_reason="REQUIREMENTS_CLARIFICATION",
+                                      pending_authorization=pending, pending_user_confirmation=1)
+                print(f"TASK_ID={task_id} REQUIREMENT_CONFLICT=CLARIFICATION_REQUIRED CODING_TASK_STATUS=WAITING_FOR_USER QUEUED=NO", file=__import__('sys').stderr, flush=True)
+                response="\n".join(pending["questions"])
+            else:
+                db.update_coding_task(task_id, status="WAITING_FOR_USER", activity="NONE", queue_order=None,
+                                      recovery_action="NONE", recovery_reason="REQUIREMENTS_CLARIFICATION",
+                                      pending_user_confirmation=1)
+                response="実行要件の矛盾を検出しましたが、条件の出典を特定できませんでした。計画・実装は開始していません。必須条件と除外条件を分けて書き直してください。"
             db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task_id)
             return {"conversation_id":conversation_id,"coding_task_id":task_id,"response":response,"sources":[]}
         if not _coding_workspace_ready(db.coding_task(task_id)):
@@ -20910,29 +22582,27 @@ def chat(value: ChatInput):
     # An attached image defines a perception request.  Text-only provider
     # heuristics (for example "point" in a coordinate-grounding instruction)
     # must not steal it before Runtime.execute_image can select the vision role.
+    external_data_prohibited = request_intent.blocks_external_answer or _external_data_prohibited(value.message)
+    tool_execution_prohibited = _tool_execution_prohibited(value.message)
+    deterministic_tool_hint = None
+    preflight_guard = None
     external_route_hint = False
-    if (not image_request and not request_intent.blocks_external_answer
-            and not _external_data_prohibited(value.message)
-            and not _tool_execution_prohibited(value.message)):
+    if not image_request and not (external_data_prohibited or tool_execution_prohibited):
         try:
-            external_route_hint = (bool(_api_preflight_clarification_guard(value.message))
-                                   or (not _external_data_prohibited(value.message)
-                                   and not _tool_execution_prohibited(value.message)
-                                   and (route_external_tool(value.message) is not None
-                                        or _external_router_candidate(value.message)))
-                                   )
-        except Exception:
-            external_route_hint = False
+            preflight_guard = _api_preflight_clarification_guard(value.message)
+            deterministic_tool_hint = _checked_provider_match(value.message)
+        except _ChatRoutingFailure as exc:
+            return _chat_routing_outcome(conversation_id, value.message, exc.code,
+                                         failure_type=type(exc.__cause__).__name__)
+        external_route_hint = bool(preflight_guard or deterministic_tool_hint or _external_router_candidate(value.message))
     # An image attachment with no mutation intent is already a typed
     # perception request. Do not strand it in the coding clarification guard
     # merely because words such as "screen", "button", or "UI" occur in the
     # user's description; the image branch below must own that request.
     if (activation_class == "AMBIGUOUS" and settings.task_manager_enabled
             and not external_route_hint and not image_request):
-        response="実装を行うか、計画・設計のみを行うかが明確ではありません。どちらを希望するか指定してください。"
         print("CODING_TASK_CREATED=NO CODING_ROUTE=AMBIGUOUS_SCOPE NORMAL_RUNTIME_FALLBACK=false", file=__import__("sys").stderr, flush=True)
-        db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()))
-        return {"conversation_id":conversation_id,"response":response,"sources":[]}
+        return _chat_routing_outcome(conversation_id, value.message, str(classification['reason']), clarification=True)
     if activation_class == "NON_CODING":
         print("CODING_TASK_CREATED=NO CODING_ROUTE=NORMAL_BRAIN_PLANNING", file=__import__("sys").stderr, flush=True)
     # Defense in depth: an actionable coding request that did not enter the
@@ -20962,15 +22632,6 @@ def chat(value: ChatInput):
         r"search the web|search web|(?:検索|search)(?:を)?(?:して|してください|をお願いします|お願いします)",
         value.message, re.I,
     ))
-    external_data_prohibited = request_intent.blocks_external_answer or _external_data_prohibited(value.message)
-    tool_execution_prohibited = _tool_execution_prohibited(value.message)
-    deterministic_tool_hint = None
-    if not image_request and not (external_data_prohibited or tool_execution_prohibited):
-        try:
-            candidate = route_external_tool(value.message)
-            deterministic_tool_hint = candidate
-        except Exception:
-            deterministic_tool_hint = None
     translation_request = bool(deterministic_tool_hint and deterministic_tool_hint[0] == 'language.translation')
     explicit_web_request = bool(generic_web_search_candidate and not requested_wikipedia
                                 and deterministic_tool_hint is None)
@@ -20991,7 +22652,8 @@ def chat(value: ChatInput):
         # the dedicated translation model.
         autonomous_multi_route = _autonomous_analysis_requested(value.message) and not translation_request
         chess_followup = _chess_followup_arguments(value.message, conversation_id)
-        preflight_guard = None if (chess_followup or translation_request) else _api_preflight_clarification_guard(value.message)
+        if chess_followup or translation_request:
+            preflight_guard = None
         if preflight_guard:
             routing_evidence = {"candidate_ids": [], "selected": None,
                                 "selection_guard": preflight_guard,
@@ -21019,7 +22681,13 @@ def chat(value: ChatInput):
                          and not re.search(r"[、,;]|と|や|複数|\band\b", value.message, re.I))
                 and (_external_router_candidate(value.message)
                      or _autonomous_analysis_requested(value.message))):
-            tool_request = router_decision(value.message)
+            try:
+                tool_request = router_decision(value.message)
+            except RouterUnavailable:
+                raise
+            except (ValueError, TypeError, RuntimeError, KeyError, OSError) as exc:
+                return _chat_routing_outcome(conversation_id, value.message, 'PROVIDER_SELECTION_FAILED',
+                                             failure_type=type(exc).__name__)
             routing_evidence = _API_ROUTING_TRACE.get()
             if tool_request is not None:
                 route_source = "model"
@@ -21163,9 +22831,9 @@ def chat(value: ChatInput):
     except RouterUnavailable:
         # Deterministic provider routes remain usable when the optional router
         # model is unavailable; the compiler still validates every field.
-        tool_request = None if (image_request or external_data_prohibited or tool_execution_prohibited
-                                or classification.get("classification") == "CODING") else route_external_tool(value.message)
+        tool_request = deterministic_tool_hint
         route_source = "deterministic_fallback"
+        routing_evidence = {"selection_guard": "ROUTER_UNAVAILABLE", "selected": None}
         print(f"ROUTER_MODEL_FALLBACK=DETERMINISTIC TOOL_SELECTED={tool_request[0] if tool_request else 'NONE'}", file=__import__('sys').stderr, flush=True)
     if (tool_request is None and routing_evidence
             and routing_evidence.get("clarification_required")):
@@ -21182,8 +22850,20 @@ def chat(value: ChatInput):
         return {"conversation_id": conversation_id,
                 "task": task.__dict__ | {"route": task.route.value, "state": task.state.value},
                 "response": response, "sources": []}
+    low_confidence_route_abstention = bool(
+        routing_evidence
+        and routing_evidence.get("selection_guard") in {
+            "EMBEDDING_BELOW_FLOOR", "LAYA_EMBEDDING_CONFLICT", "LAYA_NO_MATCH",
+            "LAYA_LOW_CONFIDENCE", "LAYA_FAILURE_LOW_CONFIDENCE", "SELECTOR_UNAVAILABLE",
+            "ROUTER_UNAVAILABLE", "UNGROUNDED_API_SELECTION",
+        }
+    )
+    if low_confidence_route_abstention:
+        print(f"API_ROUTE_ABSTAINED_TO_BRAIN=YES SELECTION_GUARD={routing_evidence.get('selection_guard')} "
+              "AUTOMATIC_PROVIDER_FALLBACK=NO", file=__import__('sys').stderr, flush=True)
     api_miss_fallback = bool(
-        tool_request is None and not working_folder and not image_request and not value.concept_diagram
+        not low_confidence_route_abstention
+        and tool_request is None and not working_folder and not image_request and not value.concept_diagram
         and not conversation_diagram_context(existing) and not explicit_web_request
         and not external_data_prohibited and not tool_execution_prohibited
         and not runtime._implementation_intent(value.message.lower())
@@ -21194,7 +22874,7 @@ def chat(value: ChatInput):
                  and retrieval.graphify.enabled
                  and (retrieval.graphify.relevant(value.message)
                       or runtime._retrieval_query(value.message)))
-        and (_external_router_candidate(value.message)
+        and (_explicit_knowledge_lookup_request(value.message)
              or _autonomous_analysis_requested(value.message)
              or _wikipedia_knowledge_fallback_candidate(value.message))
     )
@@ -21205,83 +22885,34 @@ def chat(value: ChatInput):
         # which tries the configured search provider first.
         tool_request = ("knowledge.wikimedia", {"query": value.message})
         route_source = "knowledge_fallback"
+        prior_selection = routing_evidence
         routing_evidence = {"retrieval": "api_miss_wikipedia_fallback",
                             "candidate_ids": ["knowledge.wikimedia"],
                             "laya_called": False, "selected": "knowledge.wikimedia"}
+        if prior_selection:
+            routing_evidence["prior_selection"] = prior_selection
         print("API_ROUTE_UNRESOLVED=true NEXT_FALLBACK=WIKIPEDIA_API", file=__import__('sys').stderr, flush=True)
     if tool_request:
         tool_id, arguments = tool_request
         if tool_id == 'language.translation':
-            print(f"TOOL_ROUTE_DECISION=translation TOOL_ROUTE_SOURCE={route_source} TOOL_CAPABILITY={tool_id} TOOL_PROVIDER=PurposeModels.translation TOOL_ROUTER_SELECTED={tool_id}", file=__import__('sys').stderr, flush=True)
-            try:
-                arguments = compile_provider_arguments(tool_id, value.message, arguments)
-                if arguments.get('unsupported_capability') is True:
-                    raise ExternalToolError('PROVIDER_CAPABILITY_UNSUPPORTED')
-            except ExternalToolError as exc:
-                code = str(exc)
-                task = Task(value.message)
-                task.transition(TaskState.ROUTING)
-                task.route = Route.NEURAL
-                task.reason_category = 'TRANSLATION_ARGUMENT_CLARIFICATION'
-                task.error = code
-                task.selected_context.append({'selected_tool': tool_id, 'model_role': 'translation', 'provider_call': 'not_started'})
-                if code in {'ARGUMENT_COMPILATION_FAILED', 'ARGUMENT_SEMANTIC_VALIDATION_FAILED'}:
-                    task.transition(TaskState.WAITING)
-                    response = _api_router_clarification(tool_id, value.message)
-                else:
-                    task.transition(TaskState.FAILED)
-                    response = _translation_error_message(code)
-                db.save_task(task, conversation_id)
-                db.add_message(conversation_id, 'assistant', response, time.time(), str(uuid.uuid4()), task.id)
-                return {'conversation_id': conversation_id,
-                        'task': task.__dict__ | {'route': task.route.value, 'state': task.state.value},
-                        'response': response, 'sources': []}
-
-            task = Task(value.message)
-            task.transition(TaskState.ROUTING)
-            task.route = Route.NEURAL
-            task.reason_category = 'TRANSLATION_MODEL'
-            task.selected_context.append({'selected_tool': tool_id, 'model_role': 'translation', 'provider_call': 'not_started'})
-            task.transition(TaskState.GENERATING)
-            try:
-                translated = purpose_models.translate(
-                    arguments['text'], arguments['source'], arguments['target'])
-                response = translated['text']
-                task.model_calls.append({'purpose_role': 'translation', 'model': translated['model'],
-                                         'runtime': translated['model_runtime']})
-                task.selected_context.append({'translation_model_role': 'translation',
-                                              'model': translated['model'],
-                                              'runtime': translated['model_runtime']})
-                task.transition(TaskState.COMPLETED)
-            except ModelFailure as exc:
-                code = ('EXTERNAL_ACCESS_REQUIRED' if exc.category in {'external_access_disabled', 'authorization'}
-                        else 'MODEL_TRANSLATION_TIMEOUT' if exc.category == 'timeout'
-                        else 'MODEL_TRANSLATION_PROVIDER_FAILED' if exc.category in {
-                            'provider_rejected', 'provider_unavailable', 'unavailable',
-                            'configuration', 'invalid_response', 'unsupported'}
-                        else 'MODEL_TRANSLATION_FAILED')
-                task.error = code
-                task.transition(TaskState.FAILED)
-                response = _translation_error_message(code)
-            except (ValueError, RuntimeError, OSError, TypeError, KeyError) as exc:
-                code = str(exc) if isinstance(exc, ValueError) else 'MODEL_TRANSLATION_FAILED'
-                task.error = code
-                task.transition(TaskState.FAILED)
-                response = _translation_error_message(code)
-            db.save_task(task, conversation_id)
-            db.add_message(conversation_id, 'assistant', response, time.time(), str(uuid.uuid4()), task.id)
-            return {'conversation_id': conversation_id,
-                    'task': task.__dict__ | {'route': task.route.value, 'state': task.state.value},
-                    'response': response, 'sources': []}
+            return _dispatch_chat_translation(
+                value, conversation_id, translation_request_text, arguments, route_source,
+                translation_attachment_truncated, report_chat_status, clear_chat_status,
+                on_translation_phase)
+        report_chat_status("処理先を選びました。要求内容から処理条件を確認しています。")
         print(f"TOOL_ROUTE_DECISION=tool TOOL_ROUTE_SOURCE={route_source} TOOL_CAPABILITY={tool_id} TOOL_PROVIDER={REGISTRY[tool_id].provider} TOOL_ROUTER_SELECTED={tool_id} EXPLICIT_PROVIDER_OVERRIDE={'YES' if explicit_provider_override else 'NO'}", file=__import__('sys').stderr, flush=True)
+        explicit_provider = REGISTRY[tool_id].external and _explicit_provider_requested(value.message, tool_id)
         tool_available = _external_tool_available(tool_id)
         _print_external_tool_diagnostics(selected=True, available=tool_available)
         try:
+            report_chat_status("処理条件を確認しました。処理を開始します。")
             arguments = compile_provider_arguments(tool_id, value.message, arguments)
             if arguments.get("unsupported_capability") is True:
                 raise ExternalToolError("PROVIDER_CAPABILITY_UNSUPPORTED")
         except ExternalToolError as exc:
             code = str(exc)
+            if explicit_provider and code == "PROVIDER_CAPABILITY_UNSUPPORTED":
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id, code, routing_evidence)
             print(f"TOOL_ARGUMENTS_VALID=NO TOOL_ARGUMENT_ERROR={code}", file=__import__('sys').stderr, flush=True)
             _print_external_tool_diagnostics(selected=True, available=tool_available)
             task = Task(value.message)
@@ -21315,12 +22946,17 @@ def chat(value: ChatInput):
         elif tool_id == "knowledge.wikimedia":
             arguments = normalize_wiki_arguments(arguments)
             print(f"WIKIPEDIA_PROVIDER_SELECTED=YES NORMALIZED_SEARCH_QUERY={arguments.get('query','')} LOCAL_RETRIEVAL_ATTEMPTED=NO", file=__import__('sys').stderr, flush=True)
+        provider = REGISTRY[tool_id].provider
         credential_block = external_tool_credential_setup(tool_id) if REGISTRY[tool_id].external else None
         if credential_block:
             _print_external_tool_diagnostics(selected=True, available=False)
+            if explicit_provider:
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id,
+                    "CREDENTIAL_SETUP_REQUIRED", routing_evidence, blocks=[credential_block])
             task = Task(value.message)
-            task.error = "CREDENTIAL_SETUP_REQUIRED"; task.transition(TaskState.ROUTING); task.transition(TaskState.FAILED)
-            record_external_api_execution(task, tool_id, REGISTRY[tool_id].provider,
+            task.error = "CREDENTIAL_SETUP_REQUIRED"; task.transition(TaskState.ROUTING)
+            task.transition(TaskState.FAILED)
+            record_external_api_execution(task, tool_id, provider,
                                           routing_evidence, "failed", task.error)
             db.save_task(task, conversation_id)
             response = _external_tool_user_message("CREDENTIAL_SETUP_REQUIRED", arguments)
@@ -21340,6 +22976,9 @@ def chat(value: ChatInput):
         # only providers whose registry entry is external are gated here.
         if REGISTRY[tool_id].external and not capability_enabled(settings, "external_access_enabled"):
             _print_external_tool_diagnostics(selected=True, available=False)
+            if explicit_provider:
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id,
+                    "EXTERNAL_ACCESS_REQUIRED", routing_evidence)
             task = Task(value.message)
             task.error = "EXTERNAL_ACCESS_REQUIRED"; task.transition(TaskState.ROUTING); task.transition(TaskState.FAILED)
             record_external_api_execution(task, tool_id, REGISTRY[tool_id].provider,
@@ -21349,10 +22988,12 @@ def chat(value: ChatInput):
             db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id)
             return {"conversation_id":conversation_id,"task":task.__dict__ | {"route":task.route.value if task.route else None,"state":task.state.value},"response":response,"sources":[]}
         try:
+            report_chat_status("選択した処理先で処理しています。")
             print(f"PROVIDER_REQUEST_STARTED={tool_id}", file=__import__('sys').stderr, flush=True)
             _print_external_tool_diagnostics(selected=True, available=tool_available, executed=True)
             if tool_id == "knowledge.wikimedia": print("WIKIPEDIA_API_CALL_STARTED=YES", file=__import__('sys').stderr, flush=True)
             result = execute_external_tool(tool_id, arguments)
+            report_chat_status("処理結果を受け取り、応答を整えています。")
             if routing_evidence is not None:
                 result["routing_evidence"] = routing_evidence
             data = result.get("data") if isinstance(result, dict) else {}
@@ -21362,6 +23003,9 @@ def chat(value: ChatInput):
                 print(f"FEDERAL_HTTP_STATUS=200 FEDERAL_RAW_DOCUMENT_COUNT={(data or {}).get('raw_document_count',(data or {}).get('item_count',len((data or {}).get('items') or [])))} FEDERAL_NORMALIZED_DOCUMENT_COUNT={(data or {}).get('item_count',len((data or {}).get('items') or []))} FEDERAL_SEMANTIC_STATUS_BEFORE_GENERIC={(data or {}).get('semantic_status','unknown')} FEDERAL_SEMANTIC_STATUS_AFTER_GENERIC={(data or {}).get('semantic_status','unknown')}", file=__import__('sys').stderr, flush=True)
         except ExternalToolError as exc:
             code = str(exc)
+            if explicit_provider and (code.startswith(("PROVIDER_", "RATE_"))
+                    or code in {"CONFIG_REQUIRED", "CREDENTIAL_SETUP_REQUIRED", "EXTERNAL_ACCESS_REQUIRED"}):
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id, code, routing_evidence)
             if tool_id in {"knowledge.qiita", "knowledge.devto", "news.hackernews"}:
                 print(f"QIITA_PROVIDER_FALLBACK=BRAVE_THEN_WIKIPEDIA REASON={code}", file=__import__('sys').stderr, flush=True)
                 task, response = (_qiita_provider_failure_fallback(value.message) if tool_id == "knowledge.qiita"
@@ -21425,6 +23069,9 @@ def chat(value: ChatInput):
             or (tool_id == "earth.natural_event" and result["data"].get("current_turn_evidence") is not True)
         ):
             empty_tool_error = "PROVIDER_EMPTY"
+            if explicit_provider:
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id,
+                    empty_tool_error, routing_evidence, result=result)
             if REGISTRY[tool_id].external:
                 print(f"PROVIDER_SEMANTIC_STATUS={(result.get('data') or {}).get('semantic_status','EMPTY')} FALLBACK_USED=YES FALLBACK_TYPE=BRAVE_THEN_WIKIPEDIA TOOL_ID={tool_id}", file=__import__('sys').stderr, flush=True)
                 task, response = _direct_provider_failure_fallback(
@@ -21462,6 +23109,9 @@ def chat(value: ChatInput):
         task, response = compose_external_result(value.message, result)
         if task.state != TaskState.COMPLETED and REGISTRY[tool_id].external:
             failure = task.error or 'PROVIDER_NO_USABLE_EVIDENCE'
+            if explicit_provider:
+                return _offer_provider_limited_answer(conversation_id, value.message, tool_id,
+                    failure, routing_evidence, result=result)
             task, response = _direct_provider_failure_fallback(value.message, tool_id, failure, routing_evidence)
             record_external_api_execution(task, tool_id, REGISTRY[tool_id].provider,
                                           routing_evidence, 'failed', failure, result)
@@ -21476,6 +23126,14 @@ def chat(value: ChatInput):
         response, video_blocks = _knowledge_youtube_supplement(
             value.message, response, conversation_id, knowledge=tool_id.startswith("knowledge.")
         )
+        if route_source == "knowledge_fallback":
+            prior = (routing_evidence or {}).get("prior_selection") or {}
+            guard = prior.get("selection_guard")
+            if guard in {"ROUTER_UNAVAILABLE", "LAYA_FAILURE_LOW_CONFIDENCE"} or prior.get("laya_error"):
+                notice = ("処理先の判定機能が利用できなかったため、Wikipediaの情報を参照しました。"
+                          if response_language() == "ja" else
+                          "Provider selection was unavailable, so this answer uses Wikipedia.")
+                response = f"{response}\n\n{notice}"
         blocks.extend(video_blocks)
         db.save_task(task,conversation_id); db.add_message(conversation_id,"assistant",response,time.time(),str(uuid.uuid4()),task.id,blocks=blocks)
         return {"conversation_id":conversation_id,"task":task.__dict__ | {"route": task.route.value if task.route else None, "state": task.state.value},"response":response,"sources":result["sources"],"tool":result,"blocks":blocks}
@@ -21618,6 +23276,20 @@ def chat(value: ChatInput):
     if source_candidate_audit is not None:
         task.selected_context.append({"source_inspection_candidate_audit": source_candidate_audit})
     db.save_task(task,conversation_id)
+    web_limitation = next((item["explicit_web_lookup_unavailable"] for item in task.selected_context
+                           if "explicit_web_lookup_unavailable" in item), None)
+    if web_limitation:
+        ja = response_language() == "ja"
+        reason = {
+            "WEB_PROVIDER_NOT_CONFIGURED": "No web search provider is configured.",
+            "WEB_SEARCH_FAILED": "Web search did not return data.",
+            "WEB_SEARCH_DISABLED": "Web search is turned off in Settings.",
+            "WEB_SEARCH_NO_RESULTS": "Web search found no matching results.",
+        }.get(web_limitation, "Web search found no usable sources.")
+        response = _offer_limited_answer(conversation_id, value.message,
+            "Web検索" if ja else "Web search", response if ja else reason)
+        db.add_message(conversation_id, "assistant", response, time.time(), str(uuid.uuid4()), task.id)
+        return {"conversation_id": conversation_id, "task": serialize_task(task), "response": response, "sources": []}
     _persist_interactive_planning_questions(conversation_id, response)
     response = _sanitize_user_visible_assistant_text(response)
     response, video_blocks = _knowledge_youtube_supplement(
@@ -21635,8 +23307,58 @@ def chat(value: ChatInput):
             **({'blocks': response_blocks} if response_blocks else {})}
 
 
-@app.post("/api/chat/stream")
-def stream_chat(value: ChatInput):
+def _pc_run_observer_prompt(value: ChatInput) -> str:
+    prompt = value.message
+    attachment = value.attachment if isinstance(value.attachment, dict) else None
+    image = value.image if isinstance(value.image, dict) else None
+    labels = []
+    if attachment:
+        labels.append(str(attachment.get('name') or 'file')[:200])
+    if image:
+        labels.append(str(image.get('name') or 'image')[:200])
+    prompt += ("\n\n[Attached: " + ", ".join(labels) + "]" if labels else '')
+    if len(prompt) > 24_000:
+        prompt = prompt[:24_000] + "\n\n[… mobile run observation shows the first 24,000 characters …]"
+    return prompt
+
+
+@app.post("/api/chat")
+def chat(value: ChatInput, request: Request = None):
+    if not request or request.headers.get('X-OLCR-Run-Source') != 'desktop':
+        return _chat(value)
+    if not value.conversation_id:
+        conversation_id, _, _ = _resolve_chat_context(value)
+        value = value.model_copy(update={'conversation_id': conversation_id})
+    conversation_id = value.conversation_id
+    run_id = None
+    baseline = set()
+    try:
+        run_id = mobile_runs.register_pc_stream(conversation_id, prompt=_pc_run_observer_prompt(value))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception as exc:
+        raise HTTPException(503, 'PC_RUN_OBSERVATION_UNAVAILABLE') from exc
+    try:
+        baseline = {message.get('id') for message in (db.conversation(conversation_id) or {}).get('messages', [])}
+    except Exception as exc:
+        mobile_runs.finish_pc_stream(run_id, 'failed')
+        raise HTTPException(503, 'PC_RUN_OBSERVATION_UNAVAILABLE') from exc
+    try:
+        result = _chat(value)
+    except Exception:
+        if run_id is not None:
+            try:
+                mobile_runs.append(run_id, {'type': 'error', 'code': 'PC_CHAT_FAILED'},
+                                   terminal_state='failed')
+            except Exception:
+                pass
+        raise
+    if run_id is not None:
+        _record_pc_chat_result(run_id, conversation_id, result, baseline)
+    return result
+
+
+def _stream_chat_impl(value: ChatInput):
     # Match the non-streaming audio ingress order so audio never enters the
     # Brain request-intent path and malformed uploads fail as a client error.
     audio_result = _chat_audio_file(value)
@@ -21648,6 +23370,65 @@ def stream_chat(value: ChatInput):
                 yield 'data: '+json.dumps({'type':'block','block':block},ensure_ascii=False)+'\n\n'
             yield 'data: '+json.dumps({'type':'done','conversation_id':audio_result['conversation_id'],'response_owner':'AUDIO_TRANSCRIPTION'})+'\n\n'
         return StreamingResponse(audio_events(),media_type='text/event-stream')
+    attachment_translation_text = (str(value.attachment.get('content') or '')
+                                   if isinstance(value.attachment, dict) else '')
+    if (isinstance(value.attachment, dict) and value.attachment.get('content_truncated')
+            and value.attachment.get('content_suffix')):
+        attachment_translation_text += "\n\n" + str(value.attachment['content_suffix'])
+    _, anchored_translation_hint = translation_request_with_attachment(
+        value.message, attachment_translation_text)
+    if anchored_translation_hint and not value.image:
+        from queue import Empty, Queue
+        conversation_id, _, _ = _resolve_chat_context(value)
+        translation_value = value.model_copy(update={'conversation_id': conversation_id})
+        translation_request_context = copy_context()
+        translation_events_queue = Queue()
+
+        def translation_events():
+            emit = lambda event: 'data: '+json.dumps(event,ensure_ascii=False)+'\n\n'
+            yield emit({'type':'meta','conversation_id':conversation_id,'task_id':None})
+
+            def on_phase(block):
+                translation_events_queue.put(('phase', block))
+
+            def run_translation():
+                try:
+                    result = _chat(translation_value, on_translation_phase=on_phase)
+                    translation_events_queue.put(('result', result))
+                except Exception:
+                    translation_events_queue.put(('error', None))
+
+            worker = threading.Thread(
+                target=lambda: translation_request_context.run(run_translation),
+                name='olcr-translation-chat', daemon=True,
+            )
+            worker.start()
+            while True:
+                try:
+                    kind, payload = translation_events_queue.get(timeout=0.25)
+                except Empty:
+                    if worker.is_alive():
+                        continue
+                    yield emit({'type':'error','message':'TRANSLATION_FAILED'})
+                    return
+                if kind == 'phase':
+                    yield emit({'type':'block','conversation_id':conversation_id,'block':payload})
+                    continue
+                if kind == 'error':
+                    yield emit({'type':'error','message':'TRANSLATION_FAILED'})
+                    return
+                task = payload.get('task') if isinstance(payload.get('task'), dict) else None
+                if payload.get('response'):
+                    yield emit({'type':'chunk','text':payload['response']})
+                for block in payload.get('blocks') or []:
+                    yield emit({'type':'block','block':block})
+                if (task and task.get('reason_category') == 'TRANSLATION_MODEL'
+                        and task.get('state') == 'completed'):
+                    yield emit({'type':'translation_cleanup','conversation_id':conversation_id})
+                yield emit({'type':'done','conversation_id':conversation_id,'task':task,
+                            'response_owner':'TRANSLATION'})
+                return
+        return StreamingResponse(translation_events(),media_type='text/event-stream')
     if _is_explicit_scrape_control(value):
         result = chat(value)
         def scrape_control_events():
@@ -21658,8 +23439,29 @@ def stream_chat(value: ChatInput):
             yield 'data: '+json.dumps({'type':'done','conversation_id':result['conversation_id'],
                                        'response_owner':'SCRAPE_CONTROL'})+'\n\n'
         return StreamingResponse(scrape_control_events(),media_type='text/event-stream')
-    request_intent = _lexical_chat_request_intent(value)
-    explicit_coding_request = _is_explicit_coding_request(value, request_intent)
+    try:
+        request_intent = _checked_request_intent(value)
+        launch_help = _workspace_launch_response(value, request_intent)
+        if launch_help is not None:
+            def launch_help_events():
+                yield "data: " + json.dumps({"type": "meta", "conversation_id": launch_help["conversation_id"],
+                                             "task_id": None}) + "\n\n"
+                yield "data: " + json.dumps({"type": "chunk", "text": launch_help["response"]},
+                                             ensure_ascii=False) + "\n\n"
+                yield "data: " + json.dumps({"type": "done", "response_owner": launch_help["response_owner"]}) + "\n\n"
+            return StreamingResponse(launch_help_events(), media_type="text/event-stream")
+        explicit_coding_request = _is_explicit_coding_request(value, request_intent)
+        constrained = _limited_answer_choice(value.message) or (not explicit_coding_request and _lookup_constraint(value))
+    except _ChatRoutingFailure as exc:
+        result = _chat_ingress_routing_failure(value, exc)
+        return StreamingResponse(_routing_failure_events(result), media_type='text/event-stream')
+    if constrained:
+        result = chat(value)
+        def limitation_events():
+            yield "data: " + json.dumps({"type": "meta", "conversation_id": result["conversation_id"]}) + "\n\n"
+            yield "data: " + json.dumps({"type": "chunk", "text": result["response"]}, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({"type": "done", "response_owner": "CONSTRAINED_LOOKUP"}) + "\n\n"
+        return StreamingResponse(limitation_events(), media_type="text/event-stream")
     workflow_engine = None if explicit_coding_request else _assistant_workflow_engine(value)
     if workflow_engine is not None and workflow_engine.is_mail_turn(value):
         return StreamingResponse(_mail_workflow_stream(workflow_engine,value),media_type='text/event-stream')
@@ -21689,7 +23491,7 @@ def stream_chat(value: ChatInput):
             yield 'data: '+json.dumps({'type':'chunk','text':help_result['response']},ensure_ascii=False)+'\n\n'
             yield 'data: '+json.dumps({'type':'done','task':help_result['task'],'response_owner':'OLCR_OPERATION_HELP'})+'\n\n'
         return StreamingResponse(help_events(),media_type='text/event-stream')
-    request_intent = _chat_request_intent(value)
+    request_intent = _chat_request_intent(value, request_intent)
     from .connector_chat import intent as service_chat_intent
     try:
         service_stream_request=None if request_intent.blocks_external_answer else service_chat_intent(value.message)
@@ -21792,7 +23594,15 @@ def stream_chat(value: ChatInput):
     stream_control_event = _coding_resume_control_event(value.message)
     stream_resume_metadata = bool(value.resume_control or value.resume_task_id or
                                   str(value.execution_intent or "").strip().upper() in {"RESUME", "RESUME_CODING_TASK", "CONTINUE_CODING_TASK"})
-    independent_chat_turn = _independent_external_chat_turn(value)
+    try:
+        independent_chat_turn = _independent_external_chat_turn(value)
+        stream_intent = _checked_request_intent(
+            value, project_scoped=bool((db.project(project_id) or {}).get('workspace_path')),
+            attachment_present=bool(value.image or value.attachment),
+        )
+    except _ChatRoutingFailure as exc:
+        result = _chat_ingress_routing_failure(value.model_copy(update={'conversation_id': conversation_id}), exc)
+        return StreamingResponse(_routing_failure_events(result), media_type='text/event-stream')
     managed_tasks = [] if independent_chat_turn else [task for task in db.coding_tasks(conversation_id) if not task.get('archived')]
     has_managed_task = any(task.get("status") in {"RESUMABLE", "BLOCKED", "QUEUED", "RUNNING", "PLANNING", "FINAL_REPORTING"}
                            for task in managed_tasks)
@@ -21803,12 +23613,6 @@ def stream_chat(value: ChatInput):
         for task in managed_tasks
     )
     project_scoped = bool((db.project(project_id) or {}).get("workspace_path"))
-    stream_intent = resolve_request_intent(
-        value.message, project_scoped=project_scoped,
-        attachment_present=bool(value.image or value.attachment),
-        execution_intent=value.execution_intent,
-    )
-    stream_classification = stream_intent.facts
     stream_managed_candidate = settings.task_manager_enabled and stream_intent.blocks_external_answer
     stream_direct_coding = bool(not settings.task_manager_enabled and stream_intent.owner == "CODING"
                                 and stream_intent.mutation and project_scoped)
@@ -21900,7 +23704,12 @@ def stream_chat(value: ChatInput):
         return StreamingResponse(automatic_skill_events(), media_type="text/event-stream")
     # One chat path owns provider execution, clarification, recovery and
     # persistence. Streaming only transports that path's terminal response.
-    stream_tool_request = None if (_external_data_prohibited(value.message) or _tool_execution_prohibited(value.message)) else route_external_tool(value.message)
+    try:
+        stream_tool_request = (None if (_external_data_prohibited(value.message) or _tool_execution_prohibited(value.message))
+                               else _checked_provider_match(value.message))
+    except _ChatRoutingFailure as exc:
+        result = _chat_ingress_routing_failure(value.model_copy(update={'conversation_id': conversation_id}), exc)
+        return StreamingResponse(_routing_failure_events(result), media_type='text/event-stream')
     if _autonomous_analysis_requested(value.message):
         # Analysis intent owns the request even when a deterministic first
         # pass found one API: the shared chat path can expand/plan providers.
@@ -21909,6 +23718,7 @@ def stream_chat(value: ChatInput):
         stream_tool_request = None
     if (stream_tool_request is not None or _api_preflight_clarification_guard(value.message)
             or _chess_followup_arguments(value.message, conversation_id)
+            or runtime._explicit_web_search_request(value.message)
             or _external_router_candidate(value.message)
             or _autonomous_analysis_requested(value.message)
             or _wikipedia_knowledge_fallback_candidate(value.message)):
@@ -22115,6 +23925,232 @@ def stream_chat(value: ChatInput):
         finally: cancel_events.pop(task.id,None)
     return StreamingResponse(events(), media_type="text/event-stream")
 
+
+def _record_pc_chat_result(run_id, conversation_id, result, baseline_messages):
+    try:
+        task = result.get('progress_event') if isinstance(result.get('progress_event'), dict) else {}
+        if not task:
+            task = result.get('task') if isinstance(result.get('task'), dict) else {}
+        task_id = (result.get('coding_task_id') if isinstance(result.get('coding_task_id'), str) else
+                   task.get('task_id') if task.get('type') == 'coding_task_progress' else None)
+        mobile_runs.append(run_id, {'type': 'meta', 'conversation_id': conversation_id,
+                                    'task_id': task_id})
+        response = result.get('response')
+        if isinstance(response, str) and response:
+            mobile_runs.append(run_id, {'type': 'chunk', 'text': response})
+        for block in result.get('blocks') or []:
+            mobile_runs.append(run_id, {'type': 'block', 'block': block})
+        handoff = {'type': 'coding_task_progress', 'task_id': task_id,
+                   'status': task.get('status') or 'RUNNING'} if task_id else task
+        if task_id:
+            mobile_runs.append(run_id, {'type': 'done', 'conversation_id': conversation_id,
+                                        'task': handoff, 'response_owner': 'PC_CHAT'})
+            baseline = {'message_ids': baseline_messages, 'streamed_text': response if isinstance(response, str) else ''}
+            worker = threading.Thread(target=_follow_pc_coding_run,
+                args=(run_id, conversation_id, task_id, baseline),
+                name='olcr-pc-mobile-run-observer', daemon=True)
+            worker.start()
+        else:
+            mobile_runs.append(run_id, {'type': 'done', 'conversation_id': conversation_id,
+                                        'task': handoff, 'response_owner': 'PC_CHAT'},
+                               terminal_state='completed')
+    except Exception:
+        try:
+            mobile_runs.append(run_id, {'type': 'error', 'code': 'PC_CHAT_OBSERVER_FAILED'},
+                               terminal_state='failed')
+            mobile_runs.finish_pc_stream(run_id, 'failed')
+        except Exception:
+            pass
+
+
+def _follow_pc_coding_run(run_id, conversation_id, task_id, baseline):
+    """Continue a PC chat handoff until its detached coding task settles."""
+    from .generation_control import Generation
+    from .mobile_runs import follow_coding_task
+
+    async def follow():
+        state = 'failed'
+        try:
+            owned = db.coding_task(task_id)
+            if not owned or owned.get('conversation_id') != conversation_id:
+                mobile_runs.append(run_id, {'type': 'error', 'code': 'CODING_TASK_CONVERSATION_MISMATCH'},
+                                   terminal_state='failed')
+                mobile_runs.finish_pc_stream(run_id, 'failed')
+                return
+            generation = Generation()
+            async for event in follow_coding_task(
+                    task_id, db.coding_task, lambda _identifier: None, generation):
+                if event.get('type') == 'error':
+                    state = 'failed'
+                    mobile_runs.append(run_id, event, terminal_state='failed')
+                elif event.get('type') == 'done':
+                    mobile_runs.append(run_id, event)
+                    streamed_text = baseline.get('streamed_text', '')
+                    baseline_ids = baseline.get('message_ids', set())
+                    for message in (db.conversation(conversation_id) or {}).get('messages', []):
+                        if (message.get('role') == 'assistant' and message.get('id') not in baseline_ids
+                                and isinstance(message.get('content'), str) and message['content']):
+                            if message['content'] not in streamed_text:
+                                mobile_runs.append(run_id, {'type': 'chunk', 'text': message['content']})
+                    state = 'completed'
+                elif event.get('type') == 'cancelled':
+                    state = 'cancelled'
+                    mobile_runs.append(run_id, event, terminal_state='cancelled')
+                else:
+                    mobile_runs.append(run_id, event)
+            mobile_runs.finish_pc_stream(run_id, state)
+        except Exception:
+            try:
+                mobile_runs.append(run_id, {'type': 'error', 'code': 'CODING_TASK_OBSERVATION_FAILED'},
+                                   terminal_state='failed')
+                mobile_runs.finish_pc_stream(run_id, 'failed')
+            except Exception:
+                pass
+
+    try:
+        asyncio.run(follow())
+    except Exception:
+        try:
+            mobile_runs.finish_pc_stream(run_id, 'failed')
+        except Exception:
+            pass
+
+
+async def _journal_pc_stream(body_iterator, conversation_id, run_id, baseline_messages=None):
+    """Tee the PC's existing SSE stream into the durable mobile observer feed."""
+    pending = ''
+    state = 'interrupted'
+    journal_available = run_id is not None
+    coding_task = None
+    baseline_messages = set(baseline_messages or ())
+    streamed_text = ''
+
+    def record_frame(frame):
+        nonlocal conversation_id, run_id, state, journal_available, coding_task, baseline_messages, streamed_text
+        data = '\n'.join(line[5:].lstrip() for line in frame.splitlines() if line.startswith('data:'))
+        if not data:
+            return
+        try:
+            event = json.loads(data)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(event, dict):
+            return
+        resolved = event.get('conversation_id')
+        if isinstance(resolved, str) and resolved and conversation_id and resolved != conversation_id:
+            if run_id is not None and journal_available:
+                try:
+                    mobile_runs.append(run_id, {'type': 'error', 'code': 'PC_STREAM_CONVERSATION_MISMATCH'},
+                                       terminal_state='failed')
+                except Exception:
+                    pass
+            journal_available = False
+            state = 'failed'
+            return
+        task = event.get('task') if isinstance(event.get('task'), dict) else {}
+        kind = event.get('type')
+        is_coding_handoff = (kind == 'done' and task.get('type') == 'coding_task_progress'
+                             and isinstance(task.get('task_id'), str))
+        terminal_state = None if is_coding_handoff else {
+            'done': 'completed', 'cancelled': 'cancelled', 'error': 'failed'}.get(kind)
+        if run_id is not None and journal_available:
+            try:
+                mobile_runs.append(run_id, event, terminal_state=terminal_state)
+            except Exception:
+                # Observation must never break the PC's own response stream.
+                journal_available = False
+        if event.get('type') == 'chunk' and isinstance(event.get('text'), str):
+            streamed_text += event['text']
+        if is_coding_handoff and run_id is not None:
+            coding_task = task['task_id']
+            state = 'running'
+            worker = threading.Thread(target=_follow_pc_coding_run,
+                args=(run_id, conversation_id, coding_task,
+                      {'message_ids': baseline_messages, 'streamed_text': streamed_text}),
+                name='olcr-pc-mobile-run-observer', daemon=True)
+            worker.start()
+        elif event.get('type') == 'done':
+            state = 'completed'
+        elif event.get('type') == 'cancelled':
+            state = 'cancelled'
+        elif event.get('type') == 'error':
+            state = 'failed'
+
+    try:
+        async for chunk in body_iterator:
+            text = chunk.decode('utf-8', errors='replace') if isinstance(chunk, bytes) else str(chunk)
+            pending += text.replace('\r\n', '\n')
+            while '\n\n' in pending:
+                frame, pending = pending.split('\n\n', 1)
+                record_frame(frame)
+            yield chunk
+        if pending.strip():
+            record_frame(pending)
+        if state == 'interrupted' and journal_available and run_id is not None:
+            try:
+                mobile_runs.append(run_id, {'type': 'error', 'code': 'PC_STREAM_ENDED_WITHOUT_TERMINAL_EVENT'},
+                                   terminal_state='failed')
+            except Exception:
+                pass
+            state = 'failed'
+    except (GeneratorExit, asyncio.CancelledError):
+        raise
+    except Exception:
+        state = 'failed'
+        if journal_available and run_id is not None:
+            try:
+                mobile_runs.append(run_id, {'type': 'error', 'code': 'PC_STREAM_OBSERVER_FAILED'},
+                                   terminal_state='failed')
+            except Exception:
+                pass
+        raise
+    finally:
+        if run_id is not None and state != 'running':
+            try:
+                mobile_runs.finish_pc_stream(run_id, state)
+            except Exception:
+                pass
+
+
+@app.post('/api/chat/stream')
+def stream_chat(value: ChatInput, request: Request = None):
+    # Only the desktop's existing stream is journaled. Mobile ACP invokes the
+    # implementation directly and has its own run owner and cancellation.
+    desktop_observer = bool(request and request.headers.get('X-OLCR-Run-Source') == 'desktop')
+    run_id = None
+    conversation_id = value.conversation_id
+    baseline_messages = set()
+    if desktop_observer and not conversation_id:
+        conversation_id, _, _ = _resolve_chat_context(value)
+        value = value.model_copy(update={'conversation_id': conversation_id})
+    if desktop_observer:
+        try:
+            run_id = mobile_runs.register_pc_stream(conversation_id, prompt=_pc_run_observer_prompt(value))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except Exception as exc:
+            raise HTTPException(503, 'PC_RUN_OBSERVATION_UNAVAILABLE') from exc
+        try:
+            baseline_messages = {message.get('id') for message in
+                (db.conversation(conversation_id) or {}).get('messages', [])}
+        except Exception as exc:
+            mobile_runs.finish_pc_stream(run_id, 'failed')
+            raise HTTPException(503, 'PC_RUN_OBSERVATION_UNAVAILABLE') from exc
+    try:
+        response = _stream_chat_impl(value)
+    except Exception:
+        if run_id is not None:
+            try:
+                mobile_runs.finish_pc_stream(run_id, 'failed')
+            except Exception:
+                pass
+        raise
+    if desktop_observer and isinstance(response, StreamingResponse):
+        source_iterator = response.body_iterator
+        response.body_iterator = _journal_pc_stream(
+            source_iterator, conversation_id, run_id, baseline_messages)
+    return response
+
 def serialize_task(task: Task): return task.__dict__|{"route":task.route.value if task.route else None,"state":task.state.value}
 
 @app.post("/api/generations/{generation_id}/cancel")
@@ -22310,7 +24346,15 @@ def prepare_audio_model(value: dict[str, Any]):
         raise HTTPException(422, "AUDIO_LANGUAGE_UNSUPPORTED")
     try:
         from .audio_transcription import prepare_audio_model as download_model
-        return download_model(language, purpose_models.audio_model(language))
+        result = download_model(language, purpose_models.audio_model(language))
+        selected_model = purpose_models.audio_model(language)
+        asset_id = selected_model if selected_model.startswith('whisper_') else 'transcription_' + language
+        entry = purpose_models.downloads.presets().get(asset_id)
+        runtime_ready = False
+        if entry and purpose_models.downloads.downloaded(entry):
+            purpose_models.downloads._prepare_runtime(entry)
+            runtime_ready = purpose_models.downloads.installed(entry)
+        return {**result, 'runtime_ready': runtime_ready}
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:
@@ -23646,6 +25690,11 @@ class ModelDownloadInput(BaseModel):
     confirm_download: bool = False
 
 
+class ModelRuntimePrepareInput(BaseModel):
+    model_ids: list[str]
+    confirm_prepare: bool = False
+
+
 @app.post('/api/model-downloads')
 def start_model_download(value: ModelDownloadInput):
     try: return purpose_models.downloads.start(value.model_ids, value.confirm_download)
@@ -23660,6 +25709,61 @@ def cancel_model_download(job_id: str):
     if not purpose_models.downloads.cancel(job_id):
         raise HTTPException(409, 'MODEL_DOWNLOAD_NOT_ACTIVE')
     return {'cancelled': True}
+
+
+@app.get('/api/model-runtimes')
+def model_runtime_status():
+    from .model_runtime_profiles import asset_identity_for_entry, runtime_profile_for_asset
+    assets = []
+    for entry in purpose_models.downloads.presets().values():
+        try:
+            identity = asset_identity_for_entry(entry)
+            profile = runtime_profile_for_asset(identity.asset_id, identity.revision)
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not profile.managed:
+            continue
+        downloaded = purpose_models.downloads.downloaded(entry)
+        binding = model_runtime_manager.resolve(identity.asset_id)
+        ready = bool(downloaded and (
+            os.environ.get('OLCR_AUDIO_ENGINE', 'auto').lower() == 'torch'
+            if identity.asset_id.startswith('transcription_') else
+            binding.ready and not binding.legacy
+            and binding.profile_id == identity.runtime_profile_id))
+        assets.append({
+            'asset_id': identity.asset_id,
+            'label': entry.get('label') or identity.asset_id,
+            'downloaded': downloaded,
+            'runtime_ready': ready,
+            'needs_preparation': bool(downloaded and not ready),
+            'runtime_profile_id': identity.runtime_profile_id,
+            'runtime_id': binding.runtime_id if binding.ready else None,
+            'legacy': bool(binding.legacy),
+        })
+    return {'profiles': model_runtime_manager.list_profiles(), 'assets': assets}
+
+
+@app.post('/api/model-runtimes/prepare')
+def prepare_model_runtime(value: ModelRuntimePrepareInput):
+    if value.confirm_prepare is not True:
+        raise HTTPException(422, 'MODEL_RUNTIME_PREPARATION_CONSENT_REQUIRED')
+    presets = purpose_models.downloads.presets()
+    if not value.model_ids or any(model_id not in presets for model_id in value.model_ids):
+        raise HTTPException(422, 'MODEL_RUNTIME_UNKNOWN_ASSET')
+    if any(not purpose_models.downloads.downloaded(presets[model_id]) for model_id in value.model_ids):
+        raise HTTPException(422, 'MODEL_RUNTIME_ASSET_NOT_DOWNLOADED')
+    try:
+        return purpose_models.downloads.start(value.model_ids, True, prepare_runtime=True)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.delete('/api/model-runtimes/{runtime_id}')
+def remove_model_runtime(runtime_id: str):
+    result = model_runtime_manager.remove(runtime_id)
+    if not result.removed:
+        raise HTTPException(409, result.reason or 'MODEL_RUNTIME_REMOVE_FAILED')
+    return {'removed': True, 'runtime_id': result.runtime_id}
 
 @app.get("/api/brain/usage")
 def brain_usage():
@@ -23793,7 +25897,7 @@ async def _mobile_chat_events(body, generation):
     from .response_language import response_language_scope
     from .mobile_runs import follow_coding_task
     with generation_scope(generation), response_language_scope(body.get('language', 'ja')), brain_scope(brain_models.configuration(body['conversation_id'])):
-        response = await asyncio.to_thread(stream_chat, ChatInput(
+        response = await asyncio.to_thread(_stream_chat_impl, ChatInput(
             message=body['message'], conversation_id=body['conversation_id'], message_id=body['request_id']))
         pending = ''
         coding_id = None
@@ -23837,4 +25941,5 @@ def _mobile_approve_request(identifier, approved):
 
 from .mobile_api import install_mobile_api
 mobile_runs = install_mobile_api(app, db=db, settings=lambda: settings,
-    access=mobile_bridge_access, source=_mobile_chat_events, approve_request=_mobile_approve_request)
+    access=mobile_bridge_access, source=_mobile_chat_events, approve_request=_mobile_approve_request,
+    assistant_service=get_assistant_service)

@@ -62,7 +62,7 @@ class WikipediaChatRoutingTests(unittest.TestCase):
                           'model_role': 'planner_replanner'}))
         return stack
 
-    def test_embedding_digest_failure_and_exhausted_sources_still_answer_both_chat_apis(self):
+    def test_embedding_digest_failure_abstains_to_brain_and_answers_both_chat_apis(self):
         from types import SimpleNamespace
         from olcr_api.semantic import EmbeddingFailure
         for stream in (False, True):
@@ -88,8 +88,7 @@ class WikipediaChatRoutingTests(unittest.TestCase):
                 self.assertEqual('completed', task['state'])
                 self.assertTrue(any('inference_fallback' in row for row in task['selected_context']))
                 embedding.assert_called()
-                source.assert_called_once()
-                self.assertEqual('knowledge.wikimedia', source.call_args.args[0])
+                source.assert_not_called()
                 model.assert_called_once()
                 self.assertEqual(api.settings.planner_model, model.call_args.args[1])
                 self.assertNotIn('format', model.call_args.kwargs)
@@ -229,6 +228,30 @@ class WikipediaChatRoutingTests(unittest.TestCase):
             external_search_query=prompt + ' CourtListener official source',
         )
 
+    def test_unavailable_selector_returns_to_brain_instead_of_wikipedia(self):
+        prompt = "Tell me about the history of the Silk Road"
+        for stream in (False, True):
+            task = api.Task(prompt)
+            task.transition(api.TaskState.ROUTING)
+            task.transition(api.TaskState.GENERATING)
+            task.transition(api.TaskState.COMPLETED)
+            with self.subTest(stream=stream), patch.object(api, "route_external_tool", return_value=None), \
+                 patch.object(api, "router_decision", side_effect=api.RouterUnavailable("private selector detail")), \
+                 patch.object(api, "execute_external_tool", side_effect=AssertionError("unavailable selector must not guess a provider")) as execute, \
+                 patch.object(api.runtime, "execute", return_value=(task, "Brain answered the history question.")) as brain:
+                reply = self._chat(prompt, stream=stream)
+                self.assertEqual(200, reply.status_code, reply.text)
+                self.assertIn("Brain answered the history question.", reply.text)
+                execute.assert_not_called()
+                brain.assert_called_once()
+                self.assertNotIn("private selector detail", reply.text)
+                if stream:
+                    events = [json.loads(line[6:]) for line in reply.text.splitlines() if line.startswith("data: ")]
+                    task = next(event["task"] for event in events if event["type"] == "done")
+                else:
+                    task = reply.json()["task"]
+                self.assertEqual("completed", task["state"])
+
     def test_unmatched_natural_knowledge_question_falls_back_to_wikipedia(self):
         prompt = "Tell me about the history of the Silk Road"
         with patch.object(api, "route_external_tool", return_value=None), \
@@ -242,6 +265,93 @@ class WikipediaChatRoutingTests(unittest.TestCase):
         self.assertIn("Wikipedia", response.json()["response"])
         self.assertEqual("api_miss_wikipedia_fallback",
                          response.json()["task"]["selected_context"][-1]["api_routing"]["retrieval"])
+
+    def test_opening_help_after_completed_coding_task_uses_task_context_without_wikipedia(self):
+        task_id = "completed-site-task"
+        api.db.create_coding_task(
+            task_id, "conversation", "Build a local-first OLCR website", "COMPLETED",
+            "NONE", None, time.time(),
+        )
+        report = "Implemented site in workspace. Open it with `npm run dev`; entry file is src/main.tsx."
+        api.db.update_coding_task(task_id, final_report={"text": report}, final_report_status="PASS")
+        api.db.add_message("conversation", "assistant", report, time.time(), "task-final-report", task_id)
+        Path(self.tmp.name, "package.json").write_text(json.dumps({
+            "packageManager": "npm@11.0.0", "scripts": {"dev": "vite"},
+        }))
+        Path(self.tmp.name, "package-lock.json").write_text("{}")
+        answer = "この会話で作成したサイトは、作業フォルダで `npm run dev` を実行して開けます。"
+
+        for stream in (False, True):
+            if stream:
+                api.db.add_message("conversation", "assistant", report, time.time(),
+                                   "task-final-report-stream", task_id)
+            with self.subTest(stream=stream), self._fallback_model(answer), \
+                 patch.object(api, "route_external_tool", return_value=None), \
+                 patch.object(api, "router_decision", return_value=None), \
+                 patch.object(api, "execute_external_tool", side_effect=AssertionError("task follow-ups must not route to Wikipedia")) as execute:
+                response = self._chat("開き方を教えて", stream=stream)
+
+            self.assertEqual(200, response.status_code, response.text)
+            self.assertIn("npm run dev", response.text)
+            execute.assert_not_called()
+
+    def test_ambiguous_help_request_returns_to_brain_instead_of_wikipedia(self):
+        prompt = "開き方を教えて"
+        task = api.Task(prompt)
+        task.transition(api.TaskState.ROUTING)
+        task.transition(api.TaskState.GENERATING)
+        task.transition(api.TaskState.COMPLETED)
+        with patch.object(api, "route_external_tool", return_value=None), \
+             patch.object(api, "router_decision", return_value=None), \
+             patch.object(api, "execute_external_tool", side_effect=AssertionError("ambiguous requests must not be sent to Wikipedia")) as execute, \
+             patch.object(api.runtime, "execute", return_value=(task, "Brain considered the request.")) as brain:
+            response = self._chat(prompt)
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertIn("Brain considered the request.", response.json()["response"])
+        execute.assert_not_called()
+        brain.assert_called_once()
+
+    def test_router_abstention_for_external_candidate_returns_to_brain(self):
+        prompt = "Ukraine conflict casualties in 2025 を調べて"
+        task = api.Task(prompt)
+        task.transition(api.TaskState.ROUTING)
+        task.transition(api.TaskState.GENERATING)
+        task.transition(api.TaskState.COMPLETED)
+        def abstain(_message):
+            api._API_ROUTING_TRACE.set({"selected": None, "selection_guard": "LAYA_LOW_CONFIDENCE",
+                                        "laya_confidence": 0.54, "confidence_floor": 0.65})
+            return None
+        with patch.object(api, "route_external_tool", return_value=None), \
+             patch.object(api, "router_decision", side_effect=abstain), \
+             patch.object(api, "execute_external_tool", side_effect=AssertionError("low-confidence API abstention must not fall through to Wikipedia")) as execute, \
+             patch.object(api.runtime, "execute", return_value=(task, "Brain answered with uncertainty.")) as brain:
+            response = self._chat(prompt)
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertIn("Brain answered with uncertainty.", response.json()["response"])
+        execute.assert_not_called()
+        brain.assert_called_once()
+
+    def test_short_workspace_help_requires_the_immediately_preceding_coding_task_reply(self):
+        from olcr_api.workspace_launch import requested
+
+        self.assertFalse(requested("開き方を教えて"))
+        self.assertTrue(requested("開き方を教えて", completed_coding_task_context=True))
+        self.assertFalse(requested("Webで開き方を教えて", completed_coding_task_context=True))
+
+        task_id = "completed-site-task"
+        api.db.create_coding_task(
+            task_id, "conversation", "Build a local-first OLCR website", "COMPLETED",
+            "NONE", None, time.time(),
+        )
+        api.db.add_message("conversation", "assistant", "The task is complete.",
+                           time.time(), "task-final-report", task_id)
+        api.db.add_message("conversation", "assistant", "別件の回答です。",
+                           time.time(), "unrelated-assistant-reply")
+        value = api.ChatInput(message="開き方を教えて", project_id="project",
+                              conversation_id="conversation")
+        self.assertIsNone(api._workspace_launch_response(value, api.RequestIntent("GENERAL", {})))
 
     def test_wabi_sabi_explanation_uses_wikipedia_when_no_knowledge_api_matches(self):
         prompt = "日本のわびさびって、結局どういう考え方?"
@@ -286,7 +396,7 @@ class WikipediaChatRoutingTests(unittest.TestCase):
         self.assertEqual("knowledge.wikimedia", execute.call_args.args[0])
         self.assertIn("わびさび", execute.call_args.args[1]["query"])
 
-    def test_laya_no_match_uses_wikipedia_instead_of_nearest_unrelated_api(self):
+    def test_laya_no_match_returns_to_brain_instead_of_wikipedia_or_nearest_api(self):
         class FakeVectors:
             state = "ready"
 
@@ -302,22 +412,26 @@ class WikipediaChatRoutingTests(unittest.TestCase):
             choice_candidates.extend(candidates)
             return {"tool_id": "__no_matching_api__", "confidence": 0.0}
 
+        task = api.Task(prompt)
+        task.transition(api.TaskState.ROUTING)
+        task.transition(api.TaskState.GENERATING)
+        task.transition(api.TaskState.COMPLETED)
         with patch.object(api, "route_external_tool", return_value=None), \
              patch.object(api, "vectors", FakeVectors()), \
              patch.object(api, "_api_embedding_provider") as embedding, \
              patch.object(type(api.laya_provider), "loaded", new_callable=PropertyMock, return_value=True), \
              patch.object(api.laya_provider, "choice", side_effect=choose), \
-             patch.object(api, "execute_external_tool", return_value=wikipedia_result("Silk Road")) as execute:
+             patch.object(api, "execute_external_tool", side_effect=AssertionError("Laya no-match must return to Brain")) as execute, \
+             patch.object(api.runtime, "execute", return_value=(task, "Brain summarized the Silk Road.")) as brain:
             embedding.embed.side_effect = embed
             response = self._chat(prompt)
 
         self.assertEqual(200, response.status_code, response.text)
         self.assertLessEqual(len(choice_candidates), 8)
         self.assertEqual("__no_matching_api__", choice_candidates[-1]["tool_id"])
-        self.assertEqual("knowledge.wikimedia", execute.call_args.args[0])
-        self.assertIn("Wikipedia", response.json()["response"])
-        self.assertEqual("api_miss_wikipedia_fallback",
-                         response.json()["task"]["selected_context"][-1]["api_routing"]["retrieval"])
+        self.assertIn("Brain summarized the Silk Road.", response.json()["response"])
+        execute.assert_not_called()
+        brain.assert_called_once()
 
     def test_wikipedia_fallback_still_obeys_global_external_access_gate(self):
         api.settings.external_access_enabled = False

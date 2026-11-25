@@ -14,14 +14,15 @@ export function CodingModelProgress({task,ja}:{task:CodingTask;ja:boolean}){
   const verification=active?(progress?.verification_kind?progress:invocation?.verification_kind?invocation:undefined):undefined;
   if(!invocation&&!progress)return null;
   const count=(value:number)=>value.toLocaleString(ja?'ja-JP':'en-US');
+  const failureCategory=(reason?:string)=>reason==='output_limit'?(ja?'1回あたり出力上限':'Output limit'):'';
   let detail='';
   if(progress?.state==='slot_waiting')detail=ja?'推論の実行枠を待っています':'Waiting for an inference slot';
-  else if(progress?.state==='fallback')detail=ja?`${progress.model||''} に切替中（${failureText(progress.reason,ja)}）`:`Switching to ${progress.model||''} (${failureText(progress.reason,ja)})`;
+  else if(progress?.state==='fallback')detail=ja?`${progress.model||''} に切替中（${failureCategory(progress.reason)}: ${failureText(progress.reason,ja)}）`:`Switching to ${progress.model||''} (${failureCategory(progress.reason)}: ${failureText(progress.reason,ja)})`;
   else if(progress?.state==='worker_progress'){
     const event=progress.event||'';
     if(event==='structured_no_thinking_retry')detail=ja
-      ?`${failureText(progress.failure,ja)} 同じモデルを思考なしで再試行中`
-      :`${failureText(progress.failure,ja)} Retrying the same model without thinking`;
+      ?`${failureText(progress.failure,ja)} 同じモデルで思考なしの構造化出力を再試行中`
+      :`${failureText(progress.failure,ja)} Retrying structured output on the same model without reasoning`;
     else if(event.includes('model_load_started'))detail=ja?'モデルを読み込み中':'Loading model';
     else if(event.includes('prefill_progress'))detail=ja?`入力を処理中 (${count(progress.processed_tokens||0)} / ${count(progress.prompt_tokens||0)} tokens)`:`Reading input (${count(progress.processed_tokens||0)} / ${count(progress.prompt_tokens||0)} tokens)`;
     else if(event.includes('generation_progress')){

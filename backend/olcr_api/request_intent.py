@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import re
-from .coding_tasks import coding_classification_diagnostics, SOFTWARE_TARGET
+from .coding_tasks import coding_classification_diagnostics, request_instruction_text, SOFTWARE_TARGET
 
 @dataclass(frozen=True)
 class RequestIntent:
@@ -32,6 +32,7 @@ def resolve_request_intent(text: str, **context) -> RequestIntent:
     facts=coding_classification_diagnostics(value,**context)
     if value.startswith('/'):
         return RequestIntent('COMMAND',facts)
+    value = request_instruction_text(value)
     if not SOFTWARE_TARGET.search(value):
         from .assistant_actions import action_intent
         if action_intent(value):
@@ -42,8 +43,12 @@ def resolve_request_intent(text: str, **context) -> RequestIntent:
         return RequestIntent('CLARIFY_CODING',facts)
     information = re.search(
         r'検索(?:して|してください|する方法)|(?:を|で)検索|調べ|探して|確認して|確認してください|取得して|取得してください|説明|解説|教えて|知りたい|使い方|とは|仕組み|概要|比較|おすすめ|'
+        r'何ですか|どのように|どうすれば|どうやって|(?:直す|作る|する)には|手順|やり方|方法(?:は|を|が|$)|'
         r'\b(?:what|who|where|when|why|how|explain|describe|search|find|recommend|compare|tell|show)\b', value,re.I)
+    if information and facts['classification'] == 'AMBIGUOUS':
+        return RequestIntent('GENERAL', {**facts, 'classification': 'NON_CODING',
+                                         'reason': 'INFORMATION_REQUEST'})
     if (SOFTWARE_TARGET.search(value) and not information
             and not facts['planning_intent'] and not facts['explicit_non_coding']):
-        return RequestIntent('CLARIFY_CODING',facts)
+        return RequestIntent('CLARIFY_CODING', {**facts, 'reason': 'SOFTWARE_ACTION_UNSPECIFIED'})
     return RequestIntent('GENERAL',facts)

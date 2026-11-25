@@ -67,6 +67,16 @@ it('starts OAuth for the chosen account slot',async()=>{
  expect(invoke).toHaveBeenCalledWith('open_external_url',{url:'https://fixture.example/authorize'});
 });
 
+it('surfaces safe OAuth callback stage and category on failure',async()=>{
+ vi.useFakeTimers();
+ const request=vi.fn(async(path:string)=>path.startsWith('/brain/oauth/start')?{attempt_id:'failed-attempt',authorization_url:'https://fixture.example/authorize'}:
+  {status:'failed',message:'ChatGPT sign-in could not be completed. Please retry from OLCR.',failure_stage:'token_exchange',failure_category:'provider_rejected'});
+ const result=signInBrainOAuth(request as typeof api,'ja');
+ const rejection=result.then(()=>new Error('Expected OAuth sign-in to fail'),error=>error as Error);
+ await vi.advanceTimersByTimeAsync(1100);
+ expect((await rejection).message).toContain('token_exchange/provider_rejected');
+});
+
 it('offers three ChatGPT OAuth account slots and signs in the selected one',async()=>{
  vi.useFakeTimers();const changed=vi.fn().mockResolvedValue(undefined);
  const request=vi.fn(async(path:string)=>path.startsWith('/brain/oauth/start')?{attempt_id:'slot-two',authorization_url:'https://fixture.example/oauth'}:

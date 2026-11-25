@@ -7,15 +7,15 @@ import {CodingTaskReview} from "./CodingTaskReview";
 import {CodingModelProgress} from "./CodingModelProgress";
 import {useLanguage} from "./language";
 
-export type CodingPhase={id:string;goal:string;status?:string;dependencies?:string[];verify?:string[]};
+export type CodingPhase={id:string;goal:string;status?:string;dependencies?:string[];done?:string[];verify?:string[]};
 export type CodingGraphTask={task_id:string;phase_id?:string;goal:string;depends_on?:string[];verification?:string[]};
 export type CodingSubtaskProgress={task_id:string;phase_id:string;status:"WAITING"|"RUNNING"|"DONE"|"FAILED"|"PARTIAL";verification_status:"PASS"|"FAILED"|"NOT_RUN"|"UNVERIFIED";attempt:number;started_at?:number|null;finished_at?:number|null;failure_summary?:string|null};
-export type CodingPhaseReport={id:string;phase_id:string;attempt:number;validation_status:string;structured_report?:{plan_revision?:number;status?:string;errors?:string[];blockers?:string[];test_fail?:string[];build_executed?:string;build_pass?:string;manager_decision?:{decision?:string}}};
-export type ImplementationPlanArtifact={target_root?:string;file_manifest?:{path?:string;action?:string}[];file_manifest_count?:number;scaffold_created_count?:number;scaffold_skipped_existing_count?:number;manifest_source?:string};
+export type CodingPhaseReport={id:string;phase_id:string;attempt:number;validation_status:string;structured_report?:{plan_revision?:number;status?:string;errors?:string[];blockers?:string[];test_fail?:string[];build_executed?:string;build_pass?:string;phase_evaluation?:{done_unmet?:string[];verify_unmet?:string[]};manager_decision?:{decision?:string;reason?:string;diagnosis?:{unmet_done?:string[];unmet_verify?:string[]}}}};
+export type ImplementationPlanArtifact={target_root?:string;file_manifest?:{path?:string;action?:string;role?:string;read_only?:boolean;owner_phase?:string}[];file_manifest_count?:number;scaffold_created_count?:number;scaffold_skipped_existing_count?:number;manifest_source?:string};
 export type CodingModelEvent={state:string;created_at:number;invocation_id?:string;event?:string;model?:string;reason?:string;failure?:string;generated_tokens?:number|null;max_tokens?:number;processed_tokens?:number;prompt_tokens?:number;reasoning_chars?:number;output_chars?:number;channel?:string;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};
 export type CodingSubagentWorker={id:string;phase_id:string;role_id:string;status:string;assigned_paths:string[];safe_summary?:string|null;error_category?:string|null;started_at?:number|null;finished_at?:number|null;usage?:{input_tokens?:number;output_tokens?:number;latency_ms?:number}};
 export type CodingSubagentProposal={id:string;phase_id:string;plan_revision:number;plan_hash:string;proposal_hash:string;status:string;model_binding?:{model_id?:string;provider_id?:string;runtime_id?:string};role_ids?:string[];workers:CodingSubagentWorker[]};
-export type CodingTask={model_progress?:CodingModelEvent;model_invocation?:{model:string;runtime:string;role:string;state:string;failure?:string;created_at:number;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};console_hidden?:boolean;id:string;original_goal?:string;status:string;activity:string;plan_revision?:number;recovery_reason?:string;current_phase_id?:string|null;retry_count:number;max_retries:number;queue_position?:number|null;archived?:boolean;pause_requested?:boolean;execution_mode?:"NORMAL"|"HEAVY_BATCHED";batch_cursor?:number;batch_handoff?:{next_constraints?:string[];completed_phase_id?:string;next_phase_id?:string;changed_files?:string[];verification?:{phase_id?:string;status?:string;build_pass?:string;test_pass?:string[]}[]}|null;final_report?:{text?:string}|null;subtask_progress?:CodingSubtaskProgress[]|null;plan?:{concept_diagram?:ConceptDiagram;phases?:CodingPhase[];tasks?:CodingGraphTask[];implementation_plan_artifact?:ImplementationPlanArtifact}|null;pending_authorization?:{type?:string;message?:string;requested_scope?:string[];reason?:string;unmet_criteria?:string[];questions?:string[];proposal_id?:string;plan_revision?:number;plan_hash?:string;proposal_hash?:string}|null;subagent_proposals?:CodingSubagentProposal[]};
+export type CodingTask={model_progress?:CodingModelEvent;model_invocation?:{model:string;runtime:string;role:string;state:string;failure?:string;created_at:number;verification_kind?:string;attempt?:number;max_attempts?:number;model_calls?:number;max_model_calls?:number;criteria_count?:number};console_hidden?:boolean;id:string;original_goal?:string;status:string;activity:string;plan_revision?:number;recovery_reason?:string;current_phase_id?:string|null;retry_count:number;max_retries:number;queue_position?:number|null;archived?:boolean;pause_requested?:boolean;execution_mode?:"NORMAL"|"HEAVY_BATCHED";batch_cursor?:number;batch_handoff?:{next_constraints?:string[];completed_phase_id?:string;next_phase_id?:string;changed_files?:string[];verification?:{phase_id?:string;status?:string;build_pass?:string;test_pass?:string[]}[]}|null;final_report_status?:string;final_report?:{text?:string}|null;subtask_progress?:CodingSubtaskProgress[]|null;plan?:{concept_diagram?:ConceptDiagram;phases?:CodingPhase[];tasks?:CodingGraphTask[];file_manifest?:{path?:string;action?:string;role?:string;read_only?:boolean;owner_phase?:string}[];implementation_plan_artifact?:ImplementationPlanArtifact}|null;pending_authorization?:{id?:string;type?:string;message?:string;requested_scope?:string[];reason?:string;unmet_criteria?:string[];questions?:string[];proposal_id?:string;plan_revision?:number;plan_hash?:string;proposal_hash?:string;recovery_mode?:string}|null;subagent_proposals?:CodingSubagentProposal[]};
 
 const active=new Set(["PLANNING","RUNNING","FINAL_REPORTING","QWEN_REPLANNING"]);
 const pauseable=new Set(["QUEUED","PLANNING","RUNNING","FINAL_REPORTING","QWEN_REPLANNING"]);
@@ -27,7 +27,18 @@ export function taskIsActivelyRunning(task:CodingTask|null){return Boolean(task&
 export function shouldAcceptPlanRevision(current:CodingTask|null,next:CodingTask){return !current||next.id!==current.id||(next.plan_revision||0)>=(current.plan_revision||0)}
 function isCheckpoint(task:CodingTask){return task.status==="RESUMABLE"&&["RESOURCE_CHECKPOINT","IMPLEMENTATION_PREPARED"].includes(task.recovery_reason||"")&&!task.pending_authorization}
 function canExplicitlyResumeNarrativeFailure(task:CodingTask){return task.status==="BLOCKED"&&task.recovery_reason==="NARRATIVE_ONLY_RETRY_EXHAUSTED"}
-function displayState(task:CodingTask):DisplayState{if(task.status==="COMPLETED")return "DONE";if(task.status==="BLOCKED")return "FAILED";if(isCheckpoint(task))return "CHECKPOINT";if(task.status==="RESUMABLE")return "PARTIAL";if(["QUEUED","PLANNING","WAITING_FOR_PLAN_APPROVAL","WAITING_FOR_USER","QWEN_REPLANNING"].includes(task.status))return "WAITING";if(["RUNNING","FINAL_REPORTING"].includes(task.status))return "RUNNING";return "UNKNOWN"}
+function canRecheckInvalidRequirements(task:CodingTask){return task.status==="BLOCKED"&&task.recovery_reason==="INVALID_REQUIREMENTS"&&!task.pending_authorization}
+function deterministicSplitSuggested(task:CodingTask){
+  if(task.pending_authorization?.recovery_mode==="deterministic_phase_slice")return true;
+  const phase=task.plan?.phases?.find(item=>item.id===task.current_phase_id);
+  const criteria=(phase?.done?.length||0)+(phase?.verify?.length||0);
+  const manifest=task.plan?.file_manifest||task.plan?.implementation_plan_artifact?.file_manifest||[];
+  const mutationCount=manifest.filter(item=>item.owner_phase===task.current_phase_id
+    &&!item.read_only&&["create","modify","delete"].includes((item.action||"modify").toLowerCase())
+    &&!["read_only","readonly","evidence","inspection","verification"].includes((item.role||"").toLowerCase().replaceAll("-","_"))).length;
+  return Math.max(criteria,mutationCount)>6;
+}
+function displayState(task:CodingTask):DisplayState{if(task.status==="COMPLETED")return task.final_report_status==="PARTIAL"?"PARTIAL":"DONE";if(task.status==="BLOCKED")return "FAILED";if(isCheckpoint(task))return "CHECKPOINT";if(task.status==="RESUMABLE")return "PARTIAL";if(["QUEUED","PLANNING","WAITING_FOR_PLAN_APPROVAL","WAITING_FOR_USER","QWEN_REPLANNING"].includes(task.status))return "WAITING";if(["RUNNING","FINAL_REPORTING"].includes(task.status))return "RUNNING";return "UNKNOWN"}
 function latestReport(reports:CodingPhaseReport[],phaseId:string,revision=0,preservePassed=false){
   const current=reports.filter(report=>report.phase_id===phaseId&&(report.structured_report?.plan_revision||0)===revision).at(-1);
   if(current||!preservePassed)return current;
@@ -35,7 +46,7 @@ function latestReport(reports:CodingPhaseReport[],phaseId:string,revision=0,pres
   return inherited?.validation_status==='PASS'&&inherited.structured_report?.status==='PASS'&&inherited.structured_report.manager_decision?.decision==='PASS'?inherited:undefined;
 }
 function verification(report:CodingPhaseReport|undefined):"PASS"|"FAILED"|"NOT_RUN"|"UNVERIFIED"{if(!report||report.validation_status!=="PASS")return "UNVERIFIED";const value=report.structured_report||{};if(value.status==="FAIL"||value.status==="BLOCKED"||(value.errors||[]).length||(value.blockers||[]).length||(value.test_fail||[]).length||value.build_pass==="FAIL")return "FAILED";if(value.manager_decision?.decision==="PASS")return "PASS";if(value.status==="NOT_RUN"||value.build_executed==="NOT_RUN"||value.build_pass==="NOT_RUN")return "NOT_RUN";return "UNVERIFIED"}
-function failureSummary(report:CodingPhaseReport|undefined){const value=report?.structured_report;return value?.errors?.[0]||value?.blockers?.[0]||value?.test_fail?.[0]||""}
+function failureSummary(report:CodingPhaseReport|undefined){const value=report?.structured_report;return value?.errors?.[0]||value?.blockers?.[0]||value?.test_fail?.[0]||value?.phase_evaluation?.done_unmet?.[0]||value?.phase_evaluation?.verify_unmet?.[0]||value?.manager_decision?.diagnosis?.unmet_done?.[0]||value?.manager_decision?.diagnosis?.unmet_verify?.[0]||value?.manager_decision?.reason||""}
 function statusLabel(value:string,ja:boolean){const labels:Record<string,{ja:string;en:string}>={WAITING:{ja:"待機中",en:"Waiting"},RUNNING:{ja:"実行中",en:"Running"},DONE:{ja:"完了",en:"Done"},FAILED:{ja:"失敗",en:"Failed"},PARTIAL:{ja:"一部完了",en:"Partial"},PASS:{ja:"合格",en:"Passed"},NOT_RUN:{ja:"未実施",en:"Not run"},UNVERIFIED:{ja:"未確認",en:"Unverified"}};return labels[value]?.[ja?"ja":"en"]||value}
 
 export function CodingTaskProgress({task,reports,loading,error,pausePending,onPause,onResume,onArchive,onDismiss,conversationId,activityLabel}:{conversationId?:string|null;task:CodingTask;reports:CodingPhaseReport[];loading:boolean;error:string;pausePending:boolean;onPause:()=>void;onResume:()=>void;onArchive:()=>void;onDismiss?:()=>void;activityLabel?:string}){
@@ -43,12 +54,26 @@ export function CodingTaskProgress({task,reports,loading,error,pausePending,onPa
   const [setupBusy,setSetupBusy]=useState(false),[setupError,setSetupError]=useState('');
   const workspaceSetup=task.pending_authorization?.type==='WORKSPACE_SETUP';
   const definitionClarification=task.pending_authorization?.type==='REQUIREMENTS_CLARIFICATION';
+  const invalidRequirements=canRecheckInvalidRequirements(task);
   const replanIneffective=task.status==='WAITING_FOR_USER'&&task.pending_authorization?.type==='REPLAN_INEFFECTIVE';
+  const deterministicRecovery=deterministicSplitSuggested(task);
+  const constrained=task.status==='WAITING_FOR_USER'&&task.pending_authorization?.type==='CONSTRAINED_CONTINUATION'?task.pending_authorization:null;
+  const decideContinuation=async(decision:'accept'|'decline')=>{
+    if(!constrained?.id||setupBusy)return;
+    setSetupBusy(true);setSetupError('');
+    try{
+      await api(`/coding-tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({continuation_id:constrained.id,continuation_choice:decision})});
+      window.dispatchEvent(new Event('olcr-command-complete'));
+    }catch(reason){setSetupError(reason instanceof Error?reason.message:String(reason))}
+    finally{setSetupBusy(false)}
+  };
   const setup=async(action:'direct'|'initialize'|'retry')=>{setSetupBusy(true);setSetupError('');try{await api(`/coding-tasks/${task.id}/workspace/setup`,{method:'POST',body:JSON.stringify({action})});window.dispatchEvent(new Event('olcr-command-complete'))}catch(reason){setSetupError(reason instanceof Error?reason.message:String(reason))}finally{setSetupBusy(false)}};
 
   const localizedLabels:Record<string,string>=ja?{...label}:{PLANNING:"Planning",QWEN_PLAN_SCHEMA_REPAIR:"Repairing plan",QUEUED:"Queued",RUNNING:"Running",FINAL_REPORTING:"Preparing final result",WAITING_FOR_PLAN_APPROVAL:"Waiting for plan approval",WAITING_FOR_USER:"Needs your input",RESUMABLE:"Paused · resumable",QWEN_REPLANNING:"Replanning",BLOCKED:"Blocked",COMPLETED:"Completed"};const localizedDisplay:Record<DisplayState,string>=ja?displayLabels:{WAITING:"Waiting",RUNNING:"Running",DONE:"Done",FAILED:"Failed",PARTIAL:"Partial",CHECKPOINT:"Ready to continue",UNKNOWN:"Unknown state"};
   if(definitionClarification)localizedLabels.WAITING_FOR_USER=ja?"要件の回答待ち":"Waiting for requirements";
   if(replanIneffective)localizedLabels.WAITING_FOR_USER=ja?"再試行方法の選択待ち":"Choose how to retry";
+  if(constrained)localizedLabels.WAITING_FOR_USER=ja?"制約について確認待ち":"Waiting for a decision on limitations";
+  if(task.final_report_status==="PARTIAL")localizedLabels.COMPLETED=ja?"一部未実施":"Partially completed";
   const recoveryLimitReached=task.status==="BLOCKED"&&task.recovery_reason==="GLOBAL_RECOVERY_LIMIT";
   if(recoveryLimitReached)localizedLabels.BLOCKED=ja?"復旧上限に到達":"Recovery limit reached";
   const phases=task.plan?.phases||[],graph=task.plan?.tasks||[],subtasks=task.subtask_progress||[];
@@ -69,9 +94,17 @@ export function CodingTaskProgress({task,reports,loading,error,pausePending,onPa
   const currentGraphTask=runningSubtask?graph.find(item=>item.task_id===runningSubtask.task_id):undefined;
   const finalText=task.final_report?.text?.trim();
   const checkpoint=isCheckpoint(task),handoff=task.batch_handoff;
+  const retryReport=latestReport(reports,task.current_phase_id||"",task.plan_revision||0,true);
+  const retryUnmetCriteria=Array.from(new Set([
+    ...(task.pending_authorization?.unmet_criteria||[]),
+    ...(retryReport?.structured_report?.phase_evaluation?.done_unmet||[]),
+    ...(retryReport?.structured_report?.phase_evaluation?.verify_unmet||[]),
+    ...(retryReport?.structured_report?.manager_decision?.diagnosis?.unmet_done||[]),
+    ...(retryReport?.structured_report?.manager_decision?.diagnosis?.unmet_verify||[]),
+  ].map(item=>String(item).trim()).filter(Boolean))).slice(0,8);
   const finished=phases.find(phase=>phase.id===handoff?.completed_phase_id)||phases[(task.batch_cursor||1)-1];
   return <details className="coding-task-progress" open={taskIsActivelyRunning(task)||checkpoint||Boolean(task.pending_authorization)||task.status==="WAITING_FOR_PLAN_APPROVAL"||task.status==="BLOCKED"}>
-    <summary aria-label={`${ja?"コーディング オーケストレーター":"Coding Orchestrator"}: ${localizedDisplay[state]}`}><span><b>{ja?"コーディング オーケストレーター":"Coding Orchestrator"}</b><small><span>{progressSummary}</span>{phaseProgressLabel&&<span className="coding-phase-progress-summary"> · {phaseProgressLabel}</span>}</small></span><StatusBadge state={task.status} announce={false}>{activityLabel&&<span className="coding-activity-spinner" role="status" aria-label={activityLabel}/>}{localizedLabels[statusKey]||localizedDisplay[state]}</StatusBadge>{!task.archived&&<button type="button" className="coding-dismiss" aria-label={ja?"コーディング オーケストレーターを閉じる":"Dismiss Coding Orchestrator card"} title={ja?"カードを閉じる":"Dismiss card"} onClick={event=>{event.preventDefault();event.stopPropagation();onDismiss?.()}}>×</button>}</summary>
+    <summary aria-label={`${ja?"コーディング オーケストレーター":"Coding Orchestrator"}: ${localizedDisplay[state]}`}><span><b>{ja?"コーディング オーケストレーター":"Coding Orchestrator"}</b><small><span>{progressSummary}</span>{phaseProgressLabel&&<span className="coding-phase-progress-summary"> · {phaseProgressLabel}</span>}</small></span><StatusBadge state={task.final_report_status === "PARTIAL" ? "waiting" : task.status} announce={false}>{activityLabel&&<span className="coding-activity-spinner" role="status" aria-label={activityLabel}/>}{localizedLabels[statusKey]||localizedDisplay[state]}</StatusBadge>{!task.archived&&<button type="button" className="coding-dismiss" aria-label={ja?"コーディング オーケストレーターを閉じる":"Dismiss Coding Orchestrator card"} title={ja?"カードを閉じる":"Dismiss card"} onClick={event=>{event.preventDefault();event.stopPropagation();onDismiss?.()}}>×</button>}</summary>
     <div className="coding-task-details">
       <p className="coding-status-description" role="status">{task.pause_requested&&taskIsActivelyRunning(task)?(ja?"停止処理中…":"Stopping…"):localizedLabels[statusKey]||(ja?"状態を確認中":"Checking status")}</p>{loading&&<p className="coding-loading" role="status">{ja?"進行状況を更新中…":"Updating progress…"}</p>}{error&&<p className="coding-error" role="alert">{ja?"進行状況を取得できませんでした。再試行できます。":"Could not load progress. You can retry."}</p>}
       <CodingSubagentsPanel task={task} ja={ja}/>
@@ -82,16 +115,28 @@ export function CodingTaskProgress({task,reports,loading,error,pausePending,onPa
       {taskIsActivelyRunning(task)&&runningSubtask?.failure_summary&&<p className="coding-failure">{ja?'直近の失敗を修正中：':'Repairing the latest failure: '}{runningSubtask.failure_summary}</p>}
       {checkpoint&&<section className="coding-batch-checkpoint" aria-label={ja?"継続チェックポイント":"Continuation checkpoint"}><p>{task.recovery_reason==="IMPLEMENTATION_PREPARED"?(ja?"計画と実装ファイルの準備が完了しました。続行すると次の工程を開始します。":"The plan and implementation files are ready. Continue to start the next phase."):(ja?"ここまで完了しました。続行すると次の工程を開始します。":"Work so far is complete. Continue to start the next phase.")}</p><p>{ja?"完了した工程":"Completed phase"}: {finished?.goal||(ja?"保存済みの工程":"Saved phase")}</p><p>{ja?"次の工程":"Next phase"}: {handoff?.next_constraints?.[0]||current?.goal||(ja?"保存済みの次工程":"Saved next phase")}</p><p>{ja?"検証状態":"Verification status"}: {handoff?.verification?.at(-1)?.status?statusLabel(handoff.verification.at(-1)!.status!,ja):(ja?"記録を確認中":"Checking record")}</p>{handoff?.changed_files&&<p>{ja?"変更ファイル数":"Changed files"}: {handoff.changed_files.length}</p>}{task.plan?.implementation_plan_artifact&&<p>{ja?"実装マニフェスト":"Implementation manifest"}: {task.plan.implementation_plan_artifact.file_manifest_count||0} {ja?"ファイル":"files"} / {ja?"スキャフォールド作成":"Scaffolds created"} {task.plan.implementation_plan_artifact.scaffold_created_count||0}</p>}</section>}
       {recoveryLimitReached&&<section className="coding-recovery-choice" aria-label={ja?'復旧上限の説明':'Recovery limit details'}><strong>{ja?'このTaskの自動復旧上限に達しました':'This task reached its bounded recovery limit'}</strong><p>{ja?'自動復旧を停止しています。停止条件と残りの復旧枠を再確認して、再開できるか判断できます。成果物の確認や承認が必要という意味ではありません。':'Automatic recovery has stopped. Recheck the blocker and remaining recovery budget to determine whether this task can resume. This does not require reviewing or approving the output.'}</p><p>{ja?`完了済み: ${completed} / ${subtasks.length||phases.length} 件。未完了の工程は「計画と実行の詳細」に保存されています。`:`Completed: ${completed} / ${subtasks.length||phases.length}. Unfinished phases are saved under Plan and execution details.`}</p>{current&&<p>{ja?'停止した工程: ':'Stopped at: '}{current.goal}</p>}{failureSummary(latestReport(reports,task.current_phase_id||'',task.plan_revision||0))&&<p className="coding-failure">{ja?'直近の失敗: ':'Latest failure: '}{failureSummary(latestReport(reports,task.current_phase_id||'',task.plan_revision||0))}</p>}<p>{ja?'「再試行」とチャットに入力しても停止条件を再確認できます。上限を使い切っている場合は再開せず、理由を表示します。':'You can also type “retry” in chat to recheck the blocker. If the recovery budget is exhausted, the task remains stopped and explains why.'}</p>{!task.archived&&!task.pending_authorization&&<button type="button" onClick={onResume}>{ja?'停止条件を再確認':'Recheck the blocker'}</button>}</section>}
+      {invalidRequirements&&<section className="coding-recovery-choice" aria-label={ja?'実行要件の再確認':'Recheck requirements'}><strong>{ja?'保存済みの実行要件を再確認できます':'Saved requirements can be rechecked'}</strong><p>{ja?'このTaskは以前の判定規則で停止しました。再確認すると、矛盾がなければ同じTaskの計画を開始し、実際の矛盾が残る場合は該当箇所を示して選択を尋ねます。':'This task stopped under an earlier requirement check. Rechecking will start planning on the same task if the conflict is gone, or show the conflicting conditions and ask which to prioritize.'}</p><button type="button" onClick={onResume}>{ja?'要件を再確認して再開':'Recheck requirements and resume'}</button></section>}
       {replanIneffective&&<section className="coding-recovery-choice" aria-label={ja?'再試行方法':'Recovery choices'}>
         <strong>{ja?'計画の再作成では失敗工程を改善できませんでした':'Replanning did not improve the failing phase'}</strong>
-        <p>{ja?'保存済みの失敗情報を使い、同じ計画のまま現在の工程を再実行できます。成果物を確認済みにする操作は不要です。':'Retry the current phase with its saved failure evidence and keep the existing plan. You do not need to mark the output as reviewed.'}</p>
-        {task.pending_authorization?.unmet_criteria?.length?<><b>{ja?'未達の条件':'Unmet conditions'}</b><ul>{task.pending_authorization.unmet_criteria.map((item,index)=><li key={index}>{item}</li>)}</ul></>:<p>{ja?'未達条件の詳細は保存されていません。':'No detailed unmet criteria were saved.'}</p>}
-        {failureSummary(latestReport(reports,task.current_phase_id||'',task.plan_revision||0))&&<p className="coding-failure">{ja?'直近の失敗：':'Latest failure: '}{failureSummary(latestReport(reports,task.current_phase_id||'',task.plan_revision||0))}</p>}
-        <button type="button" onClick={onResume}>{ja?'失敗情報を使ってこの工程を再実行':'Retry this phase with saved failure evidence'}</button>
+        <p>{deterministicRecovery?(ja?'大きすぎる工程を、完了済みの成果物と承認済みファイルの範囲を保ったまま自動で小さな工程に分けて再開します。':'The oversized phase will be split into smaller steps while preserving completed work and the approved file scope.'):(ja?'保存済みの失敗情報を使い、現在の工程を再実行できます。成果物を確認済みにする操作は不要です。':'Retry the current phase with its saved failure evidence. You do not need to mark the output as reviewed.')}</p>
+        {retryUnmetCriteria.length?<><b>{ja?'未達の条件':'Unmet conditions'}</b><ul>{retryUnmetCriteria.map((item,index)=><li key={index}>{item}</li>)}</ul></>:<p>{ja?'未達条件の詳細は保存されていません。':'No detailed unmet criteria were saved.'}</p>}
+        {failureSummary(retryReport)&&<p className="coding-failure">{ja?'直近の失敗：':'Latest failure: '}{failureSummary(retryReport)}</p>}
+        <button type="button" onClick={onResume}>{deterministicRecovery?(ja?'失敗情報を使って工程を分割し再開':'Split this phase and resume'):(ja?'失敗情報を使ってこの工程を再実行':'Retry this phase with saved failure evidence')}</button>
         <p>{ja?'完了済みの工程と承認済みの作業範囲は維持します。条件を変更したい場合は、その内容をチャットへ入力してください。':'Completed phases and the approved workspace scope are preserved. Enter a chat message if you want to change the requirements.'}</p>
       </section>}
       {definitionClarification&&<section className="coding-recovery-choice" aria-label={ja?'回答が必要な項目':'Questions to answer'}><strong>{ja?'次の項目をチャットへ回答してください':'Answer these questions in chat'}</strong><ul>{(task.pending_authorization?.questions||[]).map((question,index)=><li key={index}>{question}</li>)}</ul></section>}
-      {task.pending_authorization&&!workspaceSetup&&!definitionClarification&&!replanIneffective&&<section className="coding-authorization" aria-label={ja?"承認が必要":"Authorization required"}><strong>{ja?"承認が必要":"Authorization required"}</strong><span>{task.pending_authorization.requested_scope?.length?task.pending_authorization.requested_scope.join(", "):task.pending_authorization.unmet_criteria?.join(" / ")||task.pending_authorization.reason||(ja?"追加の確認が必要です":"Additional confirmation is required")}</span></section>}
+      {constrained&&<section className="coding-recovery-choice" aria-label={ja?"実行できない項目":"Unavailable requested items"}>
+        <strong>{ja?"実行できない項目":"Unavailable requested items"}</strong>
+        <ul>{(constrained.unmet_criteria||[]).map((item,index)=><li key={index}>{item}</li>)}</ul>
+        <p>{constrained.reason}</p>
+        <p>{ja?"この項目を未実施として、残りの作業を続けますか？":"Continue the remaining work and record these items as not run?"}</p>
+        <div className="coding-actions">
+          <button type="button" disabled={setupBusy} onClick={()=>void decideContinuation('accept')}>{ja?"制約を受け入れて続行":"Continue with limitations"}</button>
+          <button type="button" disabled={setupBusy} onClick={()=>void decideContinuation('decline')}>{ja?"ここで停止":"Stop here"}</button>
+        </div>
+        {setupError&&<p role="alert">{setupError}</p>}
+      </section>}
+      {task.pending_authorization&&!workspaceSetup&&!definitionClarification&&!replanIneffective&&!constrained&&<section className="coding-authorization" aria-label={ja?"承認が必要":"Authorization required"}><strong>{ja?"承認が必要":"Authorization required"}</strong><span>{task.pending_authorization.requested_scope?.length?task.pending_authorization.requested_scope.join(", "):task.pending_authorization.unmet_criteria?.join(" / ")||task.pending_authorization.reason||(ja?"追加の確認が必要です":"Additional confirmation is required")}</span></section>}
       <details className="coding-technical-details"><summary>{ja?'計画と実行の詳細':'Plan and execution details'}</summary>
       <p className="coding-plan-revision">{ja?"計画の改訂":"Plan revision"} {task.plan_revision||0}</p>
       {task.current_phase_id&&<p>{ja?"修正試行":"Correction attempts"} {task.retry_count}</p>}{task.queue_position!=null&&<p>{ja?"待機位置":"Queue position"} {task.queue_position}</p>}

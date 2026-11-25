@@ -16,6 +16,7 @@ from typing import Literal
 from .custom_agents import AgentDefinition, AgentKnowledge
 from .agent_knowledge import read_file, TEXT_TYPES, BINARY_TYPES
 from .agent_packages import AgentPackage, parse_zip, MAX_ARCHIVE_BYTES
+from .db import finalize_pending_conversation_title
 
 LOCK = threading.RLock()
 
@@ -175,6 +176,7 @@ def _put_message(connection, cid, role, content, blocks, now):
     ordinal = connection.execute('SELECT COALESCE(MAX(ordinal),-1)+1 FROM messages WHERE conversation_id=?',(cid,)).fetchone()[0]
     connection.execute('INSERT INTO messages(id,conversation_id,role,content,ordinal,created_at,blocks_json) VALUES(?,?,?,?,?,?,?)',
                        (str(uuid.uuid4()),cid,role,content,ordinal,now,json.dumps(blocks,ensure_ascii=False) if blocks else None))
+    if role=='user':finalize_pending_conversation_title(connection,cid,content)
 
 def _finish(db, cid, message_id, message, state, response, *, definition=None, package=None, attachment_name=None, attachment_image=None):
     if state.get('status')=='collecting':

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 
 
 def estimated_tokens(text: str) -> int:
@@ -11,7 +12,8 @@ def estimated_tokens(text: str) -> int:
     return math.ceil(sum(0.5 if ord(c) < 128 else 1.5 for c in text))
 
 
-def compress_messages(messages: list[dict], window: int, reserve: int = 2048) -> tuple[list[dict], dict]:
+def compress_messages(messages: list[dict], window: int, reserve: int = 2048,
+                      on_compression_start: Callable[[], None] | None = None) -> tuple[list[dict], dict]:
     """Keep controls/current input verbatim; excerpt older data at 80% usage.
 
     An extract is never promoted to a system instruction. Tool call sequences
@@ -33,6 +35,16 @@ def compress_messages(messages: list[dict], window: int, reserve: int = 2048) ->
 
     candidates = [i for i, m in enumerate(result) if i < latest and m.get('role') in {'user', 'assistant'}
                   and not m.get('tool_calls') and not m.get('tool_call_id')]
+    supplemental_candidates = [m for m in result if m.get('role') == 'system'
+        and (str(m.get('content') or '').startswith('[PROVIDER_EVIDENCE_JSON]\n')
+             or (str(m.get('content') or '').startswith('Selected evidence:')
+                 and len(str(m.get('content') or '')) > max(256, int(window * .5) // 2))
+             or (str(m.get('content') or '').startswith(('Workspace core context', '[RAG_CONTEXT]'))
+                 and '[ACTIVE_SKILL ' not in str(m.get('content') or '')))]
+    if not any(len(str(result[i].get('content') or '')) > 160 for i in candidates) and not supplemental_candidates:
+        return messages, report
+    if on_compression_start:
+        on_compression_start()
     target = max(0, int(window * .5) - reserve)
     # Reduce older turns first, preserving role and chronology. Explicit
     # excerpt markers prevent missing text being treated as complete evidence.

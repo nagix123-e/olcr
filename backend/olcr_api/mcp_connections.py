@@ -27,8 +27,8 @@ class MCPConnections:
         resources = resolve_mcp_resources(name, for_connection=True)
         command = resources.get("command")
         scope = "coding"
-        # This adapter is already enabled for managed browser sessions. This
-        # does not enable the separately disabled generic coding MCP path.
+        # Connection checks do not grant tool execution. Coding Playwright
+        # calls are scoped separately to the task's local browser session.
         if name == "serena":
             command = serena_command()
             resources["reason"] = "READY" if command else "PYTHON_RUNTIME_MISSING"

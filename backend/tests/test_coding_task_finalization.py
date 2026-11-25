@@ -42,8 +42,7 @@ class FinalizationTests(unittest.TestCase):
         api.runtime, api.db = self.old_runtime, self.old_db
         self.tmp.cleanup()
 
-    def create_task(self, task_id: str, status: str = "RUNNING"):
-        goal = "finish sample"
+    def create_task(self, task_id: str, status: str = "RUNNING", goal: str = "finish sample"):
         task_plan = one_phase_plan(goal)
         api.db.create_coding_task(task_id, "conversation", goal, status, "NONE", task_plan, time.time())
         return task_plan
@@ -181,6 +180,91 @@ class FinalizationTests(unittest.TestCase):
         dependent={'requirements':{**task['requirements'],'dependency_requirements':['react']}}
         self.assertEqual('report',api._append_static_app_launch('report',dependent,plan,self.tmp.name))
 
+    def test_completed_website_report_includes_copyable_command_and_browser_url(self):
+        self.create_task('website-open-help', goal='Build a website')
+        root = Path(self.tmp.name)
+        (root / 'package.json').write_text(json.dumps({
+            'packageManager': 'npm@11.0.0',
+            'scripts': {'dev': 'vite'},
+            'devDependencies': {'vite': '^8.0.0'},
+        }))
+        (root / 'package-lock.json').write_text('{}')
+        (root / 'index.html').write_text('<main>site</main>')
+        unrelated_bundle = root / 'dist' / 'Unrelated.app' / 'Contents'
+        unrelated_bundle.mkdir(parents=True)
+        (unrelated_bundle / 'Info.plist').write_text('<plist/>')
+        api._save_report('website-open-help', 'p1', 0, pass_report(0), 'PASS')
+
+        with patch.object(api, '_model_text', side_effect=AssertionError('launch guidance must be deterministic')):
+            self.assertEqual('Coding Task completed.', api._complete_task(
+                'website-open-help', api.db.coding_task('website-open-help')))
+
+        text = api.db.coding_task('website-open-help')['final_report']['text']
+        self.assertIn('## Webサイトを開く', text)
+        self.assertIn(f'cd {self.tmp.name} && npm ci && npm run dev', text)
+        self.assertIn('http://localhost:5173/', text)
+
+    def test_completed_desktop_app_report_includes_app_launch_command(self):
+        self.create_task('desktop-open-help')
+        root = Path(self.tmp.name)
+        (root / 'package.json').write_text(json.dumps({
+            'packageManager': 'pnpm@10.0.0',
+            'scripts': {'tauri:dev': 'tauri dev'},
+            'devDependencies': {'@tauri-apps/cli': '^2.0.0'},
+        }))
+        (root / 'pnpm-lock.yaml').write_text('lockfileVersion: 9')
+        (root / 'src-tauri').mkdir()
+        (root / 'src-tauri' / 'tauri.conf.json').write_text('{}')
+        api._save_report('desktop-open-help', 'p1', 0, pass_report(0), 'PASS')
+
+        with patch.object(api, '_model_text', side_effect=AssertionError('launch guidance must be deterministic')):
+            self.assertEqual('Coding Task completed.', api._complete_task(
+                'desktop-open-help', api.db.coding_task('desktop-open-help')))
+
+        text = api.db.coding_task('desktop-open-help')['final_report']['text']
+        self.assertIn('## アプリを起動', text)
+        self.assertIn(f'cd {self.tmp.name} && pnpm install --frozen-lockfile && pnpm run tauri:dev', text)
+        self.assertIn('アプリのウィンドウが開きます', text)
+
+    def test_tauri_report_uses_native_tauri_command_instead_of_frontend_dev_server(self):
+        self.create_task('tauri-default-scripts')
+        root = Path(self.tmp.name)
+        (root / 'package.json').write_text(json.dumps({
+            'packageManager': 'npm@11.0.0',
+            'scripts': {'dev': 'vite', 'tauri': 'tauri'},
+            'dependencies': {'vite': '^8.0.0', '@tauri-apps/api': '^2.0.0'},
+            'devDependencies': {'@tauri-apps/cli': '^2.0.0'},
+        }))
+        (root / 'package-lock.json').write_text('{}')
+        (root / 'src-tauri').mkdir()
+        (root / 'src-tauri' / 'tauri.conf.json').write_text('{}')
+        (root / 'index.html').write_text('<main>desktop app shell</main>')
+        api._save_report('tauri-default-scripts', 'p1', 0, pass_report(0), 'PASS')
+
+        with patch.object(api, '_model_text', side_effect=AssertionError('launch guidance must be deterministic')):
+            self.assertEqual('Coding Task completed.', api._complete_task(
+                'tauri-default-scripts', api.db.coding_task('tauri-default-scripts')))
+
+        text = api.db.coding_task('tauri-default-scripts')['final_report']['text']
+        self.assertIn('## アプリを起動', text)
+        self.assertIn('npm ci && npm run tauri -- dev', text)
+        self.assertNotIn('http://localhost:5173/', text)
+
+    def test_completed_built_mac_app_report_points_to_the_app_bundle(self):
+        self.create_task('built-app-open-help', goal='Build a desktop app')
+        bundle = Path(self.tmp.name) / 'dist' / 'Sample App.app'
+        (bundle / 'Contents').mkdir(parents=True)
+        (bundle / 'Contents' / 'Info.plist').write_text('<plist/>')
+        api._save_report('built-app-open-help', 'p1', 0, pass_report(0), 'PASS')
+
+        with patch.object(api, '_model_text', side_effect=AssertionError('launch guidance must be deterministic')):
+            self.assertEqual('Coding Task completed.', api._complete_task(
+                'built-app-open-help', api.db.coding_task('built-app-open-help')))
+
+        text = api.db.coding_task('built-app-open-help')['final_report']['text']
+        self.assertIn('## アプリを開く', text)
+        self.assertIn("open '" + str(bundle) + "'", text)
+
     def test_finalization_rejects_lifecycle_only_required_mcp_evidence(self):
         self.create_task("mcp-not-used")
         api.db.update_coding_task("mcp-not-used",
@@ -194,9 +278,9 @@ class FinalizationTests(unittest.TestCase):
         api._save_report("mcp-not-used", "p1", 0, pass_report(0), "PASS")
         result = api._complete_task("mcp-not-used", api.db.coding_task("mcp-not-used"))
         task = api.db.coding_task("mcp-not-used")
-        self.assertIn("required MCP used: shadcn", result)
-        self.assertEqual("RESUMABLE", task["status"])
-        self.assertEqual("REQUIRED_MCP_UNVERIFIED", task["recovery_reason"])
+        self.assertIn("必須のMCP利用：shadcn", result)
+        self.assertEqual("WAITING_FOR_USER", task["status"])
+        self.assertEqual("CONSTRAINED_CONTINUATION", task["recovery_reason"])
 
 
 if __name__ == "__main__":

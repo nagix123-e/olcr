@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "mlx-text-v1": {
+      "loader_id": "mlx-lm",
+      "artifact_format": "mlx-safetensors",
+      "packages": [
+        "llguidance==1.8.0",
+        "mlx-lm==0.32.0",
+        "mlx==0.32.0"
+      ],
+      "package_lock_id": "sha256:1620fd2c0ba6b54427d33cfbc83775b8e030c3c0244ed0c7eb442e1528a4a1db",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_lm",
+        "llguidance.hf"
+      ]
+    },
+    "mlx-vlm-legacy-v1": {
+      "loader_id": "bonsai-vision-artifact",
+      "artifact_format": "mlx-bonsai-custom-runtime",
+      "packages": [
+        "llguidance==1.8.0",
+        "mlx-lm==0.32.0",
+        "mlx-vlm==0.6.3",
+        "mlx==0.32.0"
+      ],
+      "package_lock_id": "sha256:f45cf59190933c92ac2bd4e7446ece1227ca93785ff5e6d9b89c3a9738043db3",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_lm",
+        "mlx_vlm",
+        "llguidance.hf"
+      ]
+    },
+    "mlx-vlm-v1": {
+      "loader_id": "mlx-vlm",
+      "artifact_format": "mlx-safetensors",
+      "packages": [
+        "llguidance==1.8.0",
+        "mlx-lm==0.32.0",
+        "mlx-vlm==0.7.8",
+        "mlx==0.32.0"
+      ],
+      "package_lock_id": "sha256:ebdab03686c29c391775804967e80ddac1ad8665f592740543f031df16e55259",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_lm",
+        "mlx_vlm",
+        "llguidance.hf"
+      ]
+    },
+    "mlx-audio-v1": {
+      "loader_id": "mlx-audio",
+      "artifact_format": "liquid-audio-snapshot",
+      "packages": [
+        "mlx-audio==0.4.6",
+        "mlx==0.32.0"
+      ],
+      "package_lock_id": "sha256:b7fd9cef291c53143f79e40667a10aba842bddcf7b79ee7c431336e78bbda373",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_audio.sts.models.lfm_audio"
+      ]
+    },
+    "mlx-whisper-v1": {
+      "loader_id": "mlx-whisper",
+      "artifact_format": "mlx-whisper-snapshot",
+      "packages": [
+        "mlx-whisper==0.4.3",
+        "mlx==0.32.0"
+      ],
+      "package_lock_id": "sha256:8584ff307c3674fbfa939aafe3a35ada8a1693ab197c48fad5914eb562c4ba22",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_whisper"
+      ]
+    },
+    "mlx-plamo-v1": {
+      "loader_id": "plamo-translate-cli",
+      "artifact_format": "mlx-safetensors",
+      "packages": [
+        "llguidance==1.8.0",
+        "mlx-lm==0.32.0",
+        "mlx==0.32.0",
+        "plamo-translate==1.2.0"
+      ],
+      "package_lock_id": "sha256:dd6f944cc707a6ac2537e162d22fe43139ab11b209a00de699438043413d4bd9",
+      "managed": true,
+      "verify_imports": [
+        "mlx",
+        "mlx_lm",
+        "llguidance.hf"
+      ]
+    },
+    "ollama-external-v1": {
+      "loader_id": "ollama",
+      "artifact_format": "ollama-model-store",
+      "packages": [],
+      "package_lock_id": "external:ollama-external-v1",
+      "managed": false,
+      "verify_imports": []
+    },
+    "laya-external-v1": {
+      "loader_id": "laya-runtime-component",
+      "artifact_format": "laya-model-payload",
+      "packages": [],
+      "package_lock_id": "external:laya-external-v1",
+      "managed": false,
+      "verify_imports": []
+    }
+  }
+}

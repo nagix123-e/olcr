@@ -955,7 +955,46 @@ class GuiFeatures(unittest.TestCase):
                 response=self.client.post(endpoint,json={'message':'献立プランナーをお願い','project_id':self.project,'conversation_id':conversation})
             self.assertEqual(200,response.status_code,response.text)
             self.assertIn('実装を行うか',response.text)
+            self.assertIn('具体的な操作が指定されていません', response.text)
             self.assertEqual([],api.db.coding_tasks(conversation))
+
+    def test_conflicting_execution_scope_is_reported_in_chat_and_stream(self):
+        api.rebuild(api.settings.with_overrides({'task_manager_enabled': True}))
+        for endpoint in ('/api/chat', '/api/chat/stream'):
+            with self.subTest(endpoint=endpoint), \
+                 patch.object(api.runtime, 'execute', side_effect=AssertionError('runtime must not run')), \
+                 patch.object(api.runtime.model, 'generate', side_effect=AssertionError('model must not run')):
+                conversation = self.client.post(f'/api/projects/{self.project}/conversations').json()['id']
+                reply = self.client.post(endpoint, json={'project_id': self.project, 'conversation_id': conversation,
+                    'message': 'このアプリを実装して。ただし実装はしないでください。'})
+                self.assertEqual(200, reply.status_code, reply.text)
+                self.assertIn('指示が矛盾しています', reply.text)
+                self.assertIn('CONTRADICTORY_MUTATION_AND_NON_CODING_SCOPE', reply.text)
+                self.assertEqual([], api.db.coding_tasks(conversation))
+
+    def test_routing_error_is_reported_without_executing_or_exposing_exception(self):
+        cases = (
+            ('resolve_request_intent', 'REQUEST_CLASSIFIER_FAILED', '依頼の種類を判定する段階'),
+            ('route_external_tool', 'PROVIDER_MATCH_FAILED', '処理先の候補を調べる段階'),
+            ('router_decision', 'PROVIDER_SELECTION_FAILED', '処理先の候補を絞り込む段階'),
+        )
+        for stage, code, reason in cases:
+            for endpoint in ('/api/chat', '/api/chat/stream'):
+                with self.subTest(endpoint=endpoint, stage=stage), \
+                     patch.object(api, 'route_external_tool', return_value=None), \
+                     patch.object(api, stage, side_effect=ValueError('private routing detail')), \
+                     patch.object(api, 'execute_external_tool', side_effect=AssertionError('provider must not run')), \
+                     patch.object(api.runtime, 'execute', side_effect=AssertionError('runtime must not run')), \
+                     patch.object(api.runtime.model, 'generate', side_effect=AssertionError('model must not run')):
+                    conversation = self.client.post(f'/api/projects/{self.project}/conversations').json()['id']
+                    reply = self.client.post(endpoint, json={'project_id': self.project, 'conversation_id': conversation,
+                        'message': '明日の東京の天気を教えて'})
+                    self.assertEqual(200, reply.status_code, reply.text)
+                    self.assertIn(code, reply.text)
+                    self.assertIn(reason, reply.text)
+                    self.assertNotIn('private routing detail', reply.text)
+                    messages = api.db.conversation(conversation)['messages']
+                    self.assertEqual(['user', 'assistant'], [m['role'] for m in messages])
 
     def test_shared_intent_routes_domain_named_software_to_coding_in_chat_and_stream(self):
         api.rebuild(api.settings.with_overrides({'task_manager_enabled':True}))

@@ -36,6 +36,14 @@ def record_model_log(db,cid,data):
                 con.execute('UPDATE live_model_logs SET data_json=?,created_at=? WHERE id=?',(json.dumps(data,ensure_ascii=False),now,previous[0]));return
         con.execute('INSERT INTO live_model_logs(conversation_id,invocation_id,kind,data_json,created_at) VALUES(?,?,?,?,?)',(cid,data.get('invocation_id',''),data.get('state','status'),json.dumps(data,ensure_ascii=False),now))
 
+def clear_model_logs(db,cid,invocation_id):
+    """Remove transient logs for one completed chat operation."""
+    if not cid or not invocation_id:return
+    with db.connect() as con:
+        _table(con)
+        con.execute('DELETE FROM live_model_logs WHERE conversation_id=? AND invocation_id=?',
+                    (cid,invocation_id))
+
 def register_model_log_routes(app,database):
     @app.get('/api/conversations/{cid}/model-logs')
     def logs(cid:str):

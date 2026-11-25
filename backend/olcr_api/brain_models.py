@@ -100,28 +100,24 @@ class BrainModels:
             cached=self.providers.availability_store.get('local',0,self.settings.ollama_endpoint if model_id.startswith('ollama:') else 'mlx',model_id)
             if cached['state']=='unavailable':return cached
         if model_id in {BONSAI,ORNITH_MLX}:
-            root=Path(__file__).resolve().parents[2]
-            python=Path(os.environ.get('OLCR_MLX_PYTHON',str(root/'.venv-mlx/bin/python'))).expanduser()
-            if not python.is_file():return availability('unavailable','local_runtime_missing')
             if model_id==BONSAI:
                 pack=asset_path('bonsai/Ternary-Bonsai-2-27B-mlx-2bit')
-                from .mlx_profile_runtime import available as mlx_profile_runtime_available
-                installed=(mlx_profile_runtime_available() and (pack/'runtime').is_dir()
-                           and any(pack.glob('*.safetensors')))
+                asset_id='ternary_bonsai_2_27b'
             else:
                 pack=asset_path('ornith/Ornith-1.5-9B-MLX-8bit')
-                installed=(pack/'config.json').is_file() and (pack/'model.safetensors.index.json').is_file() and len(list(pack.glob('model-*-of-*.safetensors')))==2
+                asset_id='ornith_1_5_9b_8bit'
+            assets=getattr(getattr(self,'purpose_models',None),'downloads',None)
+            entry=assets.presets().get(asset_id) if assets else None
+            installed=bool(entry and assets.installed(entry))
             return availability('available','local_files_present') if installed else availability('unavailable','local_model_missing')
         if isinstance(model_id, str) and model_id.startswith('mlx:'):
             from .model_profiles import _data
             descriptor = next((row for row in _data()['models'].values() if row.get('brain_id') == model_id), None)
             if descriptor:
-                root=Path(__file__).resolve().parents[2]
-                python=Path(os.environ.get('OLCR_MLX_PYTHON',str(root/'.venv-mlx/bin/python'))).expanduser()
                 assets=getattr(getattr(self,'purpose_models',None),'downloads',None)
                 entry=(assets.presets().get(descriptor['id']) if assets else None)
                 installed=bool(entry and assets.installed(entry))
-                return availability('available','local_files_present') if installed and python.is_file() else availability('unavailable','local_model_missing')
+                return availability('available','local_files_present') if installed else availability('unavailable','local_model_missing')
         if isinstance(model_id,str) and model_id.startswith('ollama:'):
             # Inventory only; never load a model or send a completion as a probe.
             now=time.time();cached=getattr(self,'_preflight_ollama',None)
@@ -264,16 +260,16 @@ class BrainModels:
         if not any(m['id'] == ORNITH for m in models):
             models.append({'id': ORNITH, 'label': 'Ornith 1.5 · 9B', 'provider': 'Ollama',
                            'available': False, 'kind': 'language', 'local': True})
-        root = Path(__file__).resolve().parents[2]
-        mlx_python = Path(os.environ.get('OLCR_MLX_PYTHON', str(root / '.venv-mlx/bin/python'))).expanduser()
         pack = asset_path('bonsai/Ternary-Bonsai-2-27B-mlx-2bit')
-        from .mlx_profile_runtime import available as mlx_profile_runtime_available
-        available = (mlx_python.is_file() and mlx_profile_runtime_available()
-                     and (pack / 'runtime').is_dir() and any(pack.glob('*.safetensors')))
+        downloads=getattr(getattr(self,'purpose_models',None),'downloads',None)
+        base_entry=downloads.presets().get('ternary_bonsai_2_27b') if downloads else None
+        available=bool(base_entry and downloads.installed(base_entry)
+                       and (pack / 'runtime').is_dir() and any(pack.glob('*.safetensors')))
         models.append({'id': BONSAI, 'label': 'Ternary Bonsai 2 · 27B', 'provider': 'MLX',
                        'available': available, 'kind': 'language', 'local': True})
         ornith_pack = asset_path('ornith/Ornith-1.5-9B-MLX-8bit')
-        ornith_available = (mlx_python.is_file()
+        ornith_entry=downloads.presets().get('ornith_1_5_9b_8bit') if downloads else None
+        ornith_available = (bool(ornith_entry and downloads.installed(ornith_entry))
                             and (ornith_pack / 'config.json').is_file()
                             and (ornith_pack / 'model.safetensors.index.json').is_file()
                             and len(list(ornith_pack.glob('model-*-of-*.safetensors'))) == 2)

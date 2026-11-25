@@ -129,6 +129,18 @@ def capability_evidence(text: str, aliases: dict[str, str]) -> list[dict]:
     blocks = parse_prompt_blocks(text)
     for block in blocks:
         inherited = block.polarity_context == "FORBIDDEN"
+        # A prohibition on copying implementation choices from a reference
+        # artifact is not a prohibition on the same kind of dependency in the
+        # requested project. Keep this distinction at paragraph scope because
+        # the list of copied items is split into separate clauses below.
+        reference_dependency_transfer = bool(
+            re.search(r"\b(?:zip|archive|reference|example|template)\b", block.text, re.I)
+            and re.search(
+                r"\b(?:do\s+not|don't|must\s+not|never)\s+(?:blindly\s+)?"
+                r"(?:copy|reuse|inherit|import)\b.{0,220}\bdependency\s+choices?\b",
+                block.text, re.I,
+            )
+        )
         for sentence in re.split(r"[。;；!]|\.(?=\s|$)|\bbut\b|ただし|一方", block.text):
             negative = inherited or _negative(sentence)
             for clause in re.split(r"[,、]|\band\b|ですが|だが", sentence):
@@ -171,7 +183,10 @@ def capability_evidence(text: str, aliases: dict[str, str]) -> list[dict]:
                         r"\b(?:claim|report|assert|fall\s+back|weaken|bypass|extend)\b"
                         r"|(?:map|flatten).{0,40}(?:shadcn|@shadcn/ui)"
                         r"|(?:成功|失敗).{0,24}(?:報告|主張|判定)|(?:キャッシュ|認可|権限|制限).{0,24}(?:戻|弱|回避|拡張)",
-                        clause, re.I))
+                        clause, re.I)) or bool(
+                            name == "dependencies" and reference_dependency_transfer
+                            and re.search(r"\bdependency\s+choices?\b", clause, re.I)
+                        )
                     ui_package_only = name == "frontend" and bool(re.search(
                         r"(?:shadcn\s*/\s*ui|@shadcn/ui)", clause, re.I)) and not bool(re.search(
                         r"\b(?:implement|build|create|add|modify)\b|実装|作成|構築|追加|修正", clause, re.I))

@@ -30,7 +30,7 @@ import {useLanguage} from "./language";
 import {BrainState} from './brainModels';
 export type Command = {id:string; command:string; description:string; arguments:string; enabled:boolean};
 type InstalledSkill = {name:string;version?:string;description?:string;state:string;enabled:boolean;trusted:boolean;permission?:string;native?:boolean};
-export type Attachment={name:string;content:string;mimeType:string;dataUrl?:string;bytesBase64?:string;kind?:'folder';directoryPath?:string;files?:{path:string;bytesBase64:string}[]};
+export type Attachment={name:string;content:string;mimeType:string;dataUrl?:string;bytesBase64?:string;content_truncated?:boolean;content_suffix?:string;kind?:'folder';directoryPath?:string;files?:{path:string;bytesBase64:string}[]};
 
 type VoiceCapture={stream:MediaStream;context:AudioContext;source:MediaStreamAudioSourceNode;processor:ScriptProcessorNode;silence:GainNode;chunks:Float32Array[];sampleCount:number;totalSamples:number;quietSamples:number;hasSpeech:boolean;sampleRate:number;language:"ja"|"en"};
 function encodePcmWav(chunks:Float32Array[],sampleCount:number,sampleRate:number){

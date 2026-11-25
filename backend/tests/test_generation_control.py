@@ -58,6 +58,32 @@ class GenerationCancellationTests(unittest.TestCase):
         with self.assertRaises(GenerationCancelled), generation_scope(first):
             self.fail('cancelled scope entered')
 
+    def test_json_http_response_works_without_active_generation_context(self):
+        class JsonProvider(BaseHTTPRequestHandler):
+            def do_POST(inner):
+                inner.rfile.read(int(inner.headers.get('Content-Length', '0')))
+                payload = b'{"ok":true}'
+                inner.send_response(200)
+                inner.send_header('Content-Type', 'application/json')
+                inner.send_header('Content-Length', str(len(payload)))
+                inner.end_headers()
+                inner.wfile.write(payload)
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), JsonProvider)
+        server.daemon_threads = True
+        serving = threading.Thread(target=server.serve_forever, daemon=True)
+        serving.start()
+        try:
+            result = call_json(f'http://127.0.0.1:{server.server_port}/token',
+                               {'grant_type': 'authorization_code'}, {}, form=True)
+            self.assertTrue(result['ok'])
+        finally:
+            server.shutdown()
+            server.server_close()
+            serving.join(2)
+
     def test_http_cancellation_closes_connection_before_the_first_token(self):
         # The server sends HTTP headers, then deliberately sends no body. A
         # token-boundary-only implementation would wait here indefinitely.

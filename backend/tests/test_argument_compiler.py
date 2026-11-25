@@ -15,7 +15,7 @@ class ProviderArgumentCompilerTests(unittest.TestCase):
         self.assertEqual('es', compiled['target'])
         with self.assertRaises(ExternalToolError):
             compile_provider_arguments('language.translation',
-                                       'あ' * 12001 + '\n\nスペイン語に訳して')
+                                       'あ' * 200001 + '\n\nスペイン語に訳して')
 
     def test_whole_passage_translation_instruction_owns_provider_keywords(self):
         passage = '檸檬\n梶井基次郎\n\n京都の街を歩いた。\n丸善で画集を眺めた。'
@@ -29,7 +29,7 @@ class ProviderArgumentCompilerTests(unittest.TestCase):
                     self.assertEqual('language.translation', tool_id)
                     compiled = compile_provider_arguments(tool_id, prompt, arguments)
                     self.assertEqual(passage, compiled['text'])
-                    self.assertEqual('ja', compiled['source'])
+                    self.assertEqual('auto', compiled['source'])
                     self.assertEqual('es', compiled['target'])
 
     def test_last_month_earthquake_prompt_uses_previous_calendar_month(self):
